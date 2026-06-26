@@ -1,0 +1,6 @@
+{
+  "name": "AI Market Pulse",
+  "description": "Autonomous sales intelligence system that analyzes business websites, identifies ICPs, and recommends high-potential target accounts using real-time signals.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
