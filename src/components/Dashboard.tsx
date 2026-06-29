@@ -935,14 +935,14 @@ export function Dashboard({
               <div className="p-4 rounded-xl border border-amber-200 bg-amber-50/70 flex items-start gap-3 shadow-xs animate-in fade-in duration-300">
                 <CloudLightning className="w-5 h-5 text-amber-500 shrink-0 mt-0.5 animate-pulse" />
                 <div className="space-y-1">
-                  <h4 className="text-xs font-bold text-amber-900">Gemini Live API Quota Reached (Free Tier Quota of 20 API Calls)</h4>
+                  <h4 className="text-xs font-bold text-amber-900">OpenAI Live API Unavailable (Quota Reached or Key Missing)</h4>
                   <p className="text-[11px] text-amber-850 leading-relaxed max-w-4xl">
-                    You have temporarily exceeded your Gemini free-tier daily or rate limit of 20 requests. To prevent interruptions, 
-                    <strong> GTM Intelligence has automatically activated localized high-fidelity simulated backups</strong>, 
+                    The OpenAI API call did not return live data. To prevent interruptions,
+                    <strong> GTM Intelligence has automatically activated localized high-fidelity simulated backups</strong>,
                     allowing you to fully test corporate persona mapping, account discovery, and competitive vendor displacement.
                   </p>
                   <p className="text-[11px] text-amber-900 font-semibold mt-1">
-                    👉 To restore real-time live AI requests: Go to the "Settings &gt; Secrets" menu and declare your custom <code className="bg-amber-100/80 px-1 py-0.5 rounded font-mono text-[10px]">GEMINI_API_KEY</code>.
+                    👉 To restore real-time live AI requests: set <code className="bg-amber-100/80 px-1 py-0.5 rounded font-mono text-[10px]">OPENAI_API_KEY</code> in your <code className="bg-amber-100/80 px-1 py-0.5 rounded font-mono text-[10px]">.env</code> file and restart the server.
                   </p>
                 </div>
               </div>

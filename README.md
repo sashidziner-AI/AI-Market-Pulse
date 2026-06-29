@@ -1,21 +1,13 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# AI Market Pulse
 
-# Run and deploy your AI Studio app
-
-This contains everything you need to run your app locally.
-
-View your app in AI Studio: https://ai.studio/apps/21207ed9-c082-4b44-9b2a-f5d6e30acd05
+Autonomous sales intelligence system that analyzes business websites, identifies ICPs, and recommends high-potential target accounts using real-time signals.
 
 ## Run Locally
 
-**Prerequisites:**  Node.js
+**Prerequisites:** Node.js
 
+1. Install dependencies: `npm install`
+2. Copy `.env.example` to `.env` and set `OPENAI_API_KEY` to your OpenAI API key (get one at https://platform.openai.com/api-keys)
+3. Run the app: `npm run dev`
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
-"# AI-Market-Pulse" 
+The dev server serves both the React frontend and the Express `/api/*` backend on http://localhost:3000.

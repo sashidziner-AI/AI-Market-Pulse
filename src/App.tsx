@@ -165,9 +165,9 @@ export default function App() {
       
       setAnalysis(data);
       if (data.isFallback) {
-        toast.warning('Gemini API quota exceeded or API Key is missing. Loaded high-fidelity simulated business blueprint.', {
+        toast.warning('OpenAI API quota exceeded or API Key is missing. Loaded high-fidelity simulated business blueprint.', {
           duration: 10000,
-          description: 'To connect real live AI analyses, go to the Settings > Secrets menu and set your custom GEMINI_API_KEY.'
+          description: 'To connect real live AI analyses, set OPENAI_API_KEY in your .env file.'
         });
       } else {
         toast.success('Business logic mapped successfully');
@@ -205,7 +205,7 @@ export default function App() {
 
       setAccounts(formattedAccounts);
       if (data.length > 0 && data[0].isFallback) {
-        toast.warning('Switched to simulated market company discovery due to Gemini API key quotas.', {
+        toast.warning('Switched to simulated market company discovery due to OpenAI API key quotas.', {
           duration: 8000
         });
       } else {

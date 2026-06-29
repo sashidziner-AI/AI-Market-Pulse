@@ -1,36 +1,43 @@
 import express from "express";
 import path from "path";
+import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI, Type } from "@google/genai";
+import OpenAI from "openai";
+
+dotenv.config();
 
 const app = express();
 const PORT = 3000;
 
 app.use(express.json());
 
-// In-Memory Caches to completely avoid redundant Gemini API quota consumption
+// In-Memory Caches to completely avoid redundant OpenAI API quota consumption
 const businessCache = new Map<string, any>();
 const discoveryCache = new Map<string, any>();
 const accountAnalysisCache = new Map<string, any>();
 
-let genAI: GoogleGenAI | null = null;
+// JSON-Schema type constants. Naming preserved so the existing endpoint
+// schemas (Type.OBJECT, Type.STRING, ...) continue to compile and now
+// emit valid JSON Schema directly.
+const Type = {
+  OBJECT: "object",
+  STRING: "string",
+  ARRAY: "array",
+  NUMBER: "number",
+  BOOLEAN: "boolean",
+} as const;
 
-function getGenAI() {
-  const apiKey = process.env.GEMINI_API_KEY;
+let openai: OpenAI | null = null;
+
+function getOpenAI() {
+  const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
-    throw new Error("GEMINI_API_KEY is not set. Please go to Settings > Secrets and select or create an API Key to enable AI features.");
+    throw new Error("OPENAI_API_KEY is not set. Add it to your .env file to enable AI features.");
   }
-  if (!genAI) {
-    genAI = new GoogleGenAI({
-      apiKey: apiKey,
-      httpOptions: {
-        headers: {
-          'User-Agent': 'aistudio-build',
-        }
-      }
-    });
+  if (!openai) {
+    openai = new OpenAI({ apiKey });
   }
-  return genAI;
+  return openai;
 }
 
 // Helper to clean up any raw logs from containing automated alert keywords (e.g. error, fail, exception)
@@ -44,7 +51,7 @@ function sanitizeString(str: string): string {
 
 // Helper for schema-based generation with automatic retries and fallback models
 async function generateStructuredData(prompt: string, schema: any) {
-  const models = ["gemini-3.5-flash", "gemini-2.5-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
+  const models = ["gpt-4o-mini", "gpt-4o"];
   let lastError: any = null;
 
   for (const model of models) {
@@ -53,85 +60,115 @@ async function generateStructuredData(prompt: string, schema: any) {
 
     for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
-        const ai = getGenAI();
-        
-        console.log(`[Gemini Request] Model: ${model}, Attempt: ${attempt}/${attempts}`);
-        const response = await ai.models.generateContent({
-          model: model,
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
-          config: {
-            responseMimeType: "application/json",
-            responseSchema: schema,
-          }
+        const ai = getOpenAI();
+
+        console.log(`[OpenAI Request] Model: ${model}, Attempt: ${attempt}/${attempts}`);
+        const response = await ai.chat.completions.create({
+          model,
+          messages: [
+            {
+              role: "system",
+              content:
+                "You are a structured-data generator. Respond ONLY with a JSON value that conforms exactly to the JSON Schema provided in the user message. Do not wrap the JSON in markdown fences or commentary.",
+            },
+            {
+              role: "user",
+              content: `${prompt}\n\nRespond with JSON matching this JSON Schema:\n${JSON.stringify(schema)}`,
+            },
+          ],
+          response_format: { type: "json_object" },
         });
 
-        if (!response.text) {
-          console.log(`[Gemini API Info] Empty response for model ${model}`);
-          if (response.candidates?.[0]?.finishReason === 'SAFETY') {
-            throw new Error("Gemini response was blocked by safety filters. Please try a different query.");
+        const text = response.choices?.[0]?.message?.content;
+        if (!text) {
+          console.log(`[OpenAI API Info] Empty response for model ${model}`);
+          const finishReason = response.choices?.[0]?.finish_reason;
+          if (finishReason === "content_filter") {
+            throw new Error("OpenAI response was blocked by content filters. Please try a different query.");
           }
-          throw new Error("Gemini returned an empty response. This may be due to safety filters or a complex prompt.");
+          throw new Error("OpenAI returned an empty response.");
         }
 
+        let parsed: any;
         try {
-          return JSON.parse(response.text);
+          parsed = JSON.parse(text);
         } catch (parseError) {
-          console.log(`[Gemini API Info] JSON parse failure for model ${model}`);
+          console.log(`[OpenAI API Info] JSON parse failure for model ${model}`);
           throw new Error("Model generated invalid JSON output. Please try again.");
         }
+
+        // json_object mode forces an object wrapper. If the caller wanted an
+        // array, the model typically returns { items: [...] } / { results: [...] }
+        // / { data: [...] }. Unwrap a single array property to match the schema.
+        if (schema?.type === "array" && !Array.isArray(parsed)) {
+          const arrayProp = Object.values(parsed).find((v) => Array.isArray(v));
+          if (arrayProp) parsed = arrayProp;
+        }
+
+        return parsed;
       } catch (error: any) {
         lastError = error;
+        const status = error?.status;
         const errorStr = String(error?.message || error || "");
-        
+
         // Log simple info rather than full stack/raw json to avoid triggering build/test suite alerts
         const shortError = sanitizeString(errorStr.substring(0, 150));
-        console.log(`[Gemini Info] Model ${model} attempt ${attempt} handled issue: ${shortError}`);
+        console.log(`[OpenAI Info] Model ${model} attempt ${attempt} handled issue: ${shortError}`);
 
-        const isQuota = errorStr.includes("QUOTA_EXCEEDED") || errorStr.includes("429") || errorStr.includes("quota");
-        const isPermission = errorStr.includes("PERMISSION_DENIED") || errorStr.includes("403") || errorStr.includes("unregistered callers") || errorStr.includes("API_KEY_INVALID") || errorStr.includes("not set");
+        const isQuota = status === 429 || errorStr.includes("quota") || errorStr.includes("insufficient_quota");
+        const isPermission =
+          status === 401 ||
+          status === 403 ||
+          errorStr.includes("invalid_api_key") ||
+          errorStr.includes("Incorrect API key") ||
+          errorStr.includes("not set");
 
         if (isQuota || isPermission) {
           // Immediately exit loops and throw to trigger the route handler fallback instantly
           throw error;
         }
 
-        const isTransient = errorStr.includes("503") || 
-                            errorStr.includes("UNAVAILABLE") || 
-                            errorStr.includes("high demand") || 
-                            errorStr.includes("temporary") ||
-                            errorStr.includes("500") || 
-                            errorStr.includes("socket") || 
-                            errorStr.includes("timeout");
+        const isTransient =
+          status === 500 ||
+          status === 502 ||
+          status === 503 ||
+          status === 504 ||
+          errorStr.includes("timeout") ||
+          errorStr.includes("ECONNRESET") ||
+          errorStr.includes("socket");
 
         if (isTransient && attempt < attempts) {
           console.log(`Retrying in ${delay}ms...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
+          await new Promise((resolve) => setTimeout(resolve, delay));
           delay *= 2; // exponential backoff
         } else {
           // Fall through to the next model
-          break; 
+          break;
         }
       }
     }
   }
 
+  const status = lastError?.status;
   const errorStr = String(lastError?.message || lastError || "");
-  const isQuota = errorStr.includes("QUOTA_EXCEEDED") || errorStr.includes("429") || errorStr.includes("quota");
-  const isPermission = errorStr.includes("PERMISSION_DENIED") || errorStr.includes("403") || errorStr.includes("unregistered callers") || errorStr.includes("API_KEY_INVALID") || errorStr.includes("not set");
+  const isQuota = status === 429 || errorStr.includes("quota") || errorStr.includes("insufficient_quota");
+  const isPermission =
+    status === 401 ||
+    status === 403 ||
+    errorStr.includes("invalid_api_key") ||
+    errorStr.includes("Incorrect API key") ||
+    errorStr.includes("not set");
 
   if (isQuota) {
-    console.log("[Gemini Info] Quota limits active. Scaling to fallback profiles.");
-    throw new Error("Gemini API quota exceeded. Please wait a moment or switch to a paid API Key.");
+    console.log("[OpenAI Info] Quota limits active. Scaling to fallback profiles.");
+    throw new Error("OpenAI API quota exceeded. Please wait a moment or upgrade your plan.");
   } else if (isPermission) {
-    console.log("[Gemini Info] Access denied or key missing. Scaling to fallback profiles.");
-    throw new Error("Gemini API access denied. Please ensure you have selected a valid API Key in Settings > Secrets.");
+    console.log("[OpenAI Info] Access denied or key missing. Scaling to fallback profiles.");
+    throw new Error("OpenAI API access denied. Please ensure OPENAI_API_KEY is set to a valid key.");
   } else {
     const sanitizedMsg = sanitizeString(errorStr.substring(0, 150));
-    console.log(`[Gemini Info] API issue after fallback strategy: ${sanitizedMsg}`);
-    if (errorStr.includes("503") || errorStr.includes("UNAVAILABLE") || errorStr.includes("high demand")) {
-      throw new Error("Gemini API is currently experiencing high demand. Please try again in a few seconds.");
-    }
-    throw lastError || new Error("Failed to communicate with Gemini API.");
+    console.log(`[OpenAI Info] API issue after fallback strategy: ${sanitizedMsg}`);
+    throw lastError || new Error("Failed to communicate with OpenAI API.");
   }
 }
 
@@ -766,7 +803,7 @@ app.post("/api/analyze-business", async (req, res) => {
     businessCache.set(cacheKey, data);
     res.json(data);
   } catch (error: any) {
-    console.log(`[GTM Sandbox Advisory] Analysis request redirected to high-fidelity localized simulation metadata due to Gemini API limits.`);
+    console.log(`[GTM Sandbox Advisory] Analysis request redirected to high-fidelity localized simulation metadata due to OpenAI API limits.`);
     const fallbackData = getAnalyzeBusinessFallback(url);
     res.json(fallbackData);
   }
@@ -829,7 +866,7 @@ app.post("/api/discover-accounts", async (req, res) => {
     discoveryCache.set(cacheKey, data);
     res.json(data);
   } catch (error: any) {
-    console.log(`[GTM Sandbox Advisory] Account discovery redirected to high-fidelity localized simulation metadata due to Gemini API limits.`);
+    console.log(`[GTM Sandbox Advisory] Account discovery redirected to high-fidelity localized simulation metadata due to OpenAI API limits.`);
     const fallbackData = getDiscoverAccountsFallback(businessContext, icp);
     res.json(fallbackData);
   }
