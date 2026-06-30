@@ -713,7 +713,7 @@ export function Dashboard({
   };
 
   return (
-    <div className="flex bg-slate-50 dark:bg-slate-800/50 min-h-screen">
+    <div className="flex bg-slate-100 dark:bg-slate-800/50 min-h-screen">
       <input 
         type="file" 
         ref={fileInputRef} 
@@ -2302,7 +2302,7 @@ export function Dashboard({
                         {/* Signals summary on the left */}
                         <div className="flex flex-wrap gap-1.5">
                           {(account.signals || []).slice(0, 3).map((sig, i) => (
-                            <span key={i} className="text-[11px] font-semibold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded border border-slate-150 dark:border-slate-700 uppercase font-sans">
+                            <span key={i} className="text-[12px] text-slate-800 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded border border-slate-150 dark:border-slate-700 font-sans">
                               {sig}
                             </span>
                           ))}
