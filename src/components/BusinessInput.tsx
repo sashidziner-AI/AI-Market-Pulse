@@ -33,16 +33,16 @@ export function BusinessInput({
         className="w-full max-w-2xl text-center space-y-8"
       >
         <div className="flex justify-center">
-          <div className="p-4 rounded-2xl bg-indigo-50 text-indigo-600 shadow-xs">
+          <div className="p-4 rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 shadow-xs">
             <Rocket className="w-12 h-12 animate-bounce" />
           </div>
         </div>
         
         <div className="space-y-4">
-          <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-slate-900 font-sans">
+          <h1 className="text-4xl md:text-5xl font-bold tracking-tight text-slate-900 dark:text-slate-100 font-sans">
             Activate Your Revenue Engine
           </h1>
-          <p className="text-lg text-slate-600 max-w-lg mx-auto leading-relaxed">
+          <p className="text-lg text-slate-600 dark:text-slate-300 max-w-lg mx-auto leading-relaxed">
             Submit your company URL to automatically construct your target ICP and uncover high-potential accounts.
           </p>
         </div>
@@ -56,7 +56,7 @@ export function BusinessInput({
             placeholder="yourcompany.com"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            className="w-full h-16 pl-12 pr-32 rounded-2xl bg-white border border-slate-200 shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all text-lg font-sans"
+            className="w-full h-16 pl-12 pr-32 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all text-lg font-sans"
             disabled={isLoading}
           />
           <div className="absolute inset-y-2 right-2">

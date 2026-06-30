@@ -23,45 +23,45 @@ export function SourceCitation({ citation, inlineLabel, isSignal = false }: { ci
   // Modern style indicators matching the source tier
   const tierColors = {
     Primary: {
-      bg: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+      bg: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-800/60',
       label: 'Primary Source',
       dot: 'bg-emerald-500'
     },
     Secondary: {
-      bg: 'bg-blue-50 text-blue-800 border-blue-200',
+      bg: 'bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-200 border-blue-200 dark:border-blue-800/60',
       label: 'Secondary Source',
       dot: 'bg-blue-500'
     },
     Tertiary: {
-      bg: 'bg-amber-50 text-amber-800 border-amber-200',
+      bg: 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-800/60',
       label: 'Tertiary / Inferred Source',
       dot: 'bg-amber-500'
     }
   }[sourceTier] || {
-    bg: 'bg-slate-50 text-slate-800 border-slate-200',
+    bg: 'bg-slate-50 dark:bg-slate-800/50 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-700',
     label: sourceTier,
     dot: 'bg-slate-400'
   };
 
   return (
-    <div className={`mt-3 p-3 rounded-lg border text-left font-sans text-xs ${isInferred ? 'bg-amber-50/10 border-amber-200/40' : 'bg-slate-50/40 border-slate-200/50'}`}>
+    <div className={`mt-3 p-3 rounded-lg border text-left font-sans text-xs ${isInferred ? 'bg-amber-50/10 dark:bg-amber-950/40 border-amber-200/40 dark:border-amber-800/60' : 'bg-slate-50/40 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700/50'}`}>
       {/* Top badges & core metrics */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-dashed border-slate-200/60 pb-2 mb-2">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-dashed border-slate-200 dark:border-slate-700/60 pb-2 mb-2">
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-extrabold border uppercase tracking-wider ${tierColors.bg}`}>
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-extrabold border uppercase tracking-wider ${tierColors.bg}`}>
             <span className={`w-1.5 h-1.5 rounded-full ${tierColors.dot}`} />
             {tierColors.label}
           </span>
           <span className="text-slate-300 font-normal select-none">•</span>
-          <span className="text-slate-700 font-bold text-[10.5px]">
+          <span className="text-slate-700 dark:text-slate-300 font-bold text-[12px]">
             {sourceName}
           </span>
         </div>
 
         {confidenceScore !== undefined && (
           <div className="flex items-center gap-1">
-            <span className="text-[9px] uppercase font-bold text-slate-400 select-none">Confidence:</span>
-            <span className={`text-[11px] font-black tracking-wide bg-white px-1.5 py-0.5 rounded border border-slate-100 ${confidenceScore >= 85 ? 'text-emerald-700' : confidenceScore >= 70 ? 'text-indigo-600' : 'text-amber-700'}`}>
+            <span className="text-[11px] uppercase font-bold text-slate-400 select-none">Confidence:</span>
+            <span className={`text-[13px] font-black tracking-wide bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-100 dark:border-slate-800 ${confidenceScore >= 85 ? 'text-emerald-700 dark:text-emerald-300' : confidenceScore >= 70 ? 'text-indigo-600 dark:text-indigo-300' : 'text-amber-700 dark:text-amber-300'}`}>
               {confidenceScore}%
             </span>
           </div>
@@ -69,19 +69,19 @@ export function SourceCitation({ citation, inlineLabel, isSignal = false }: { ci
       </div>
 
       {/* Main explanation content and source warning */}
-      <div className="flex items-start gap-1.5 text-[10.5px] leading-relaxed text-slate-600">
-        <Info className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${isInferred ? 'text-amber-500 animate-pulse' : 'text-slate-450'}`} />
+      <div className="flex items-start gap-1.5 text-[12px] leading-relaxed text-slate-600 dark:text-slate-300">
+        <Info className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${isInferred ? 'text-amber-500 dark:text-amber-400 animate-pulse' : 'text-slate-450'}`} />
         <div className="flex-1 space-y-1">
-          <div>{inlineLabel || 'Intelligence gathered and authenticated on'} <span className="font-bold text-slate-700">{dateRetrieved}</span>.</div>
+          <div>{inlineLabel || 'Intelligence gathered and authenticated on'} <span className="font-bold text-slate-700 dark:text-slate-300">{dateRetrieved}</span>.</div>
           
           {isInferred ? (
-            <div className="mt-1 font-semibold text-amber-800 flex flex-wrap gap-1 items-center bg-amber-50/60 p-1.5 rounded border border-amber-100/50">
-              <span className="font-black text-[8px] uppercase tracking-wider bg-amber-200 text-amber-900 px-1 rounded-sm select-none">Inferred claim warning</span>
+            <div className="mt-1 font-semibold text-amber-800 dark:text-amber-200 flex flex-wrap gap-1 items-center bg-amber-50/60 dark:bg-amber-950/40 p-1.5 rounded border border-amber-100/50 dark:border-amber-800/50">
+              <span className="font-black text-[10px] uppercase tracking-wider bg-amber-200 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 px-1 rounded-sm select-none">Inferred claim warning</span>
               <span>This claim depends entirely on tertiary public feedback or indirect inference, and should not be treated as a verified fact.</span>
             </div>
           ) : (
-            <div className="mt-1 font-semibold text-emerald-800 flex flex-wrap gap-1 items-center bg-emerald-50/40 p-1 rounded">
-              <span className="font-black text-[8px] uppercase tracking-wider bg-emerald-100 text-emerald-900 px-1 rounded-sm select-none">Verified Fact</span>
+            <div className="mt-1 font-semibold text-emerald-800 dark:text-emerald-200 flex flex-wrap gap-1 items-center bg-emerald-50/40 dark:bg-emerald-950/40 p-1 rounded">
+              <span className="font-black text-[10px] uppercase tracking-wider bg-emerald-100 dark:bg-emerald-900/40 text-emerald-900 dark:text-emerald-200 px-1 rounded-sm select-none">Verified Fact</span>
               <span>This intelligence is verified from official, high-quality public filings or first-party job posts.</span>
             </div>
           )}
@@ -94,7 +94,7 @@ export function SourceCitation({ citation, inlineLabel, isSignal = false }: { ci
             href={url}
             target="_blank"
             rel="noreferrer noopener"
-            className="inline-flex items-center gap-1 text-[9px] font-black uppercase text-indigo-600 hover:text-indigo-700 hover:underline transition-all tracking-wider"
+            className="inline-flex items-center gap-1 text-[11px] font-black uppercase text-indigo-600 dark:text-indigo-300 hover:text-indigo-700 hover:underline transition-all tracking-wider"
           >
             Go to Source Document
             <ExternalLink className="w-2.5 h-2.5" />
@@ -254,20 +254,20 @@ export function StakeholderLinkedinCard({ role, company, compact = false }: { ro
 
   if (compact) {
     return (
-      <div className="bg-slate-50 border border-slate-150 rounded-lg p-2.5 flex items-center justify-between gap-3 font-sans hover:bg-slate-100/50 transition-colors">
+      <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-150 dark:border-slate-700 rounded-lg p-2.5 flex items-center justify-between gap-3 font-sans hover:bg-slate-100/50 transition-colors">
         <div className="flex items-center gap-2 min-w-0">
-          <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${details.avatarBg} text-white flex items-center justify-center font-bold text-[10.5px] shrink-0 uppercase shadow-3xs`}>
+          <div className={`w-8 h-8 rounded-full bg-gradient-to-br ${details.avatarBg} text-white flex items-center justify-center font-bold text-[12px] shrink-0 uppercase shadow-3xs`}>
             {initials}
           </div>
           <div className="min-w-0 space-y-0.5 text-left">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="font-extrabold text-xs text-slate-800 truncate">{details.name}</span>
-              <span className="bg-blue-50 text-blue-700 text-[8px] font-bold px-1 rounded-full border border-blue-100 font-mono scale-[0.9]">
+              <span className="font-extrabold text-xs text-slate-800 dark:text-slate-200 truncate">{details.name}</span>
+              <span className="bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-[10px] font-bold px-1 rounded-full border border-blue-100 dark:border-blue-800/50 font-mono scale-[0.9]">
                 1st
               </span>
             </div>
-            <div className="text-[10px] text-slate-500 font-medium truncate">
-              {role} at <span className="font-extrabold text-slate-700">{company}</span>
+            <div className="text-[12px] text-slate-500 dark:text-slate-300 font-medium truncate">
+              {role} at <span className="font-extrabold text-slate-700 dark:text-slate-300">{company}</span>
             </div>
           </div>
         </div>
@@ -275,7 +275,7 @@ export function StakeholderLinkedinCard({ role, company, compact = false }: { ro
           href={details.linkedinUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white border border-slate-200 text-blue-600 hover:text-blue-700 hover:bg-slate-50 font-bold text-[9.5px] cursor-pointer shadow-3xs transition-colors shrink-0"
+          className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-blue-600 dark:text-blue-300 hover:text-blue-700 hover:bg-slate-50 font-bold text-[11px] cursor-pointer shadow-3xs transition-colors shrink-0"
         >
           <Linkedin className="w-3 h-3 fill-blue-600 text-white stroke-1" />
           <span>Connect</span>
@@ -285,22 +285,22 @@ export function StakeholderLinkedinCard({ role, company, compact = false }: { ro
   }
 
   return (
-    <div className="bg-slate-50/70 border border-slate-200/60 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 font-sans shadow-3xs hover:shadow-2xs transition-all w-full">
+    <div className="bg-slate-50/70 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 rounded-xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 font-sans shadow-3xs hover:shadow-2xs transition-all w-full">
       <div className="flex items-center gap-3.5 text-left">
         <div className={`w-12 h-12 rounded-full bg-gradient-to-br ${details.avatarBg} text-white flex items-center justify-center font-bold text-base shadow-sm shrink-0 uppercase`}>
           {initials}
         </div>
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <span className="font-extrabold text-sm text-slate-900 leading-none">{details.name}</span>
-            <span className="inline-flex items-center justify-center bg-blue-50 text-blue-700 text-[9px] font-bold px-1.5 py-0.5 rounded-full border border-blue-100 font-mono">
+            <span className="font-extrabold text-sm text-slate-900 dark:text-slate-100 leading-none">{details.name}</span>
+            <span className="inline-flex items-center justify-center bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-[11px] font-bold px-1.5 py-0.5 rounded-full border border-blue-100 dark:border-blue-800/50 font-mono">
               1st
             </span>
           </div>
-          <div className="text-xs text-slate-500 font-medium leading-none">
-            {role} at <span className="font-extrabold text-slate-700">{company}</span>
+          <div className="text-xs text-slate-500 dark:text-slate-300 font-medium leading-none">
+            {role} at <span className="font-extrabold text-slate-700 dark:text-slate-300">{company}</span>
           </div>
-          <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider font-mono">
+          <div className="text-[12px] text-slate-400 font-semibold uppercase tracking-wider font-mono">
             {details.estimatedYoe} Years Exp • Inferred Stakeholder Node
           </div>
         </div>
@@ -311,9 +311,9 @@ export function StakeholderLinkedinCard({ role, company, compact = false }: { ro
           href={details.linkedinUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[11px] cursor-pointer shadow-sm transition-colors text-center w-full sm:w-auto justify-center"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[13px] cursor-pointer shadow-sm transition-colors text-center w-full sm:w-auto justify-center"
         >
-          <Linkedin className="w-3.5 h-3.5 fill-white text-blue-600 stroke-1" />
+          <Linkedin className="w-3.5 h-3.5 fill-white text-blue-600 dark:text-blue-300 stroke-1" />
           <span>Real-time LinkedIn Scan</span>
         </a>
       </div>
@@ -410,11 +410,11 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
       initial={{ x: '100%' }}
       animate={{ x: 0 }}
       exit={{ x: '100%' }}
-      className="fixed inset-y-0 right-0 w-full max-w-2xl bg-white shadow-2xl z-50 flex flex-col border-l border-slate-200"
+      className="fixed inset-y-0 right-0 w-full max-w-2xl bg-white dark:bg-slate-900 shadow-2xl z-50 flex flex-col border-l border-slate-200 dark:border-slate-700"
     >
-      <div className="flex items-center justify-between p-6 border-b border-slate-100">
+      <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-800">
         <div className="flex items-center gap-4 min-w-0 flex-1">
-          <div className="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 font-bold text-xl shrink-0">
+          <div className="w-12 h-12 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 flex items-center justify-center text-indigo-600 dark:text-indigo-300 font-bold text-xl shrink-0">
             {(editName.charAt(0) || 'A').toUpperCase()}
           </div>
           {isEditing ? (
@@ -424,20 +424,20 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                 value={editName}
                 onChange={(e) => setEditName(e.target.value)}
                 placeholder="Account Name"
-                className="w-full text-base font-bold bg-white text-slate-850 border border-slate-250 px-2.5 py-1 rounded outline-none focus:border-indigo-500 font-sans"
+                className="w-full text-base font-bold bg-white dark:bg-slate-900 text-slate-850 dark:text-slate-200 border border-slate-250 dark:border-slate-700 px-2.5 py-1 rounded outline-none focus:border-indigo-500 font-sans"
               />
               <input 
                 type="text"
                 value={editDomain}
                 onChange={(e) => setEditDomain(e.target.value)}
                 placeholder="domain.com"
-                className="w-full text-xs font-mono font-normal bg-white text-slate-650 border border-slate-200 px-2.5 py-1 rounded outline-none focus:border-indigo-500"
+                className="w-full text-xs font-mono font-normal bg-white dark:bg-slate-900 text-slate-650 dark:text-slate-400 border border-slate-200 dark:border-slate-700 px-2.5 py-1 rounded outline-none focus:border-indigo-500"
               />
             </div>
           ) : (
             <div className="min-w-0">
-              <h2 className="text-xl font-bold text-slate-900 truncate">{account.name}</h2>
-              <p className="text-sm text-slate-500 font-mono truncate">{account.domain}</p>
+              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 truncate">{account.name}</h2>
+              <p className="text-sm text-slate-500 dark:text-slate-300 font-mono truncate">{account.domain}</p>
             </div>
           )}
         </div>
@@ -458,7 +458,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                     setEditFitScore(account.fitScore || 75);
                     setIsEditing(false);
                   }}
-                  className="h-8 px-2.5 text-xs text-slate-500"
+                  className="h-8 px-2.5 text-xs text-slate-500 dark:text-slate-300"
                 >
                   Cancel
                 </Button>
@@ -504,7 +504,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                 variant="outline" 
                 size="sm" 
                 onClick={() => setIsEditing(true)}
-                className="h-8 text-xs font-bold gap-1 text-slate-650 border-slate-200 hover:text-indigo-605 hover:bg-slate-50"
+                className="h-8 text-xs font-bold gap-1 text-slate-650 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:text-indigo-605 hover:bg-slate-50"
               >
                 <SlidersHorizontal className="w-3.5 h-3.5" />
                 <span>Edit Info</span>
@@ -512,7 +512,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
             )
           )}
           <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full h-8 w-8">
-            <X className="w-5 h-5 text-slate-500" />
+            <X className="w-5 h-5 text-slate-500 dark:text-slate-300" />
           </Button>
         </div>
       </div>
@@ -522,12 +522,12 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
           {/* Executive Summary */}
           <section className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-slate-900 flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-emerald-500" />
+              <h3 className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
                 Evidence-Based Fit Intel
               </h3>
               {isEditing ? (
-                <div className="flex items-center gap-1.5 font-mono text-[11px] text-slate-605 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded">
+                <div className="flex items-center gap-1.5 font-mono text-[13px] text-slate-605 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded">
                   <span>Fit Score:</span>
                   <input
                     type="number"
@@ -535,15 +535,15 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                     max="100"
                     value={editFitScore}
                     onChange={(e) => setEditFitScore(Number(e.target.value))}
-                    className="w-12 bg-white font-bold text-center border rounded outline-none h-5 text-xs text-indigo-700 focus:border-indigo-550 focus:border-indigo-500"
+                    className="w-12 bg-white dark:bg-slate-900 font-bold text-center border rounded outline-none h-5 text-xs text-indigo-700 dark:text-indigo-300 focus:border-indigo-550 focus:border-indigo-500"
                   />
                   <span>%</span>
                 </div>
               ) : (
-                <Badge variant="outline" className="font-mono text-indigo-600 border-indigo-200 bg-indigo-50 flex items-center gap-1">
+                <Badge variant="outline" className="font-mono text-indigo-600 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800/60 bg-indigo-50 dark:bg-indigo-950/40 flex items-center gap-1">
                   Fit Score: <span className="font-bold">{info.fitScore}%</span>
                   {info.decayApplied && (
-                    <span className="text-slate-400 line-through text-[9px] font-normal" title={`Original: ${info.originalFitScore}% before freshness decay`}>
+                    <span className="text-slate-400 line-through text-[11px] font-normal" title={`Original: ${info.originalFitScore}% before freshness decay`}>
                       ({info.originalFitScore}%)
                     </span>
                   )}
@@ -553,33 +553,33 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
 
             {isEditing ? (
               <div className="space-y-3 font-sans text-xs text-left">
-                <div className="space-y-1 shadow-2xs bg-slate-50/50 p-3 rounded-lg border border-slate-105">
-                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">Company Description</label>
+                <div className="space-y-1 shadow-2xs bg-slate-50/50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-105">
+                  <label className="text-[12px] font-black uppercase text-slate-400 tracking-wider block">Company Description</label>
                   <textarea
                     rows={2}
                     value={editDescription}
                     onChange={(e) => setEditDescription(e.target.value)}
                     placeholder="Brief description of what the company does..."
-                    className="w-full p-2.5 rounded-lg border border-slate-200 bg-white text-xs outline-none focus:ring-1 focus:ring-indigo-500/10 focus:border-indigo-500 text-slate-800 font-medium"
+                    className="w-full p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs outline-none focus:ring-1 focus:ring-indigo-500/10 focus:border-indigo-500 text-slate-800 dark:text-slate-200 font-medium"
                   />
                 </div>
-                <div className="space-y-1 shadow-2xs bg-slate-50/50 p-3 rounded-lg border border-slate-105">
-                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">ICP Alignment & Fit Evidence Rationale</label>
+                <div className="space-y-1 shadow-2xs bg-slate-50/50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-105">
+                  <label className="text-[12px] font-black uppercase text-slate-400 tracking-wider block">ICP Alignment & Fit Evidence Rationale</label>
                   <textarea
                     rows={4}
                     value={editRationale}
                     onChange={(e) => setEditRationale(e.target.value)}
                     placeholder="Evidence rationale on why this customer fits..."
-                    className="w-full p-2.5 rounded-lg border border-slate-200 bg-white text-xs outline-none focus:ring-1 focus:ring-indigo-500/10 focus:border-indigo-500 text-slate-800 font-medium leading-relaxed"
+                    className="w-full p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs outline-none focus:ring-1 focus:ring-indigo-500/10 focus:border-indigo-500 text-slate-800 dark:text-slate-200 font-medium leading-relaxed"
                   />
                 </div>
               </div>
             ) : (
               <div className="space-y-2.5">
                 {account.description && (
-                  <p className="text-xs text-slate-500 italic px-1 font-normal leading-relaxed text-left">{account.description}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-300 italic px-1 font-normal leading-relaxed text-left">{account.description}</p>
                 )}
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-100 text-slate-700 text-sm leading-relaxed whitespace-pre-wrap text-left font-sans">
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-sm leading-relaxed whitespace-pre-wrap text-left font-sans">
                   {analysis?.rationale || account.fitReason}
                   
                   <SourceCitation 
@@ -599,24 +599,24 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
           </section>
 
           {/* Industry Calibration Controls board */}
-          <section className="space-y-4 bg-indigo-50/20 p-5 rounded-2xl border border-indigo-100 shadow-2xs text-left">
+          <section className="space-y-4 bg-indigo-50/20 dark:bg-indigo-950/40 p-5 rounded-2xl border border-indigo-100 dark:border-indigo-800/50 shadow-2xs text-left">
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                  <Sliders className="w-4 h-4 text-indigo-600" />
+                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <Sliders className="w-4 h-4 text-indigo-600 dark:text-indigo-300" />
                   Industry-Specific Buying Intent Calibration
                 </h3>
                 {account.forcedSectorModel ? (
-                  <Badge variant="outline" className="text-[10px] uppercase font-black tracking-wider text-rose-700 bg-rose-50 border-rose-200">
+                  <Badge variant="outline" className="text-[12px] uppercase font-black tracking-wider text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/60">
                     🛠️ Overridden
                   </Badge>
                 ) : (
-                  <Badge variant="outline" className="text-[10px] uppercase font-black tracking-wider text-emerald-800 bg-emerald-50 border-emerald-200">
+                  <Badge variant="outline" className="text-[12px] uppercase font-black tracking-wider text-emerald-800 dark:text-emerald-200 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60">
                     ✓ Auto-Detected
                   </Badge>
                 )}
               </div>
-              <p className="text-[11px] text-slate-500 font-semibold leading-relaxed">
+              <p className="text-[13px] text-slate-500 dark:text-slate-300 font-semibold leading-relaxed">
                 Calibration prevents blending target accounts across different sectors into a single universal average. Different industries interpret identical events (such as engineering hiring or Venture Series rounds) through unique sector norms.
               </p>
             </div>
@@ -648,12 +648,12 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                     className={`px-3 py-2 text-xs font-bold rounded-xl border text-center transition-all ${
                       isActive 
                         ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm'
-                        : 'bg-white text-slate-650 border-slate-200 hover:bg-slate-50'
+                        : 'bg-white dark:bg-slate-900 text-slate-650 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
                     }`}
                   >
                     <div>{btnLabel}</div>
                     {isAutoSelected && (
-                      <div className="text-[8px] opacity-85 font-semibold mt-0.5 tracking-tight uppercase">Auto-Set</div>
+                      <div className="text-[10px] opacity-85 font-semibold mt-0.5 tracking-tight uppercase">Auto-Set</div>
                     )}
                   </button>
                 );
@@ -672,7 +672,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                       toast.success("Reset calibration model to auto-detected industry norms!");
                     }
                   }}
-                  className="text-[10px] text-indigo-600 hover:text-indigo-750 transition-colors font-bold underline"
+                  className="text-[12px] text-indigo-600 dark:text-indigo-300 hover:text-indigo-750 transition-colors font-bold underline"
                 >
                   Reset to Auto-Detected Norms
                 </button>
@@ -682,21 +682,21 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
 
           {/* Caution matching Alert indicator */}
           {info.hasCautionMatches && (
-            <div className="p-4.5 rounded-2xl bg-amber-50/50 border border-amber-250 text-left space-y-2">
-              <div className="flex items-center gap-1.5 font-bold text-xs text-amber-800 uppercase tracking-wider font-sans">
-                <AlertTriangle className="w-4 h-4 text-amber-600 animate-pulse" />
+            <div className="p-4.5 rounded-2xl bg-amber-50/50 dark:bg-amber-950/40 border border-amber-250 dark:border-amber-800/60 text-left space-y-2">
+              <div className="flex items-center gap-1.5 font-bold text-xs text-amber-800 dark:text-amber-200 uppercase tracking-wider font-sans">
+                <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-300 animate-pulse" />
                 <span>Adaptive Caution Warning Triggered</span>
               </div>
-              <div className="text-xs text-amber-700 space-y-1 my-0.5 font-sans leading-relaxed">
+              <div className="text-xs text-amber-700 dark:text-amber-300 space-y-1 my-0.5 font-sans leading-relaxed">
                 <p className="font-semibold">
                   This target profile matches historical outbound characteristics that struggle to convert:
                 </p>
-                <ul className="list-disc pl-4 space-y-1 font-medium text-[11.5px]">
+                <ul className="list-disc pl-4 space-y-1 font-medium text-[13px]">
                   {info.cautions.map((caution: string, idx: number) => (
                     <li key={idx} className="marker:text-amber-500">{caution}</li>
                   ))}
                 </ul>
-                <p className="text-[10px] italic text-amber-600 font-bold block pt-1.5 border-t border-amber-200/40">
+                <p className="text-[12px] italic text-amber-600 dark:text-amber-300 font-bold block pt-1.5 border-t border-amber-200/40 dark:border-amber-800/60">
                   💡 Closed-loop adjustment: Target score calibrated -{info.cautions.length * 15} fit penalty points to save marketing overhead.
                 </p>
               </div>
@@ -704,34 +704,34 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
           )}
 
           {/* Outreach Loop & Adaptive Feedback Outcomes Console */}
-          <section className="space-y-4 bg-white p-5 rounded-2xl border border-slate-200/80 shadow-xs text-left">
+          <section className="space-y-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs text-left">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                <Target className="w-4 h-4 text-indigo-600" />
+              <h3 className="text-sm font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <Target className="w-4 h-4 text-indigo-600 dark:text-indigo-300" />
                 Adaptive Feedback & Outreach Outcomes
               </h3>
               {account.outreachOutcome ? (
-                <Badge variant="outline" className={`text-[10px] uppercase font-extrabold tracking-wider ${
+                <Badge variant="outline" className={`text-[12px] uppercase font-extrabold tracking-wider ${
                   ['Positive Reply', 'Meeting Booked', 'Deal Won'].includes(account.outreachOutcome)
-                    ? 'text-emerald-700 bg-emerald-50 border-emerald-250'
-                    : 'text-slate-650 bg-slate-100 border-slate-200/80'
+                    ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-250 dark:border-emerald-800/60'
+                    : 'text-slate-650 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700/80'
                 }`}>
                   ✓ Feedback Recorded
                 </Badge>
               ) : (
-                <Badge variant="outline" className="text-[10px] uppercase font-bold text-slate-400 bg-white border-slate-205">
+                <Badge variant="outline" className="text-[12px] uppercase font-bold text-slate-400 bg-white dark:bg-slate-900 border-slate-205">
                   Awaiting Pipeline Outcome
                 </Badge>
               )}
             </div>
             
-            <p className="text-[11px] text-slate-500 font-normal leading-relaxed">
+            <p className="text-[13px] text-slate-500 dark:text-slate-300 font-normal leading-relaxed">
               Record real-world outbound responses. This feedback loop dynamically adapts future scoring weights for related signal profiles and applies cautionary markers to risky account segments.
             </p>
 
             <div className="space-y-3.5 pt-1">
               <div>
-                <label className="text-[10px] font-black uppercase text-slate-450 tracking-wider block mb-1.5 font-mono">Outbound Pipeline Stage</label>
+                <label className="text-[12px] font-black uppercase text-slate-450 tracking-wider block mb-1.5 font-mono">Outbound Pipeline Stage</label>
                 <div className="flex flex-wrap gap-1.5">
                   {(['new', 'viewed', 'contacted'] as const).map((stage) => {
                     const isActive = account.status === stage;
@@ -752,7 +752,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                         className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all capitalize select-none cursor-pointer ${
                           isActive
                             ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
-                            : 'bg-slate-50 text-slate-650 border-slate-250 hover:bg-slate-100'
+                            : 'bg-slate-50 dark:bg-slate-800/50 text-slate-650 dark:text-slate-400 border-slate-250 dark:border-slate-700 hover:bg-slate-100'
                         }`}
                       >
                         {stage}
@@ -764,8 +764,8 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
 
               {/* Show Outreach Outcomes if contacted */}
               {account.status === 'contacted' && (
-                <div className="space-y-2.5 pt-1.5 border-t border-slate-100">
-                  <label className="text-[10px] font-black uppercase text-slate-450 tracking-wider block font-mono">Commercial Outreach Outcome</label>
+                <div className="space-y-2.5 pt-1.5 border-t border-slate-100 dark:border-slate-800">
+                  <label className="text-[12px] font-black uppercase text-slate-450 tracking-wider block font-mono">Commercial Outreach Outcome</label>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     {([
                       { value: 'No Response', label: '📭 No Response' },
@@ -793,12 +793,12 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                               });
                             }
                           }}
-                          className={`px-2.5 py-2.5 rounded-xl border text-[11.5px] font-bold text-left transition-all flex flex-col justify-between cursor-pointer ${
+                          className={`px-2.5 py-2.5 rounded-xl border text-[13px] font-bold text-left transition-all flex flex-col justify-between cursor-pointer ${
                             isActive
                               ? isPositive 
                                 ? 'bg-emerald-600 text-white border-emerald-700 shadow-md ring-1 ring-emerald-250'
                                 : 'bg-slate-800 text-white border-slate-900 shadow-md ring-1 ring-slate-800'
-                              : 'bg-white text-slate-755 border-slate-205 hover:bg-slate-50'
+                              : 'bg-white dark:bg-slate-900 text-slate-755 border-slate-205 hover:bg-slate-50'
                           }`}
                         >
                           <span className="truncate">{outcome.label}</span>
@@ -819,7 +819,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                             toast.success("Outcome cleared safely. Machine learning multipliers readjusted.");
                           }
                         }}
-                        className="text-[10px] text-slate-450 hover:text-slate-650 transition-colors font-bold underline cursor-pointer"
+                        className="text-[12px] text-slate-450 hover:text-slate-650 transition-colors font-bold underline cursor-pointer"
                       >
                         Reset Registered Outcome
                       </button>
@@ -831,10 +831,10 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
             
             {/* Intel summary of dynamic calibration boosts / warnings */}
             {account.outreachOutcome && (
-              <div className="p-3.5 rounded-xl bg-indigo-50/50 border border-indigo-100 text-left space-y-1 text-[11px] leading-relaxed">
-                <span className="font-extrabold uppercase text-[9.5px] text-indigo-750 tracking-wider block mb-1 font-mono">Adaptive AI Recalibration Applied:</span>
+              <div className="p-3.5 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-800/50 text-left space-y-1 text-[13px] leading-relaxed">
+                <span className="font-extrabold uppercase text-[11px] text-indigo-750 tracking-wider block mb-1 font-mono">Adaptive AI Recalibration Applied:</span>
                 {['Positive Reply', 'Meeting Booked', 'Deal Won'].includes(account.outreachOutcome) ? (
-                  <p className="text-emerald-700 font-medium">
+                  <p className="text-emerald-700 dark:text-emerald-300 font-medium">
                     ✓ <strong>Positive Signal Scaling:</strong> Conversion feedback reinforces and dynamically boosts the weights of all underlying triggering signals by up to 30%, increasing prioritize priority for similar future pipeline entries.
                   </p>
                 ) : (
@@ -847,26 +847,26 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
           </section>
 
           {/* Outreach Priority & Timing Analytics */}
-          <section className="space-y-3.5 bg-slate-50/50 p-4 rounded-xl border border-slate-200/60 shadow-xs">
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-indigo-500" />
+          <section className="space-y-3.5 bg-slate-50/50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
+            <h3 className="text-xs font-bold text-slate-500 dark:text-slate-300 uppercase tracking-widest flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
               Prioritization & Outreach Timing Intel
             </h3>
             
             {(() => {
               const info = getAccountPriorityInfo(account);
-              const priorityBg = info.priorityFlag === 'Immediate Action Required' ? 'bg-rose-50 border-rose-200' :
-                                 info.priorityFlag === 'Nurture Queue' ? 'bg-teal-50/50 border-teal-150' : 
-                                 'bg-slate-50 border-slate-150';
+              const priorityBg = info.priorityFlag === 'Immediate Action Required' ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/60' :
+                                 info.priorityFlag === 'Nurture Queue' ? 'bg-teal-50/50 dark:bg-teal-950/40 border-teal-150 dark:border-teal-800/50' : 
+                                 'bg-slate-50 dark:bg-slate-800/50 border-slate-150 dark:border-slate-700';
                                  
-              const flagTextClass = info.priorityFlag === 'Immediate Action Required' ? 'text-rose-700' :
-                                   info.priorityFlag === 'Nurture Queue' ? 'text-teal-700' : 'text-slate-650';
+              const flagTextClass = info.priorityFlag === 'Immediate Action Required' ? 'text-rose-700 dark:text-rose-300' :
+                                   info.priorityFlag === 'Nurture Queue' ? 'text-teal-700 dark:text-teal-300' : 'text-slate-650 dark:text-slate-400';
 
               return (
                 <div className="space-y-3">
                   <div className={`p-3 rounded-lg border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 ${priorityBg}`}>
                     <div>
-                      <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Outreach Target Status</span>
+                      <span className="text-[12px] uppercase font-bold text-slate-400 tracking-wider">Outreach Target Status</span>
                       <div className={`text-xs font-black uppercase mt-0.5 tracking-wide ${flagTextClass}`}>
                         {info.priorityFlag === 'Immediate Action Required' ? '🚨 Immediate Action Required' : 
                          info.priorityFlag === 'Nurture Queue' ? '⏳ Nurture Queue - Build Demand' : 
@@ -874,8 +874,8 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                       </div>
                     </div>
                     <div className="sm:text-right">
-                      <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Outreach Window</span>
-                      <div className="text-xs font-bold text-slate-700 mt-0.5 flex items-center gap-1 sm:justify-end">
+                      <span className="text-[12px] uppercase font-bold text-slate-400 tracking-wider">Outreach Window</span>
+                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300 mt-0.5 flex items-center gap-1 sm:justify-end">
                         <Clock className="w-3.5 h-3.5 text-indigo-505" />
                         {info.outreachWindow}
                       </div>
@@ -883,22 +883,22 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                   </div>
 
                   <div className="grid grid-cols-3 gap-3">
-                    <div className="p-3 bg-white rounded-lg border border-slate-150 text-center">
-                      <div className="text-[9px] uppercase font-bold text-slate-400">ICP Fit Score</div>
-                      <div className="text-lg font-black text-slate-800 font-mono mt-0.5">{info.fitScore}%</div>
+                    <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-150 dark:border-slate-700 text-center">
+                      <div className="text-[11px] uppercase font-bold text-slate-400">ICP Fit Score</div>
+                      <div className="text-lg font-black text-slate-800 dark:text-slate-200 font-mono mt-0.5">{info.fitScore}%</div>
                     </div>
-                    <div className="p-3 bg-white rounded-lg border border-slate-150 text-center">
-                      <div className="text-[9px] uppercase font-bold text-slate-400">Timing Score</div>
-                      <div className="text-lg font-black text-slate-800 font-mono mt-0.5">{info.timingScore}%</div>
+                    <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-150 dark:border-slate-700 text-center">
+                      <div className="text-[11px] uppercase font-bold text-slate-400">Timing Score</div>
+                      <div className="text-lg font-black text-slate-800 dark:text-slate-200 font-mono mt-0.5">{info.timingScore}%</div>
                     </div>
-                    <div className="p-3 bg-white rounded-lg border border-slate-150 text-center">
-                      <div className="text-[9px] uppercase font-bold text-slate-400">Priority Index</div>
-                      <div className="text-lg font-extrabold text-indigo-700 font-mono mt-0.5" title="(Fit + Timing) / 2">{info.priorityIndex}</div>
+                    <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-150 dark:border-slate-700 text-center">
+                      <div className="text-[11px] uppercase font-bold text-slate-400">Priority Index</div>
+                      <div className="text-lg font-extrabold text-indigo-700 dark:text-indigo-300 font-mono mt-0.5" title="(Fit + Timing) / 2">{info.priorityIndex}</div>
                     </div>
                   </div>
 
-                  <div className="text-[11px] leading-relaxed text-slate-500 border-t border-slate-200/50 pt-2 flex items-start gap-1.5 bg-slate-50/20 p-2 rounded">
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
+                  <div className="text-[13px] leading-relaxed text-slate-500 dark:text-slate-300 border-t border-slate-200 dark:border-slate-700/50 pt-2 flex items-start gap-1.5 bg-slate-50/20 dark:bg-slate-800/50 p-2 rounded">
+                    <AlertTriangle className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 shrink-0 mt-0.5" />
                     <span>
                       Priority score of <strong>{info.priorityIndex}/100</strong> indicates an <strong>{info.timingStage}</strong> stage. 
                       {info.priorityFlag === 'Immediate Action Required' 
@@ -914,22 +914,22 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
           </section>
 
           {/* Buying Signals with Live Freshness Tuning */}
-          <section className="space-y-4 bg-slate-50/60 p-5 rounded-2xl border border-slate-200 shadow-2xs">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/60 pb-3">
+          <section className="space-y-4 bg-slate-50/60 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-700/60 pb-3">
               <div className="text-left">
-                <h3 className="text-sm font-black text-slate-800 flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-indigo-500" />
+                <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
                   Signal Freshness tuning & Decay Board
                 </h3>
-                <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
-                  Decay factor: <span className="font-bold text-emerald-650">100% at 0-90 days</span>, linear decay, <span className="font-bold text-red-650">0% at 180+ days</span>.
+                <p className="text-[13px] text-slate-500 dark:text-slate-300 font-medium leading-relaxed">
+                  Decay factor: <span className="font-bold text-emerald-650 dark:text-emerald-300">100% at 0-90 days</span>, linear decay, <span className="font-bold text-red-650 dark:text-red-300">0% at 180+ days</span>.
                 </p>
               </div>
               <div className="shrink-0 text-right">
-                <Badge variant="outline" className={`font-mono text-[10px] font-black tracking-wider uppercase ${
-                  info.freshnessLabel === 'FRESH' ? 'bg-emerald-50 text-emerald-700 border-emerald-200/60' :
-                  info.freshnessLabel === 'AGING' ? 'bg-amber-50 text-amber-700 border-amber-200/60' :
-                  'bg-slate-100 text-slate-700 border-slate-300'
+                <Badge variant="outline" className={`font-mono text-[12px] font-black tracking-wider uppercase ${
+                  info.freshnessLabel === 'FRESH' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-800/60' :
+                  info.freshnessLabel === 'AGING' ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200/60 dark:border-amber-800/60' :
+                  'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700'
                 }`}>
                   {info.freshnessLabel} : {info.freshnessScore}%
                 </Badge>
@@ -938,19 +938,19 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
 
             {/* Recommendations or warnings */}
             {info.reResearchRecommended ? (
-              <div className="p-4 bg-amber-50 border border-amber-205 rounded-xl flex items-start gap-3 shadow-3xs animate-fadeIn text-left">
-                <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5 animate-bounce" />
+              <div className="p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-205 rounded-xl flex items-start gap-3 shadow-3xs animate-fadeIn text-left">
+                <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-300 shrink-0 mt-0.5 animate-bounce" />
                 <div className="space-y-1">
-                  <h4 className="text-xs font-extrabold text-amber-800 uppercase tracking-wide">🔍 RE-RESEARCH STRONGLY RECOMMENDED</h4>
-                  <p className="text-[11px] leading-relaxed text-amber-750 font-bold">
+                  <h4 className="text-xs font-extrabold text-amber-800 dark:text-amber-200 uppercase tracking-wide">🔍 RE-RESEARCH STRONGLY RECOMMENDED</h4>
+                  <p className="text-[13px] leading-relaxed text-amber-750 font-bold">
                     All intent signals for this account are older than 180 days and marked as stale. outreach window holds; do not execute active outbound sequence until intelligence is updated.
                   </p>
                 </div>
               </div>
             ) : info.decayApplied ? (
-              <div className="p-3 bg-indigo-50/40 border border-indigo-100/60 rounded-xl flex items-start gap-2.5 text-left">
-                <Info className="w-4 h-4 text-indigo-500 shrink-0 mt-0.5 animate-pulse" />
-                <p className="text-[11px] leading-normal text-indigo-805 font-medium">
+              <div className="p-3 bg-indigo-50/40 dark:bg-indigo-950/40 border border-indigo-100/60 dark:border-indigo-800/50 rounded-xl flex items-start gap-2.5 text-left">
+                <Info className="w-4 h-4 text-indigo-500 dark:text-indigo-400 shrink-0 mt-0.5 animate-pulse" />
+                <p className="text-[13px] leading-normal text-indigo-805 font-medium">
                   <strong>Score Decay Notice:</strong> Intent signals are rotting with progressive weight penalties. Capture a fresh signal to restore perfect prioritization metrics.
                 </p>
               </div>
@@ -959,50 +959,50 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
             {/* List of signals with sliders */}
             <div className="space-y-4">
               {info.resolvedSignals.map((sig, sIdx) => {
-                let sigBadgeColor = "bg-emerald-50 border-emerald-105 text-emerald-805";
+                let sigBadgeColor = "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-105 text-emerald-805";
                 if (sig.freshnessWeight >= 0.8) {
-                  sigBadgeColor = "bg-emerald-50 border-emerald-100 text-emerald-700";
+                  sigBadgeColor = "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-100 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-300";
                 } else if (sig.freshnessWeight > 0) {
-                  sigBadgeColor = "bg-amber-50 border-amber-100 text-amber-700";
+                  sigBadgeColor = "bg-amber-50 dark:bg-amber-950/40 border-amber-100 dark:border-amber-800/50 text-amber-700 dark:text-amber-300";
                 } else {
-                  sigBadgeColor = "bg-slate-100 border-slate-200 text-slate-500";
+                  sigBadgeColor = "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300";
                 }
 
                 return (
-                  <div key={sig.id || sIdx} className="p-4 bg-white border border-slate-200 rounded-xl hover:shadow-xs transition-all space-y-3">
+                  <div key={sig.id || sIdx} className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl hover:shadow-xs transition-all space-y-3">
                     <div className="flex items-start justify-between gap-3 text-left">
                       <div className="space-y-1 min-w-0 flex-1">
-                        <span className="text-xs font-bold text-slate-800 leading-relaxed block overflow-hidden text-ellipsis">
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-relaxed block overflow-hidden text-ellipsis">
                           {sig.text}
                         </span>
                         {/* Signal Category Badge */}
                         <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                          <span className="px-2 py-0.5 rounded text-[9px] font-extrabold uppercase text-indigo-700 bg-indigo-50 border border-indigo-150">
+                          <span className="px-2 py-0.5 rounded text-[11px] font-extrabold uppercase text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-150 dark:border-indigo-800/50">
                             {sig.categoryLabel}
                           </span>
                           {sig.multiplier > 1.0 ? (
-                            <span className="text-[9px] font-black text-emerald-650 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
+                            <span className="text-[11px] font-black text-emerald-650 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-100 dark:border-emerald-800/50">
                               {sig.multiplier.toFixed(2)}x Calibration Boost
                             </span>
                           ) : sig.multiplier < 1.0 ? (
-                            <span className="text-[9px] font-black text-amber-650 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100">
+                            <span className="text-[11px] font-black text-amber-650 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-100 dark:border-amber-800/50">
                               {sig.multiplier.toFixed(2)}x Runway Penalty
                             </span>
                           ) : (
-                            <span className="text-[9px] font-bold text-slate-500 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-150">
+                            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 px-1.5 py-0.5 rounded border border-slate-150 dark:border-slate-700">
                               1.00x Base Par
                             </span>
                           )}
                         </div>
                       </div>
-                      <span className={`text-[9px] uppercase tracking-wider font-extrabold px-2 py-0.5 rounded border ${sigBadgeColor} shrink-0`}>
+                      <span className={`text-[11px] uppercase tracking-wider font-extrabold px-2 py-0.5 rounded border ${sigBadgeColor} shrink-0`}>
                         {sig.ageDays <= 90 ? 'Fresh (100%)' : sig.ageDays <= 180 ? `Decaying (${Math.round(sig.freshnessWeight*100)}%)` : 'Stale (0%)'}
                       </span>
                     </div>
 
                     {/* Sector norm explanation */}
-                    <div className="text-[10.5px] leading-relaxed text-slate-600 bg-slate-50/80 border border-slate-150 p-3 rounded-lg text-left font-medium">
-                      💡 <strong className="text-slate-800 font-bold uppercase text-[9px] tracking-wide inline-block mr-1">Interpretation:</strong>{sig.sectorRationale}
+                    <div className="text-[12px] leading-relaxed text-slate-600 dark:text-slate-300 bg-slate-50/80 dark:bg-slate-800/50 border border-slate-150 dark:border-slate-700 p-3 rounded-lg text-left font-medium">
+                      💡 <strong className="text-slate-800 dark:text-slate-200 font-bold uppercase text-[11px] tracking-wide inline-block mr-1">Interpretation:</strong>{sig.sectorRationale}
                     </div>
 
                     {/* Signal Citation */}
@@ -1015,13 +1015,13 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                     )}
 
                     <div className="space-y-2">
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-[10px] text-slate-500">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-[12px] text-slate-500 dark:text-slate-300">
                         <span className="flex items-center gap-1 font-semibold">
-                          <Clock className="w-3.5 h-3.5 text-indigo-400" />
-                          Age: <strong className="text-slate-700 font-mono font-bold">{sig.ageDays} days ago</strong>
+                          <Clock className="w-3.5 h-3.5 text-indigo-400 dark:text-indigo-300" />
+                          Age: <strong className="text-slate-700 dark:text-slate-300 font-mono font-bold">{sig.ageDays} days ago</strong>
                         </span>
-                        <span className="font-mono text-[9px]">
-                          calibrated: <strong className="text-indigo-600 font-extrabold">{Math.round(sig.freshnessWeight * 100)}% fresh</strong> × <strong className="text-slate-600 font-extrabold">{sig.multiplier.toFixed(2)}x sector weight</strong> = <strong className="text-indigo-650 font-black">{Math.round(sig.calibratedWeight * 100)}% intent</strong>
+                        <span className="font-mono text-[11px]">
+                          calibrated: <strong className="text-indigo-600 dark:text-indigo-300 font-extrabold">{Math.round(sig.freshnessWeight * 100)}% fresh</strong> × <strong className="text-slate-600 dark:text-slate-300 font-extrabold">{sig.multiplier.toFixed(2)}x sector weight</strong> = <strong className="text-indigo-650 dark:text-indigo-300 font-black">{Math.round(sig.calibratedWeight * 100)}% intent</strong>
                         </span>
                       </div>
                       <input 
@@ -1044,7 +1044,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                             });
                           }
                         }}
-                        className="w-full h-1 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                        className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-600"
                         id={`sig-slider-${sig.id || sIdx}`}
                       />
                     </div>
@@ -1054,13 +1054,13 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
             </div>
 
             {/* Add New Detected Signal Form */}
-            <div className="border-t border-slate-200/80 pt-4 space-y-3 text-left">
+            <div className="border-t border-slate-200 dark:border-slate-700/80 pt-4 space-y-3 text-left">
               <div>
-                <span className="text-[10px] uppercase font-bold text-slate-450 tracking-wider flex items-center gap-1">
+                <span className="text-[12px] uppercase font-bold text-slate-450 tracking-wider flex items-center gap-1">
                   <Sparkles className="w-3.5 h-3.5 text-indigo-505 animate-pulse" />
                   Monitor/Detect Live Buying Signal
                 </span>
-                <p className="text-[10.5px] text-slate-500 mt-0.5">Capture real-time intent events in the environment. Triggers automatic, instant recalculations of the account index scores.</p>
+                <p className="text-[12px] text-slate-500 dark:text-slate-300 mt-0.5">Capture real-time intent events in the environment. Triggers automatic, instant recalculations of the account index scores.</p>
               </div>
 
               <div className="flex flex-col sm:flex-row gap-2">
@@ -1068,7 +1068,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                   type="text"
                   placeholder="e.g., Appointed BIM lead or added Revit tech stack intent"
                   id="new-signal-text-input"
-                  className="flex-1 px-3 py-2 text-xs bg-white border border-slate-205 rounded-xl h-9 outline-none focus:border-indigo-500 placeholder:text-slate-400 font-medium"
+                  className="flex-1 px-3 py-2 text-xs bg-white dark:bg-slate-900 border border-slate-205 rounded-xl h-9 outline-none focus:border-indigo-500 placeholder:text-slate-400 font-medium"
                 />
                 <Button
                   size="sm"
@@ -1100,7 +1100,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                       if (inputEl) inputEl.value = '';
                     }
                   }}
-                  className="px-3 bg-indigo-600 text-white hover:bg-indigo-700 h-9 font-extrabold text-[11px] shrink-0"
+                  className="px-3 bg-indigo-600 text-white hover:bg-indigo-700 h-9 font-extrabold text-[13px] shrink-0"
                 >
                   📡 Detect Signal
                 </Button>
@@ -1108,7 +1108,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
 
               {/* Presets Row */}
               <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                <span className="text-[9px] text-slate-400 font-bold uppercase">Simulate Live Feed:</span>
+                <span className="text-[11px] text-slate-400 font-bold uppercase">Simulate Live Feed:</span>
                 <button
                   onClick={() => {
                     const presets = [
@@ -1137,7 +1137,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                       });
                     }
                   }}
-                  className="px-2.5 py-1.5 rounded-lg bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 text-[10px] text-indigo-705 font-black cursor-pointer transition-colors"
+                  className="px-2.5 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-800/50 hover:bg-indigo-100 text-[12px] text-indigo-705 font-black cursor-pointer transition-colors"
                 >
                   ⚡ Simulate Incoming Intent Event (New 0d)
                 </button>
@@ -1157,7 +1157,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
             <TabsContent value="outreach" className="space-y-6">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                     <Mail className="w-4 h-4" />
                     Personalized Email Angle
                   </h4>
@@ -1171,14 +1171,14 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                     Copy Hook
                   </Button>
                 </div>
-                <div className="p-4 rounded-xl bg-indigo-50/50 border border-indigo-100 text-slate-800 text-sm italic">
+                <div className="p-4 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-800/50 text-slate-800 dark:text-slate-200 text-sm italic">
                   "{analysis?.outreachStrategy?.emailHook || 'No email angle generated yet. Click \"Research with AI\" to generate insights.'}"
                 </div>
               </div>
 
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                  <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                     <Linkedin className="w-4 h-4" />
                     LinkedIn Hook
                   </h4>
@@ -1192,7 +1192,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                     Copy Message
                   </Button>
                 </div>
-                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-slate-800 text-sm">
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 text-sm">
                   {analysis?.outreachStrategy?.linkedinMessage || 'No LinkedIn angle generated yet.'}
                 </div>
               </div>
@@ -1200,10 +1200,10 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
 
             <TabsContent value="personas" className="space-y-4">
                {!analysis?.buyerPersonas || analysis.buyerPersonas.length === 0 ? (
-                 <div className="p-8 text-center border border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+                 <div className="p-8 text-center border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl bg-slate-50/50 dark:bg-slate-800/50">
                    <Users className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                   <p className="text-xs font-bold text-slate-600">No Personas Mapped Yet</p>
-                   <p className="text-[11px] text-slate-400 mt-1 max-w-sm mx-auto leading-normal">
+                   <p className="text-xs font-bold text-slate-600 dark:text-slate-300">No Personas Mapped Yet</p>
+                   <p className="text-[13px] text-slate-400 mt-1 max-w-sm mx-auto leading-normal">
                      Activate the GTM research engine to discover technical champions, decision-makers, core pain points, and specific value messaging.
                    </p>
                  </div>
@@ -1211,7 +1211,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                  analysis.buyerPersonas.map((persona, idx) => {
                    const stDetails = getInferredStakeholderDetails(persona.role, account.name);
                    return (
-                     <div key={idx} className="p-5 rounded-xl border border-slate-150 bg-white space-y-4 shadow-sm text-left">
+                     <div key={idx} className="p-5 rounded-xl border border-slate-150 dark:border-slate-700 bg-white dark:bg-slate-900 space-y-4 shadow-sm text-left">
                         <SourceCitation 
                           citation={persona.citation || {
                             sourceTier: 'Tertiary',
@@ -1225,70 +1225,70 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                        
                        {/* Interactive Stakeholder LinkedIn Info Box */}
                        <div className="space-y-3">
-                         <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block font-mono">
+                         <div className="text-[12px] font-bold text-slate-400 uppercase tracking-widest block font-mono">
                            Identified Account Contact (LinkedIn Synced)
                          </div>
                          <StakeholderLinkedinCard role={persona.role} company={account.name} />
                          
                          {/* Simulated Live Activity Widget */}
-                         <div className="p-3 bg-blue-50/25 border border-blue-100 rounded-xl space-y-2 font-sans text-xs">
-                           <div className="flex items-center justify-between text-[10px] text-blue-800 font-extrabold uppercase tracking-wider">
+                         <div className="p-3 bg-blue-50/25 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-800/50 rounded-xl space-y-2 font-sans text-xs">
+                           <div className="flex items-center justify-between text-[12px] text-blue-800 dark:text-blue-200 font-extrabold uppercase tracking-wider">
                              <span className="flex items-center gap-1.5 leading-none">
                                <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" />
                                LinkedIn Live Signal Feed
                              </span>
-                             <span className="font-mono text-[9px] text-slate-400 font-bold">{stDetails.recentPost.timeAgo}</span>
+                             <span className="font-mono text-[11px] text-slate-400 font-bold">{stDetails.recentPost.timeAgo}</span>
                            </div>
-                           <p className="text-slate-650 italic leading-relaxed">
+                           <p className="text-slate-650 dark:text-slate-400 italic leading-relaxed">
                              "{stDetails.recentPost.text}"
                            </p>
-                           <div className="text-[10px] text-slate-400 font-bold font-mono">
+                           <div className="text-[12px] text-slate-400 font-bold font-mono">
                              👍 {stDetails.recentPost.likeCount} Likes/Comments • Monitored via Social Listening
                            </div>
                          </div>
                        </div>
 
-                       <div className="space-y-2 pt-2 border-t border-slate-100">
-                         <div className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">Potential Pain Points</div>
+                       <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                         <div className="text-[13px] text-slate-400 font-bold uppercase tracking-wider">Potential Pain Points</div>
                          <div className="flex flex-wrap gap-2">
                            {persona.painPoints.map((pain, pIdx) => (
-                             <span key={pIdx} className="px-2 py-1 rounded bg-red-50 text-red-700 text-xs font-medium">
+                             <span key={pIdx} className="px-2 py-1 rounded bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 text-xs font-medium">
                                {pain}
                              </span>
                            ))}
                          </div>
                        </div>
                        <div className="pt-2">
-                         <div className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mb-1">Value Angle</div>
-                         <p className="text-xs text-slate-600 leading-relaxed mb-3">{persona.valueAngle}</p>
+                         <div className="text-[13px] text-slate-400 font-bold uppercase tracking-wider mb-1">Value Angle</div>
+                         <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mb-3">{persona.valueAngle}</p>
                        </div>
 
                        {/* Anticipated Objections & Pre-emptive Counter Narratives */}
-                       <div className="pt-3.5 border-t border-slate-200/65">
-                         <div className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
-                           <ShieldCheck className="w-4 h-4 text-indigo-500 font-sans" />
+                       <div className="pt-3.5 border-t border-slate-200 dark:border-slate-700/65">
+                         <div className="text-[13px] text-slate-400 font-bold uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                           <ShieldCheck className="w-4 h-4 text-indigo-500 dark:text-indigo-400 font-sans" />
                            <span>Pre-emptive Counter-Narratives & Objection Handling</span>
                          </div>
                          {!persona.counterNarratives || persona.counterNarratives.length === 0 ? (
-                           <p className="text-[11px] text-slate-400/80 italic">No custom counter-narratives mapped for this persona yet. Re-run research to populate.</p>
+                           <p className="text-[13px] text-slate-400/80 italic">No custom counter-narratives mapped for this persona yet. Re-run research to populate.</p>
                          ) : (
                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-1.5">
                              {persona.counterNarratives.map((cn, cnIdx) => (
-                               <div key={cnIdx} className="p-3.5 rounded-xl bg-gradient-to-br from-indigo-50/20 to-slate-50 border border-indigo-100 space-y-2.5 text-left shadow-2xs">
-                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-indigo-100/50 pb-1.5 font-sans">
-                                   <span className="text-[10px] font-extrabold text-slate-800 uppercase tracking-wide bg-slate-150 px-2 py-0.5 rounded border border-slate-200">
+                               <div key={cnIdx} className="p-3.5 rounded-xl bg-gradient-to-br from-indigo-50/20 to-slate-50 border border-indigo-100 dark:border-indigo-800/50 space-y-2.5 text-left shadow-2xs">
+                                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-indigo-100/50 dark:border-indigo-800/50 pb-1.5 font-sans">
+                                   <span className="text-[12px] font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-wide bg-slate-150 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
                                      🚨 {cn.objection}
                                    </span>
-                                   <span className="text-[9px] font-extrabold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-150 font-mono self-start sm:self-auto">
+                                   <span className="text-[11px] font-extrabold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded border border-indigo-150 dark:border-indigo-800/50 font-mono self-start sm:self-auto">
                                      ⏱ {cn.suggestedMoment}
                                    </span>
                                  </div>
-                                 <div className="text-xs text-slate-700 leading-relaxed pt-0.5">
-                                   <strong className="text-indigo-950 font-black block text-[10.5px] mb-0.5 uppercase tracking-wide font-sans">Reframing message:</strong>
+                                 <div className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed pt-0.5">
+                                   <strong className="text-indigo-950 font-black block text-[12px] mb-0.5 uppercase tracking-wide font-sans">Reframing message:</strong>
                                    <span className="italic font-sans">"{cn.reframingMessage}"</span>
                                  </div>
-                                 <div className="text-[11px] text-slate-600 bg-white border border-slate-150 p-2.5 rounded-lg leading-relaxed font-sans">
-                                   <strong className="text-emerald-700 font-bold block text-[10px] mb-0.5 uppercase tracking-wider">💡 Grounded Proof Point:</strong>
+                                 <div className="text-[13px] text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-700 p-2.5 rounded-lg leading-relaxed font-sans">
+                                   <strong className="text-emerald-700 dark:text-emerald-300 font-bold block text-[12px] mb-0.5 uppercase tracking-wider">💡 Grounded Proof Point:</strong>
                                    {cn.proofPoint}
                                  </div>
                                </div>
@@ -1315,40 +1315,40 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                 return (
                   <div className="space-y-6 animate-in fade-in duration-200">
                     {/* Header Card */}
-                    <div className="bg-gradient-to-r from-indigo-50/70 to-blue-50/30 border border-indigo-100 p-4 rounded-xl space-y-2.5">
+                    <div className="bg-gradient-to-r from-indigo-50/70 to-blue-50/30 border border-indigo-100 dark:border-indigo-800/50 p-4 rounded-xl space-y-2.5">
                       <div className="flex items-center gap-2">
-                        <Network className="w-5 h-5 text-indigo-600 animate-pulse" />
+                        <Network className="w-5 h-5 text-indigo-600 dark:text-indigo-300 animate-pulse" />
                         <h4 className="text-xs font-bold text-slate-905 uppercase tracking-wider">
                           Coordinated Multi-Threading Stakeholder Engagement Map
                         </h4>
                       </div>
-                      <p className="text-[11px] text-slate-600 leading-relaxed">
+                      <p className="text-[13px] text-slate-600 dark:text-slate-300 leading-relaxed">
                         {threading.sequencedMapDescription}
                       </p>
                     </div>
 
                     {/* Timeline Steps layout */}
                     <div className="space-y-4">
-                      <div className="text-[10px] font-extrabold text-slate-400 uppercase tracking-widest pl-1">
+                      <div className="text-[12px] font-extrabold text-slate-400 uppercase tracking-widest pl-1">
                         Threading Sequencing Timeline
                       </div>
                       
-                      <div className="relative pl-5 border-l border-dashed border-slate-200 ml-3.5 space-y-6">
+                      <div className="relative pl-5 border-l border-dashed border-slate-200 dark:border-slate-700 ml-3.5 space-y-6">
                         {steps.map((step, idx) => {
-                          let badgeBg = 'bg-indigo-50 text-indigo-750 border-indigo-100';
+                          let badgeBg = 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-750 border-indigo-100 dark:border-indigo-800/50';
                           let pinBg = 'bg-indigo-650';
                           let borderHover = 'hover:border-indigo-300';
                           
                           if (idx === 1) {
-                            badgeBg = 'bg-teal-50 text-teal-750 border-teal-100';
+                            badgeBg = 'bg-teal-50 dark:bg-teal-950/40 text-teal-750 border-teal-100 dark:border-teal-800/50';
                             pinBg = 'bg-teal-650';
                             borderHover = 'hover:border-teal-300';
                           } else if (idx === 2) {
-                            badgeBg = 'bg-emerald-50 text-emerald-750 border-emerald-100';
+                            badgeBg = 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-750 border-emerald-100 dark:border-emerald-800/50';
                             pinBg = 'bg-emerald-650';
                             borderHover = 'hover:border-emerald-300';
                           } else if (idx === 3) {
-                            badgeBg = 'bg-purple-50 text-purple-750 border-purple-100';
+                            badgeBg = 'bg-purple-50 dark:bg-purple-950/40 text-purple-750 border-purple-100 dark:border-purple-800/50';
                             pinBg = 'bg-purple-650';
                             borderHover = 'hover:border-purple-300';
                           }
@@ -1364,21 +1364,21 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                               </div>
 
                               {/* Content Panel */}
-                              <div className={`bg-white border border-slate-150 p-4 rounded-xl shadow-xs space-y-3 transition-all ${borderHover}`}>
-                                <div className="border-b border-slate-100 pb-2.5 space-y-2">
+                              <div className={`bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-700 p-4 rounded-xl shadow-xs space-y-3 transition-all ${borderHover}`}>
+                                <div className="border-b border-slate-100 dark:border-slate-800 pb-2.5 space-y-2">
                                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                                     <div className="flex items-center gap-2 flex-wrap text-left">
-                                      <span className={`px-2 py-0.5 rounded text-[9px] font-bold border font-mono ${badgeBg} shrink-0`}>
+                                      <span className={`px-2 py-0.5 rounded text-[11px] font-bold border font-mono ${badgeBg} shrink-0`}>
                                         {step.node.timing}
                                       </span>
-                                      <span className="text-sm font-black text-slate-800 leading-tight">
+                                      <span className="text-sm font-black text-slate-800 dark:text-slate-200 leading-tight">
                                         {step.node.role}
                                       </span>
                                     </div>
                                     
                                     {/* Render standard short-form strategic roles inline */}
                                     {step.node.strategicRole && step.node.strategicRole.length <= 25 && (
-                                      <Badge variant="secondary" className="text-[9px] font-bold tracking-wider px-2 py-0.5 uppercase bg-slate-50 text-slate-500 border border-slate-200 shrink-0 whitespace-nowrap self-start sm:self-auto">
+                                      <Badge variant="secondary" className="text-[11px] font-bold tracking-wider px-2 py-0.5 uppercase bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shrink-0 whitespace-nowrap self-start sm:self-auto">
                                         {step.node.strategicRole}
                                       </Badge>
                                     )}
@@ -1386,8 +1386,8 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
 
                                   {/* If strategicRole is a descriptive sentence, display it prominently on its own line beneath as an imperative callout */}
                                   {step.node.strategicRole && step.node.strategicRole.length > 25 && (
-                                    <div className="text-[10.5px] leading-relaxed text-slate-600 bg-slate-50 border border-slate-150 rounded-lg p-2.5 text-left">
-                                      <strong className="text-indigo-650 uppercase font-black text-[9px] font-mono block mb-1 tracking-wider leading-none">
+                                    <div className="text-[12px] leading-relaxed text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 border border-slate-150 dark:border-slate-700 rounded-lg p-2.5 text-left">
+                                      <strong className="text-indigo-650 dark:text-indigo-300 uppercase font-black text-[11px] font-mono block mb-1 tracking-wider leading-none">
                                         Strategic Target Principle:
                                       </strong>
                                       {step.node.strategicRole}
@@ -1402,19 +1402,19 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs pt-1">
                                   <div className="space-y-1">
-                                    <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">
+                                    <div className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">
                                       Messaging Angle & Value Focus
                                     </div>
-                                    <p className="text-slate-650 leading-relaxed text-[11px]">
+                                    <p className="text-slate-650 dark:text-slate-400 leading-relaxed text-[13px]">
                                       {step.node.messagingFocus}
                                     </p>
                                   </div>
-                                  <div className="space-y-1.5 bg-slate-50/50 p-3 rounded-lg border border-slate-100/80 w-full">
-                                    <div className="text-[9px] uppercase font-bold text-indigo-600 tracking-wider flex items-center gap-1.5">
-                                      <GitBranch className="w-3.5 h-3.5 text-indigo-500 animate-bounce" />
+                                  <div className="space-y-1.5 bg-slate-50/50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-800/80 w-full">
+                                    <div className="text-[11px] uppercase font-bold text-indigo-600 dark:text-indigo-300 tracking-wider flex items-center gap-1.5">
+                                      <GitBranch className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400 animate-bounce" />
                                       Tactical Outreach Hook
                                     </div>
-                                    <p className="text-slate-700 font-medium leading-relaxed text-[11px]">
+                                    <p className="text-slate-700 dark:text-slate-300 font-medium leading-relaxed text-[13px]">
                                       {step.node.tacticalTactic}
                                     </p>
                                   </div>
@@ -1427,17 +1427,17 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                     </div>
 
                     {/* Safe Coordination / Conflict Prevention Box */}
-                    <div className="bg-amber-50/30 border border-amber-200/50 p-4 rounded-xl space-y-3 shadow-2xs">
-                      <div className="flex items-center gap-2 text-amber-800">
-                        <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
+                    <div className="bg-amber-50/30 dark:bg-amber-950/40 border border-amber-200/50 dark:border-amber-800/60 p-4 rounded-xl space-y-3 shadow-2xs">
+                      <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200">
+                        <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-300 shrink-0" />
                         <span className="text-xs font-extrabold uppercase tracking-wider">
                           Outreach Sequence Collision Prevention Protocols
                         </span>
                       </div>
-                      <p className="text-[11px] leading-relaxed text-slate-600 font-sans">
+                      <p className="text-[13px] leading-relaxed text-slate-600 dark:text-slate-300 font-sans">
                         Simultaneous or uncoordinated outreach risks cross-contaminating dialogue standards. Align your outreach builders using these automated sequence limits:
                       </p>
-                      <ul className="space-y-2 pl-4 list-disc text-[11px] text-slate-600 font-medium font-sans">
+                      <ul className="space-y-2 pl-4 list-disc text-[13px] text-slate-600 dark:text-slate-300 font-medium font-sans">
                         {threading.coordinationRules.map((rule, idx) => (
                           <li key={idx} className="marker:text-amber-500/70">
                             <strong>Co-ordination Guideline {idx + 1}:</strong> {rule}
@@ -1451,36 +1451,36 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
             </TabsContent>
 
             <TabsContent value="tech" className="space-y-4">
-              <div className="flex items-center gap-2 text-amber-600 bg-amber-50 p-4 rounded-xl border border-amber-100">
+              <div className="flex items-center gap-2 text-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 p-4 rounded-xl border border-amber-100 dark:border-amber-800/50">
                 <Info className="w-4 h-4 shrink-0" />
                 <p className="text-xs font-medium">Verified using latest public signals (LinkedIn, Crunchbase, BuiltWith).</p>
               </div>
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Hiring Status</div>
-                    <div className="text-sm font-bold text-emerald-600">Active - Sales & Ops</div>
+                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                    <div className="text-[12px] font-bold text-slate-400 uppercase tracking-widest mb-1">Hiring Status</div>
+                    <div className="text-sm font-bold text-emerald-600 dark:text-emerald-300">Active - Sales & Ops</div>
                   </div>
-                  <div className="p-4 rounded-xl bg-slate-50 border border-slate-100">
-                    <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Recent Funding</div>
-                    <div className="text-sm font-bold text-slate-900">Series B ($22M)</div>
+                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
+                    <div className="text-[12px] font-bold text-slate-400 uppercase tracking-widest mb-1">Recent Funding</div>
+                    <div className="text-sm font-bold text-slate-900 dark:text-slate-100">Series B ($22M)</div>
                   </div>
                 </div>
               </div>
             </TabsContent>
 
             <TabsContent value="competitive" className="space-y-4 animate-in fade-in duration-200">
-              <div className="flex items-center gap-2 text-indigo-750 bg-indigo-50/75 p-3.5 rounded-xl border border-indigo-100/70 shadow-2xs">
-                <Lightbulb className="w-4 h-4 text-indigo-500 shrink-0" />
-                <p className="text-[11px] font-medium leading-normal text-indigo-900">
+              <div className="flex items-center gap-2 text-indigo-750 bg-indigo-50/75 dark:bg-indigo-950/40 p-3.5 rounded-xl border border-indigo-100/70 dark:border-indigo-800/50 shadow-2xs">
+                <Lightbulb className="w-4 h-4 text-indigo-500 dark:text-indigo-400 shrink-0" />
+                <p className="text-[13px] font-medium leading-normal text-indigo-900 dark:text-indigo-200">
                   Competitive signals inferred from job boards, website tag stacks, review channels, and case study indicators.
                 </p>
               </div>
 
               {!analysis?.competitors || analysis.competitors.length === 0 ? (
                 <div className="space-y-4">
-                  <div className="p-3.5 rounded-xl border border-dashed border-slate-200 text-center space-y-2 bg-slate-50/30">
-                    <p className="text-[11px] text-slate-500 leading-normal font-medium">
+                  <div className="p-3.5 rounded-xl border border-dashed border-slate-200 dark:border-slate-700 text-center space-y-2 bg-slate-50/30 dark:bg-slate-800/50">
+                    <p className="text-[13px] text-slate-500 dark:text-slate-300 leading-normal font-medium">
                       Real-time competitive landscape analyzer active on deep review level. Below is our inferred incumbent intelligence:
                     </p>
                   </div>
@@ -1500,7 +1500,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
         </div>
       </div>
       
-      <div className="p-6 border-t border-slate-100 bg-slate-50/50">
+      <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
         <Button className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-lg shadow-indigo-200">
           Sync to CRM (Salesforce/Hubspot)
         </Button>
@@ -1513,60 +1513,60 @@ function CompetitorCard({ comp }: { comp: any; key?: any }) {
   const getDisplacementColor = (val: string) => {
     switch (val?.toLowerCase()) {
       case 'high': 
-        return 'bg-emerald-50 text-emerald-800 border-emerald-200';
+        return 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-800/60';
       case 'medium': 
-        return 'bg-amber-50 text-amber-800 border-amber-200';
+        return 'bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 border-amber-200 dark:border-amber-800/60';
       default: 
-        return 'bg-slate-50 text-slate-700 border-slate-200';
+        return 'bg-slate-50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700';
     }
   };
 
   const getLikelihoodColor = (val: string) => {
     switch (val?.toLowerCase()) {
       case 'high': 
-        return 'text-emerald-700 font-bold';
+        return 'text-emerald-700 dark:text-emerald-300 font-bold';
       case 'medium': 
-        return 'text-amber-700 font-bold';
+        return 'text-amber-700 dark:text-amber-300 font-bold';
       default: 
-        return 'text-slate-500 font-medium';
+        return 'text-slate-500 dark:text-slate-300 font-medium';
     }
   };
 
   return (
-    <div className="p-4 rounded-xl border border-slate-200/65 bg-white space-y-3.5 shadow-sm">
+    <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700/65 bg-white dark:bg-slate-900 space-y-3.5 shadow-sm">
       <div className="flex items-start justify-between">
         <div>
-          <h4 className="text-sm font-bold text-slate-800 flex flex-wrap items-center gap-1.5 leading-tight">
+          <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200 flex flex-wrap items-center gap-1.5 leading-tight">
             <span>{comp.name}</span>
-            <span className="text-[10px] font-medium text-slate-400">({comp.category})</span>
+            <span className="text-[12px] font-medium text-slate-400">({comp.category})</span>
           </h4>
-          <p className="text-[10.5px] text-slate-400 mt-1 font-medium leading-normal">
-            Inferred Signal: <span className="text-slate-650 font-normal italic">"{comp.inferredSource}"</span>
+          <p className="text-[12px] text-slate-400 mt-1 font-medium leading-normal">
+            Inferred Signal: <span className="text-slate-650 dark:text-slate-400 font-normal italic">"{comp.inferredSource}"</span>
           </p>
         </div>
-        <Badge variant="outline" className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${getDisplacementColor(comp.displacementPotential)} shrink-0`}>
+        <Badge variant="outline" className={`text-[12px] font-semibold px-2 py-0.5 rounded-md ${getDisplacementColor(comp.displacementPotential)} shrink-0`}>
           Displacement: {comp.displacementPotential}
         </Badge>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 bg-slate-50/70 p-2.5 rounded-lg border border-slate-100">
+      <div className="grid grid-cols-2 gap-3 bg-slate-50/70 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800">
         <div>
-          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Switch Likelihood</span>
-          <span className={`text-[11px] leading-tight ${getLikelihoodColor(comp.switchingLikelihood)}`}>
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Switch Likelihood</span>
+          <span className={`text-[13px] leading-tight ${getLikelihoodColor(comp.switchingLikelihood)}`}>
             {comp.switchingLikelihood}
           </span>
         </div>
         <div>
-          <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Timing Sensitivity</span>
-          <span className="text-[11px] font-semibold text-slate-700 leading-tight">
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Timing Sensitivity</span>
+          <span className="text-[13px] font-semibold text-slate-700 dark:text-slate-300 leading-tight">
             {comp.timingSensitivity}
           </span>
         </div>
       </div>
 
-      <div className="bg-slate-50/20 p-2.5 rounded-lg border border-slate-100">
-        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Competitive Positioning Pitch</span>
-        <p className="text-[11.5px] text-slate-700 leading-relaxed font-normal">
+      <div className="bg-slate-50/20 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800">
+        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Competitive Positioning Pitch</span>
+        <p className="text-[13px] text-slate-700 dark:text-slate-300 leading-relaxed font-normal">
           {comp.competitivePositioningAngle}
         </p>
       </div>

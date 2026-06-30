@@ -10,6 +10,7 @@ import { SavedReportsLibrary } from './components/SavedReportsLibrary';
 import { BusinessAnalysis, TargetAccount, DetailedAnalysis } from './types';
 import { Toaster, toast } from 'sonner';
 import { Rocket, Globe, FileText } from 'lucide-react';
+import { ThemeToggle } from './components/ThemeToggle';
 
 export default function App() {
   const [analysis, setAnalysis] = useState<BusinessAnalysis | null>(() => {
@@ -250,54 +251,57 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen text-slate-900 bg-linear-to-b from-slate-50 to-slate-100 font-sans selection:bg-indigo-100 selection:text-indigo-900 flex flex-col justify-start">
+    <div className="min-h-screen text-slate-900 dark:text-slate-100 bg-linear-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-900 dark:selection:bg-indigo-900 dark:selection:text-indigo-100 flex flex-col justify-start">
       <Toaster position="top-center" expand={true} richColors />
       
       {/* Dynamic Navigation Header for Workspace Landing Screen */}
       {!analysis && (
-        <header className="w-full bg-white/80 backdrop-blur-md border-b border-slate-200/80 sticky top-0 z-40 transition-all shadow-2xs">
+        <header className="w-full bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-700/80 sticky top-0 z-40 transition-all shadow-2xs">
           <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="p-2 rounded-xl bg-indigo-600 text-white shadow-xs">
                 <Rocket className="w-4 h-4" />
               </div>
-              <span 
-                className="font-extrabold text-sm md:text-base tracking-tight text-slate-900 hover:opacity-90 cursor-pointer select-none" 
+              <span
+                className="font-extrabold text-sm md:text-base tracking-tight text-slate-900 dark:text-slate-100 hover:opacity-90 cursor-pointer select-none"
                 onClick={() => setActiveLandingTab('analyze')}
               >
                 AI Market Pulse
               </span>
             </div>
-            
-            <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl border border-slate-200/60 shadow-inner">
-              <button
-                onClick={() => setActiveLandingTab('analyze')}
-                className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
-                  activeLandingTab === 'analyze'
-                    ? 'bg-white text-indigo-700 shadow-3xs'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <Globe className="w-3.5 h-3.5" />
-                <span>Analyze Website</span>
-              </button>
-              
-              <button
-                onClick={() => setActiveLandingTab('saved-library')}
-                className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer relative ${
-                  activeLandingTab === 'saved-library'
-                    ? 'bg-white text-indigo-700 shadow-3xs'
-                    : 'text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <FileText className="w-3.5 h-3.5" />
-                <span>Saved Reports</span>
-                {savedReports.length > 0 && (
-                  <span className="absolute -top-1.5 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-indigo-600 text-[9px] font-bold text-white leading-none scale-90 border border-white font-mono">
-                    {savedReports.length}
-                  </span>
-                )}
-              </button>
+
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200/60 dark:border-slate-700/60 shadow-inner">
+                <button
+                  onClick={() => setActiveLandingTab('analyze')}
+                  className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                    activeLandingTab === 'analyze'
+                      ? 'bg-white dark:bg-slate-900 dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-3xs'
+                      : 'text-slate-500 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  <span>Analyze Website</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveLandingTab('saved-library')}
+                  className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer relative ${
+                    activeLandingTab === 'saved-library'
+                      ? 'bg-white dark:bg-slate-900 dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-3xs'
+                      : 'text-slate-500 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Saved Reports</span>
+                  {savedReports.length > 0 && (
+                    <span className="absolute -top-1.5 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-indigo-600 text-[11px] font-bold text-white leading-none scale-90 border border-white dark:border-slate-900 font-mono">
+                      {savedReports.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+              <ThemeToggle />
             </div>
           </div>
         </header>

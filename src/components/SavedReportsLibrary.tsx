@@ -145,18 +145,18 @@ export function SavedReportsLibrary({
     <div className="w-full max-w-6xl mx-auto px-4 py-8 space-y-8 font-sans">
       
       {/* Top Welcome Panel */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200 pb-6">
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-200 dark:border-slate-700 pb-6">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
-            <span className="p-1.5 rounded-lg bg-indigo-50 text-indigo-600 block">
+            <span className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 block">
               <Layers className="w-5 h-5 animate-pulse" />
             </span>
             <span className="text-xs font-bold tracking-wider uppercase text-slate-400 font-mono">WORKSPACE INTEL</span>
           </div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight font-sans">
+          <h1 className="text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-sans">
             Saved Reports & Market Scopes
           </h1>
-          <p className="text-sm text-slate-500 font-medium">
+          <p className="text-sm text-slate-500 dark:text-slate-300 font-medium">
             Access your previously generated target accounts, custom ideal customer profiles, and outbound pipelines.
           </p>
         </div>
@@ -165,7 +165,7 @@ export function SavedReportsLibrary({
           <Button
             variant="outline"
             onClick={onNavigateToAnalyze}
-            className="text-xs font-bold gap-1.5 h-10 border-slate-200 shadow-3xs cursor-pointer text-slate-600 hover:bg-slate-50 transition-all rounded-xl"
+            className="text-xs font-bold gap-1.5 h-10 border-slate-200 dark:border-slate-700 shadow-3xs cursor-pointer text-slate-600 dark:text-slate-300 hover:bg-slate-50 transition-all rounded-xl"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
             <span>Go to Website Analyzer</span>
@@ -181,14 +181,14 @@ export function SavedReportsLibrary({
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.05 }}
-              className="bg-white border border-slate-200 p-5 rounded-2xl shadow-3xs flex items-center gap-4"
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-5 rounded-2xl shadow-3xs flex items-center gap-4"
             >
-              <div className="p-3 rounded-xl bg-indigo-50 text-indigo-600">
+              <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300">
                 <FileText className="w-6 h-6" />
               </div>
               <div>
                 <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Saved Reports</span>
-                <span className="text-2xl font-black text-slate-900 font-mono">{totalReportsCount}</span>
+                <span className="text-2xl font-black text-slate-900 dark:text-slate-100 font-mono">{totalReportsCount}</span>
               </div>
             </motion.div>
 
@@ -196,14 +196,14 @@ export function SavedReportsLibrary({
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1 }}
-              className="bg-white border border-slate-200 p-5 rounded-2xl shadow-3xs flex items-center gap-4"
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-5 rounded-2xl shadow-3xs flex items-center gap-4"
             >
-              <div className="p-3 rounded-xl bg-emerald-50 text-emerald-600">
+              <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300">
                 <ShieldCheck className="w-6 h-6" />
               </div>
               <div>
                 <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Total Leads Mapped</span>
-                <span className="text-2xl font-black text-slate-900 font-mono">{totalAccountsDiscovered}</span>
+                <span className="text-2xl font-black text-slate-900 dark:text-slate-100 font-mono">{totalAccountsDiscovered}</span>
               </div>
             </motion.div>
 
@@ -211,20 +211,20 @@ export function SavedReportsLibrary({
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.15 }}
-              className="bg-white border border-slate-200 p-5 rounded-2xl shadow-3xs flex items-center gap-4"
+              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-5 rounded-2xl shadow-3xs flex items-center gap-4"
             >
-              <div className="p-3 rounded-xl bg-amber-50 text-amber-600">
+              <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-300">
                 <TrendingUp className="w-6 h-6" />
               </div>
               <div>
                 <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Latest Activity</span>
-                <span className="text-sm font-bold text-slate-700 truncate block max-w-[180px]">{latestReportDate}</span>
+                <span className="text-sm font-bold text-slate-700 dark:text-slate-300 truncate block max-w-[180px]">{latestReportDate}</span>
               </div>
             </motion.div>
           </div>
 
           {/* Search bar & Filter Header with Grid/List View Switchers */}
-          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between bg-slate-50 p-4 border border-slate-200/60 rounded-xl font-sans">
+          <div className="flex flex-col sm:flex-row gap-4 items-center justify-between bg-slate-50 dark:bg-slate-800/50 p-4 border border-slate-200 dark:border-slate-700/60 rounded-xl font-sans">
             <div className="relative w-full sm:max-w-md">
               <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
               <input
@@ -232,22 +232,22 @@ export function SavedReportsLibrary({
                 placeholder="Search saved plans, domains, or keywords..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full h-10 pl-10 pr-4 bg-white border border-slate-200 rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-slate-700 font-medium"
+                className="w-full h-10 pl-10 pr-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all text-slate-700 dark:text-slate-300 font-medium"
               />
             </div>
             
             <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto">
-              <span className="text-xs text-slate-500 font-medium hidden md:inline">
-                Showing <strong className="text-slate-700">{filteredReports.length}</strong> of {totalReportsCount} saved configurations
+              <span className="text-xs text-slate-500 dark:text-slate-300 font-medium hidden md:inline">
+                Showing <strong className="text-slate-700 dark:text-slate-300">{filteredReports.length}</strong> of {totalReportsCount} saved configurations
               </span>
               
               {/* Toggles */}
-              <div className="flex items-center gap-1 bg-white p-1 rounded-lg border border-slate-200 shadow-3xs">
+              <div className="flex items-center gap-1 bg-white dark:bg-slate-900 p-1 rounded-lg border border-slate-200 dark:border-slate-700 shadow-3xs">
                 <button
                   onClick={() => setViewMode('grid')}
                   className={`p-1.5 rounded-md transition-all ${
                     viewMode === 'grid' 
-                      ? 'bg-indigo-50 text-indigo-600' 
+                      ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300' 
                       : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50'
                   }`}
                   title="Grid view"
@@ -258,7 +258,7 @@ export function SavedReportsLibrary({
                   onClick={() => setViewMode('list')}
                   className={`p-1.5 rounded-md transition-all ${
                     viewMode === 'list' 
-                      ? 'bg-indigo-50 text-indigo-600' 
+                      ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300' 
                       : 'text-slate-400 hover:text-slate-700 hover:bg-slate-50'
                   }`}
                   title="List view"
@@ -284,20 +284,20 @@ export function SavedReportsLibrary({
                       initial={{ opacity: 0, scale: 0.98, y: 12 }}
                       animate={{ opacity: 1, scale: 1, y: 0 }}
                       transition={{ delay: idx * 0.05 }}
-                      className="bg-white border border-slate-200 rounded-2xl p-5 hover:border-indigo-400 hover:shadow-md transition-all group flex flex-col justify-between"
+                      className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl p-5 hover:border-indigo-400 hover:shadow-md transition-all group flex flex-col justify-between"
                     >
                       <div className="space-y-4">
                         <div className="flex items-center justify-between gap-3 min-w-0">
                           <div className="min-w-0 flex-1">
                             <Badge 
                               variant="outline" 
-                              className="bg-slate-50 text-[10px] text-slate-500 font-mono font-bold uppercase tracking-wide border-slate-150 py-0.5 block truncate w-full max-w-[150px] md:max-w-[170px]"
+                              className="bg-slate-50 dark:bg-slate-800/50 text-[12px] text-slate-500 dark:text-slate-300 font-mono font-bold uppercase tracking-wide border-slate-150 dark:border-slate-700 py-0.5 block truncate w-full max-w-[150px] md:max-w-[170px]"
                               title={report.analysis?.businessName || 'Outbound Scope'}
                             >
                               {report.analysis?.businessName || 'Outbound Scope'}
                             </Badge>
                           </div>
-                          <span className="text-[11px] font-semibold text-slate-400 flex items-center gap-1 font-mono shrink-0 whitespace-nowrap">
+                          <span className="text-[13px] font-semibold text-slate-400 flex items-center gap-1 font-mono shrink-0 whitespace-nowrap">
                             <Calendar className="w-3 h-3 text-slate-400" />
                             {new Date(report.timestamp).toLocaleDateString([], { month: 'short', day: 'numeric' })}
                           </span>
@@ -305,7 +305,7 @@ export function SavedReportsLibrary({
 
                         <div className="space-y-1">
                           <div className="flex items-center justify-between gap-1 group/title">
-                            <h3 className="font-bold text-slate-900 group-hover:text-indigo-600 transition-colors text-base line-clamp-1 flex-1">
+                            <h3 className="font-bold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 transition-colors text-base line-clamp-1 flex-1">
                               {report.name}
                             </h3>
                             <button
@@ -316,7 +316,7 @@ export function SavedReportsLibrary({
                               <Pencil className="w-3.5 h-3.5" />
                             </button>
                           </div>
-                          <p className="text-xs text-slate-500 line-clamp-2 leading-relaxed h-8">
+                          <p className="text-xs text-slate-500 dark:text-slate-300 line-clamp-2 leading-relaxed h-8">
                             {report.analysis?.overview || 'No additional company analysis outline saved.'}
                           </p>
                         </div>
@@ -327,13 +327,13 @@ export function SavedReportsLibrary({
                             {industryList.slice(0, 3).map((ind: string, i: number) => (
                               <span 
                                 key={i} 
-                                className="text-[9px] font-bold px-2 py-0.5 bg-indigo-50/50 border border-indigo-100 text-indigo-700 rounded-md uppercase"
+                                className="text-[11px] font-bold px-2 py-0.5 bg-indigo-50/50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-800/50 text-indigo-700 dark:text-indigo-300 rounded-md uppercase"
                               >
                                 {ind}
                               </span>
                             ))}
                             {industryList.length > 3 && (
-                              <span className="text-[9px] font-bold px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded-md">
+                              <span className="text-[11px] font-bold px-1.5 py-0.5 bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-300 rounded-md">
                                 +{industryList.length - 3} more
                               </span>
                             )}
@@ -341,9 +341,9 @@ export function SavedReportsLibrary({
                         )}
                       </div>
 
-                      <div className="border-t border-slate-100 mt-5 pt-4 flex items-center justify-between">
+                      <div className="border-t border-slate-100 dark:border-slate-800 mt-5 pt-4 flex items-center justify-between">
                         <div className="flex items-center gap-1">
-                          <span className="text-xs font-bold font-mono text-indigo-650 bg-indigo-50/70 border border-indigo-100 px-2.5 py-0.5 rounded-full">
+                          <span className="text-xs font-bold font-mono text-indigo-650 dark:text-indigo-300 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-800/50 px-2.5 py-0.5 rounded-full">
                             {accountCount} Leads
                           </span>
                         </div>
@@ -361,7 +361,7 @@ export function SavedReportsLibrary({
                             variant="outline"
                             size="sm"
                             onClick={() => handleExportReport(report)}
-                            className="h-8 w-8 p-0 text-slate-500 border-slate-200 hover:text-indigo-655 hover:text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 rounded-lg cursor-pointer inline-flex items-center justify-center animate-fadeIn"
+                            className="h-8 w-8 p-0 text-slate-500 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:text-indigo-655 hover:text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 rounded-lg cursor-pointer inline-flex items-center justify-center animate-fadeIn"
                             title="Export to CSV"
                           >
                             <Download className="w-3.5 h-3.5" />
@@ -386,12 +386,12 @@ export function SavedReportsLibrary({
               <motion.div 
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="bg-white border border-slate-200 rounded-2xl shadow-3xs overflow-hidden"
+                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-3xs overflow-hidden"
               >
                 <div className="overflow-x-auto w-full">
                   <table className="w-full text-left border-collapse min-w-[700px]">
                     <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-mono text-[10px] uppercase font-bold tracking-wider">
+                      <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 font-mono text-[12px] uppercase font-bold tracking-wider">
                         <th className="py-3 px-6 select-none">Scope Name / Campaign Unit</th>
                         <th className="py-3 px-6 select-none">Client Brand Domain</th>
                         <th className="py-3 px-6 select-none">Industries Targeted</th>
@@ -414,7 +414,7 @@ export function SavedReportsLibrary({
                             transition={{ delay: idx * 0.03 }}
                             className="hover:bg-slate-50/55 transition-all group animate-fadeIn"
                           >
-                            <td className="py-4 px-6 font-bold text-slate-800">
+                            <td className="py-4 px-6 font-bold text-slate-800 dark:text-slate-200">
                               <div className="flex flex-col gap-0.5">
                                 <div className="flex items-center gap-1.5 group/cell">
                                   <span className="group-hover:text-indigo-650 transition-colors line-clamp-1">
@@ -434,25 +434,25 @@ export function SavedReportsLibrary({
                               </div>
                             </td>
                             <td className="py-4 px-6">
-                              <span className="font-mono text-xs font-semibold px-2 py-0.5 text-slate-600 bg-slate-100 rounded-md border border-slate-150">
+                              <span className="font-mono text-xs font-semibold px-2 py-0.5 text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 rounded-md border border-slate-150 dark:border-slate-700">
                                 {businessName}
                               </span>
                             </td>
                             <td className="py-4 px-6">
                               <div className="flex flex-wrap gap-1 max-w-[200px]">
                                 {targetIndustries.slice(0, 2).map((ind: string, i: number) => (
-                                  <span key={i} className="text-[9px] font-bold px-1.5 py-0.5 bg-indigo-50 border border-indigo-100 text-indigo-700 rounded uppercase">
+                                  <span key={i} className="text-[11px] font-bold px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-800/50 text-indigo-700 dark:text-indigo-300 rounded uppercase">
                                     {ind}
                                   </span>
                                 ))}
                                 {targetIndustries.length > 2 && (
-                                  <span className="text-[9px] font-bold px-1 bg-slate-150 text-slate-500 rounded">
+                                  <span className="text-[11px] font-bold px-1 bg-slate-150 dark:bg-slate-800 text-slate-500 dark:text-slate-300 rounded">
                                     +{targetIndustries.length - 2}
                                   </span>
                                 )}
                               </div>
                             </td>
-                            <td className="py-4 px-6 text-center text-xs text-slate-500 font-medium whitespace-nowrap">
+                            <td className="py-4 px-6 text-center text-xs text-slate-500 dark:text-slate-300 font-medium whitespace-nowrap">
                               <div className="flex items-center justify-center gap-1.5 font-mono">
                                 <Calendar className="w-3.5 h-3.5 text-slate-400" />
                                 <span>
@@ -461,7 +461,7 @@ export function SavedReportsLibrary({
                               </div>
                             </td>
                             <td className="py-4 px-6 text-center whitespace-nowrap">
-                              <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-indigo-50 text-indigo-700 border border-indigo-100">
+                              <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800/50">
                                 {leadCount} Leads
                               </span>
                             </td>
@@ -480,7 +480,7 @@ export function SavedReportsLibrary({
                                   variant="outline"
                                   size="sm"
                                   onClick={() => handleExportReport(report)}
-                                  className="h-8 w-8 p-0 text-slate-500 border-slate-200 hover:text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 rounded-lg cursor-pointer inline-flex items-center justify-center animate-fadeIn"
+                                  className="h-8 w-8 p-0 text-slate-500 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 rounded-lg cursor-pointer inline-flex items-center justify-center animate-fadeIn"
                                   title="Export to CSV"
                                 >
                                   <Download className="w-3.5 h-3.5" />
@@ -505,10 +505,10 @@ export function SavedReportsLibrary({
               </motion.div>
             )
           ) : (
-            <div className="p-12 text-center bg-slate-50 border border-dashed border-slate-200 rounded-2xl max-w-md mx-auto space-y-3">
+            <div className="p-12 text-center bg-slate-50 dark:bg-slate-800/50 border border-dashed border-slate-200 dark:border-slate-700 rounded-2xl max-w-md mx-auto space-y-3">
               <AlertCircle className="w-8 h-8 text-slate-400 mx-auto" />
-              <p className="text-sm font-semibold text-slate-700">No match found</p>
-              <p className="text-xs text-slate-500">Try searching for alternative keywords, company domains, or blueprint titles.</p>
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">No match found</p>
+              <p className="text-xs text-slate-500 dark:text-slate-300">Try searching for alternative keywords, company domains, or blueprint titles.</p>
               <Button size="sm" variant="outline" onClick={() => setSearchQuery('')} className="text-xs h-8 cursor-pointer">
                 Clear Filters
               </Button>
@@ -520,14 +520,14 @@ export function SavedReportsLibrary({
         <motion.div
           initial={{ opacity: 0, scale: 0.98 }}
           animate={{ opacity: 1, scale: 1 }}
-          className="flex flex-col items-center justify-center py-16 px-4 bg-white border border-slate-200 rounded-3xl text-center space-y-6 max-w-xl mx-auto"
+          className="flex flex-col items-center justify-center py-16 px-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-3xl text-center space-y-6 max-w-xl mx-auto"
         >
-          <div className="p-4 rounded-full bg-slate-50 border border-slate-150 text-indigo-500">
+          <div className="p-4 rounded-full bg-slate-50 dark:bg-slate-800/50 border border-slate-150 dark:border-slate-700 text-indigo-500 dark:text-indigo-400">
             <FileText className="w-10 h-10 stroke-[1.5]" />
           </div>
           <div className="space-y-2">
             <h3 className="text-xl font-bold text-slate-950 font-sans">Your Report Library is Empty</h3>
-            <p className="text-sm text-slate-500 max-w-sm mx-auto leading-relaxed">
+            <p className="text-sm text-slate-500 dark:text-slate-300 max-w-sm mx-auto leading-relaxed">
               Generate website market analyzes and target lists first, then click "Save Report" inside the dashboard to build your collection.
             </p>
           </div>
@@ -543,36 +543,36 @@ export function SavedReportsLibrary({
 
       {/* ✏️ MODAL: RENAME SAVED CONFIGURATION */}
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-        <DialogContent className="sm:max-w-md bg-white border border-slate-150 rounded-2xl font-sans select-none shadow-xl">
+        <DialogContent className="sm:max-w-md bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-700 rounded-2xl font-sans select-none shadow-xl">
           <DialogHeader className="space-y-1.5 text-left">
-            <DialogTitle className="text-slate-900 font-bold text-base flex items-center gap-2">
-              <Pencil className="w-4 h-4 text-indigo-650" />
+            <DialogTitle className="text-slate-900 dark:text-slate-100 font-bold text-base flex items-center gap-2">
+              <Pencil className="w-4 h-4 text-indigo-650 dark:text-indigo-300" />
               <span>Rename Saved Configuration</span>
             </DialogTitle>
-            <DialogDescription className="text-xs text-slate-500">
+            <DialogDescription className="text-xs text-slate-500 dark:text-slate-300">
               Update the human-readable identifier for this outbound strategy blueprint and target wave.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-3 text-left">
             <div className="space-y-1.5">
-              <label className="text-[11px] font-bold text-slate-550 block text-slate-500 uppercase tracking-wider">Configuration Name</label>
+              <label className="text-[13px] font-bold text-slate-550 block text-slate-500 dark:text-slate-300 uppercase tracking-wider">Configuration Name</label>
               <input
                 type="text"
                 value={editingReportName}
                 onChange={(e) => setEditingReportName(e.target.value)}
                 placeholder="e.g. outreach wave standard..."
-                className="w-full h-10 px-3.5 rounded-lg border border-slate-205 bg-white outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-sm font-medium text-slate-800"
+                className="w-full h-10 px-3.5 rounded-lg border border-slate-205 bg-white dark:bg-slate-900 outline-none focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all text-sm font-medium text-slate-800 dark:text-slate-200"
               />
             </div>
           </div>
 
-          <DialogFooter className="flex sm:justify-end gap-2 border-t border-slate-100 pt-3">
+          <DialogFooter className="flex sm:justify-end gap-2 border-t border-slate-100 dark:border-slate-800 pt-3">
             <Button
               variant="ghost"
               size="sm"
               onClick={() => setIsEditModalOpen(false)}
-              className="text-slate-500 hover:text-slate-800 text-xs font-bold h-9 bg-white border border-transparent shadow-none"
+              className="text-slate-500 dark:text-slate-300 hover:text-slate-800 text-xs font-bold h-9 bg-white dark:bg-slate-900 border border-transparent shadow-none"
             >
               Cancel
             </Button>
