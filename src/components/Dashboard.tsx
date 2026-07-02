@@ -2079,26 +2079,26 @@ export function Dashboard({
                   </div>
                 </div>
 
-                {/* Inline Form Card to add/edit channel partner dynamically */}
-                {isPartnerFormOpen && (
-                  <div className="bg-white dark:bg-slate-900/90 backdrop-blur-md border border-slate-200 dark:border-slate-700 rounded-3xl p-6 shadow-md space-y-4 font-sans mt-3">
-                    <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
-                      <h4 className="font-extrabold text-sm text-slate-900 dark:text-slate-100 font-sans">
+                {/* Modal to add/edit channel partner dynamically */}
+                <Dialog open={isPartnerFormOpen} onOpenChange={setIsPartnerFormOpen}>
+                  <DialogContent className="sm:max-w-2xl bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-700 rounded-2xl font-sans shadow-xl max-h-[90vh] overflow-y-auto">
+                    <DialogHeader className="space-y-1.5 text-left border-b border-slate-100 dark:border-slate-800 pb-3">
+                      <DialogTitle className="font-extrabold text-sm text-slate-900 dark:text-slate-100 font-sans">
                         {partnerFormType === 'add' ? 'Define New Referral Partner or Network' : 'Edit Alliance Network Configuration'}
-                      </h4>
-                      <Button variant="ghost" size="sm" onClick={() => setIsPartnerFormOpen(false)} className="text-slate-400 hover:text-slate-700 h-8 px-2 cursor-pointer">
-                        Cancel
-                      </Button>
-                    </div>
+                      </DialogTitle>
+                      <DialogDescription className="text-[12px] text-slate-500 dark:text-slate-400 font-sans">
+                        Configure how this partner surfaces on the partner pathway assessments.
+                      </DialogDescription>
+                    </DialogHeader>
 
-                    <form onSubmit={handleAddOrEditPartnerSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <form onSubmit={handleAddOrEditPartnerSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                       {/* Name */}
                       <div className="space-y-1.5">
                         <label className="text-[12px] font-bold text-slate-400 uppercase tracking-wider font-sans">Partner Name *</label>
-                        <input 
-                          type="text" 
+                        <input
+                          type="text"
                           required
-                          placeholder="e.g. Autodesk Systems Alliance, Gensler Partners" 
+                          placeholder="e.g. Autodesk Systems Alliance, Gensler Partners"
                           value={newPartnerName}
                           onChange={(e) => setNewPartnerName(e.target.value)}
                           className="w-full text-xs h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/40 dark:bg-slate-800/50 focus:ring-1 focus:ring-indigo-500 outline-none"
@@ -2108,8 +2108,8 @@ export function Dashboard({
                       {/* Connection Type */}
                       <div className="space-y-1.5">
                         <label className="text-[12px] font-bold text-slate-400 uppercase tracking-wider font-sans">Connection Type</label>
-                        <select 
-                          value={newPartnerType} 
+                        <select
+                          value={newPartnerType}
                           onChange={(e: any) => setNewPartnerType(e.target.value)}
                           className="w-full text-xs h-9 px-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/40 dark:bg-slate-800/50 focus:ring-1 focus:ring-indigo-500 outline-none"
                         >
@@ -2123,8 +2123,8 @@ export function Dashboard({
                       {/* Strength */}
                       <div className="space-y-1.5">
                         <label className="text-[12px] font-bold text-slate-400 uppercase tracking-wider font-sans">Alliance Strength</label>
-                        <select 
-                          value={newPartnerStrength} 
+                        <select
+                          value={newPartnerStrength}
                           onChange={(e: any) => setNewPartnerStrength(e.target.value)}
                           className="w-full text-xs h-9 px-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/40 dark:bg-slate-800/50 focus:ring-1 focus:ring-indigo-500 outline-none"
                         >
@@ -2137,9 +2137,9 @@ export function Dashboard({
                       {/* Warm Contact */}
                       <div className="space-y-1.5">
                         <label className="text-[12px] font-bold text-slate-400 uppercase tracking-wider font-sans">Key Warm Contact Name/Title</label>
-                        <input 
-                          type="text" 
-                          placeholder="e.g. Sarah Jenkins (VP Global Alliances)" 
+                        <input
+                          type="text"
+                          placeholder="e.g. Sarah Jenkins (VP Global Alliances)"
                           value={newPartnerWarmContact}
                           onChange={(e) => setNewPartnerWarmContact(e.target.value)}
                           className="w-full text-xs h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/40 dark:bg-slate-800/50 focus:ring-1 focus:ring-indigo-500 outline-none"
@@ -2149,10 +2149,10 @@ export function Dashboard({
                       {/* Keywords */}
                       <div className="space-y-1.5 md:col-span-2">
                         <label className="text-[12px] font-bold text-slate-400 uppercase tracking-wider font-sans">Keyword Match Tags (comma separated) *</label>
-                        <input 
-                          type="text" 
+                        <input
+                          type="text"
                           required
-                          placeholder="e.g. autodesk, revit, bim, drafting, series a" 
+                          placeholder="e.g. autodesk, revit, bim, drafting, series a"
                           value={newPartnerKeywords}
                           onChange={(e) => setNewPartnerKeywords(e.target.value)}
                           className="w-full text-xs h-9 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/40 dark:bg-slate-800/50 focus:ring-1 focus:ring-indigo-500 outline-none"
@@ -2165,27 +2165,36 @@ export function Dashboard({
                       {/* Description */}
                       <div className="space-y-1.5 md:col-span-2">
                         <label className="text-[12px] font-bold text-slate-400 uppercase tracking-wider font-sans">Strategic Partner Footprint</label>
-                        <textarea 
+                        <textarea
                           rows={2}
-                          placeholder="Brief description of the alliance scope, shared workflows, or reference portfolios..." 
+                          placeholder="Brief description of the alliance scope, shared workflows, or reference portfolios..."
                           value={newPartnerDescription}
                           onChange={(e) => setNewPartnerDescription(e.target.value)}
                           className="w-full text-xs p-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50/40 dark:bg-slate-800/50 focus:ring-1 focus:ring-indigo-500 outline-none resize-none"
                         />
                       </div>
 
-                      <div className="md:col-span-2 text-right pt-2">
-                        <Button 
-                          type="submit" 
+                      <DialogFooter className="md:col-span-2 pt-2 gap-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setIsPartnerFormOpen(false)}
+                          className="text-slate-500 dark:text-slate-300 hover:text-slate-700 h-10 px-4 cursor-pointer"
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          type="submit"
                           size="sm"
                           className="bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold h-10 px-6 rounded-xl shadow-md border-0 text-xs cursor-pointer"
                         >
                           {partnerFormType === 'add' ? 'Save New Partner' : 'Apply Configuration'}
                         </Button>
-                      </div>
+                      </DialogFooter>
                     </form>
-                  </div>
-                )}
+                  </DialogContent>
+                </Dialog>
               </div>
             ) : viewMode === 'grid' ? (
               /* Standard Pulse/Discovery Grid View */
