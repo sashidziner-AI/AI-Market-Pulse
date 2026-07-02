@@ -15,6 +15,7 @@ app.use(express.json());
 const businessCache = new Map<string, any>();
 const discoveryCache = new Map<string, any>();
 const accountAnalysisCache = new Map<string, any>();
+const enrichmentCache = new Map<string, any>();
 
 // JSON-Schema type constants. Naming preserved so the existing endpoint
 // schemas (Type.OBJECT, Type.STRING, ...) continue to compile and now
@@ -1249,6 +1250,119 @@ app.post("/api/cluster-accounts", async (req, res) => {
     console.log(`[GTM Sandbox Advisory] Account clustering redirected to dynamic heuristics fallback due to API limits.`);
     const fallbackData = getClustersFallback(accounts, businessContext);
     res.json(fallbackData);
+  }
+});
+
+// Hunter Domain Search returns up to ~10 (free tier) contacts per domain in one call,
+// so we cache the full domain response and pick the best-fit person per role locally.
+const hunterDomainCache = new Map<string, any>();
+
+async function fetchHunterDomain(domain: string) {
+  if (hunterDomainCache.has(domain)) {
+    return hunterDomainCache.get(domain);
+  }
+  const apiKey = process.env.HUNTER_API_KEY;
+  if (!apiKey) {
+    throw new Error("HUNTER_API_KEY absent");
+  }
+
+  const url = `https://api.hunter.io/v2/domain-search?domain=${encodeURIComponent(domain)}&api_key=${encodeURIComponent(apiKey)}`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Hunter responded ${response.status}: ${text.slice(0, 140)}`);
+  }
+  const data = await response.json();
+  hunterDomainCache.set(domain, data);
+  return data;
+}
+
+function pickHunterPersonForRole(hunterData: any, role: string) {
+  const emails: any[] = hunterData?.data?.emails ?? [];
+  if (emails.length === 0) return null;
+
+  const roleLower = role.toLowerCase();
+  const roleTokens = roleLower.split(/[^a-z]+/).filter((t) => t.length > 2);
+  const isSeniorRole = /senior|lead|principal|staff|head|director|\bvp\b|chief|manager|officer|president/i.test(role);
+
+  const scored = emails.map((e) => {
+    const position = (e.position || "").toLowerCase();
+    let tokenScore = 0;
+    for (const t of roleTokens) {
+      if (position.includes(t)) tokenScore += 10;
+    }
+    // Seniority + LinkedIn bonuses only kick in when at least one role token matched.
+    // Otherwise a random exec would out-score a non-match and mask the fallback path.
+    let score = tokenScore;
+    if (tokenScore > 0) {
+      if (isSeniorRole && (e.seniority === "senior" || e.seniority === "executive")) score += 3;
+      if (e.linkedin) score += 1;
+    }
+    return { person: e, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  const best = scored[0];
+  if (best && best.score > 0) return best.person;
+
+  // No token match — pick the most senior person with a LinkedIn URL as a reasonable representative.
+  const exec = emails.find((e) => e.linkedin && (e.seniority === "executive" || e.seniority === "senior"));
+  if (exec) return exec;
+  return emails.find((e) => e.linkedin) || emails[0] || null;
+}
+
+async function enrichWithHunter(role: string, company: string, domain?: string) {
+  if (!domain) {
+    throw new Error("Hunter Domain Search requires a domain");
+  }
+  const hunterData = await fetchHunterDomain(domain);
+  const person = pickHunterPersonForRole(hunterData, role);
+  if (!person) {
+    throw new Error("Hunter returned zero contacts for domain");
+  }
+
+  const first = person.first_name || "";
+  const last = person.last_name || "";
+  const name = `${first} ${last}`.trim();
+
+  return {
+    name: name || "Unnamed Contact",
+    title: person.position || role,
+    linkedinUrl: person.linkedin || "",
+    isFallback: false,
+  };
+}
+
+app.post("/api/enrich-stakeholder", async (req, res) => {
+  const { role, company, domain } = req.body ?? {};
+  if (!role || !company) {
+    return res.status(400).json({ error: "role and company are required" });
+  }
+
+  const cacheKey = `${role}|${company}|${domain ?? ""}`.toLowerCase();
+  if (enrichmentCache.has(cacheKey)) {
+    return res.json(enrichmentCache.get(cacheKey));
+  }
+
+  const searchUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(role + " " + company)}&origin=GLOBAL_SEARCH_HEADER`;
+
+  try {
+    const enriched = await enrichWithHunter(role, company, domain);
+    if (!enriched.linkedinUrl) {
+      enriched.linkedinUrl = searchUrl;
+    }
+    enrichmentCache.set(cacheKey, enriched);
+    return res.json(enriched);
+  } catch (err: any) {
+    console.log(sanitizeString(`[enrich-stakeholder] Hunter lookup dropped through to fallback: ${err?.message ?? err}`));
+    const fallback = {
+      name: "",
+      title: role,
+      linkedinUrl: searchUrl,
+      isFallback: true,
+    };
+    enrichmentCache.set(cacheKey, fallback);
+    return res.json(fallback);
   }
 });
 

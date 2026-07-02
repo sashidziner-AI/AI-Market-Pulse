@@ -191,9 +191,9 @@ export function getInferredStakeholderDetails(role: string, company: string): In
   // Avatar colored by role-key so names/visuals perfectly align
   const avatarBg = colors[(companyHash + offset) % colors.length];
   
-  // Direct clean link to LinkedIn's official People Search pre-populated with the target name and company.
-  // This takes the user straight to LinkedIn to search and connect immediately.
-  const linkedinUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(name + " " + company)}`;
+  // Search LinkedIn by role + company (real query) rather than the inferred display name,
+  // which is synthesized locally and will return zero results on LinkedIn.
+  const linkedinUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(role + " " + company)}&origin=GLOBAL_SEARCH_HEADER`;
   
   const estimatedYoe = ((companyHash + offset) % 12) + 8; // 8 to 19 years of experience
 
@@ -248,9 +248,42 @@ export function getInferredStakeholderDetails(role: string, company: string): In
   return { name, avatarBg, linkedinUrl, estimatedYoe, recentPost };
 }
 
-export function StakeholderLinkedinCard({ role, company, compact = false }: { role: string; company: string; compact?: boolean }) {
+interface EnrichedStakeholder {
+  name: string;
+  title: string;
+  linkedinUrl: string;
+  isFallback?: boolean;
+}
+
+export function StakeholderLinkedinCard({ role, company, domain, compact = false }: { role: string; company: string; domain?: string; compact?: boolean }) {
   const details = getInferredStakeholderDetails(role, company);
-  const initials = details.name.split(' ').map(n => n[0]).join('');
+  const [enriched, setEnriched] = React.useState<EnrichedStakeholder | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    fetch('/api/enrich-stakeholder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role, company, domain }),
+    })
+      .then(r => (r.ok ? r.json() : Promise.reject(r.status)))
+      .then((data: EnrichedStakeholder) => {
+        if (cancelled) return;
+        if (data && !data.isFallback && data.name) {
+          setEnriched(data);
+        }
+      })
+      .catch(() => { /* fall through to synthesized placeholder */ });
+    return () => { cancelled = true; };
+  }, [role, company, domain]);
+
+  const displayName = enriched?.name || details.name;
+  const initials = displayName.split(' ').map(n => n[0]).join('').slice(0, 2);
+  const linkedinHref = enriched?.linkedinUrl || details.linkedinUrl;
+  const isReal = Boolean(enriched);
+  const tooltip = isReal
+    ? `Open ${displayName}'s LinkedIn profile in a new tab`
+    : `Search LinkedIn for ${role} at ${company} (illustrative name — the search finds real people in this role)`;
 
   if (compact) {
     return (
@@ -261,10 +294,15 @@ export function StakeholderLinkedinCard({ role, company, compact = false }: { ro
           </div>
           <div className="min-w-0 space-y-0.5 text-left">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="font-extrabold text-xs text-slate-800 dark:text-slate-200 truncate">{details.name}</span>
+              <span className="font-extrabold text-xs text-slate-800 dark:text-slate-200 truncate">{displayName}</span>
               <span className="bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-[10px] font-bold px-1 rounded-full border border-blue-100 dark:border-blue-800/50 font-mono scale-[0.9]">
                 1st
               </span>
+              {isReal && (
+                <span className="bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold px-1 rounded-full border border-emerald-100 dark:border-emerald-800/50 font-mono">
+                  Live
+                </span>
+              )}
             </div>
             <div className="text-[12px] text-slate-500 dark:text-slate-300 font-medium truncate">
               {role} at <span className="font-extrabold text-slate-700 dark:text-slate-300">{company}</span>
@@ -272,13 +310,15 @@ export function StakeholderLinkedinCard({ role, company, compact = false }: { ro
           </div>
         </div>
         <a
-          href={details.linkedinUrl}
+          href={linkedinHref}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-blue-600 dark:text-blue-300 hover:text-blue-700 hover:bg-slate-50 font-bold text-[11px] cursor-pointer shadow-3xs transition-colors shrink-0"
+          title={tooltip}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400 text-white font-extrabold text-[12px] cursor-pointer shadow-sm hover:shadow-md ring-1 ring-blue-500/40 dark:ring-blue-300/40 transition-all shrink-0"
         >
-          <Linkedin className="w-3 h-3 fill-blue-600 text-white stroke-1" />
-          <span>Connect</span>
+          <Linkedin className="w-3.5 h-3.5 fill-white text-blue-600 stroke-1" />
+          <span>{isReal ? 'Connect on LinkedIn' : 'Search LinkedIn'}</span>
+          <ExternalLink className="w-3 h-3 opacity-80" />
         </a>
       </div>
     );
@@ -291,30 +331,37 @@ export function StakeholderLinkedinCard({ role, company, compact = false }: { ro
           {initials}
         </div>
         <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <span className="font-extrabold text-sm text-slate-900 dark:text-slate-100 leading-none">{details.name}</span>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-extrabold text-sm text-slate-900 dark:text-slate-100 leading-none">{displayName}</span>
             <span className="inline-flex items-center justify-center bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-[11px] font-bold px-1.5 py-0.5 rounded-full border border-blue-100 dark:border-blue-800/50 font-mono">
               1st
             </span>
+            {isReal && (
+              <span className="inline-flex items-center justify-center bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-[11px] font-bold px-1.5 py-0.5 rounded-full border border-emerald-100 dark:border-emerald-800/50 font-mono">
+                Live
+              </span>
+            )}
           </div>
           <div className="text-xs text-slate-500 dark:text-slate-300 font-medium leading-none">
-            {role} at <span className="font-extrabold text-slate-700 dark:text-slate-300">{company}</span>
+            {enriched?.title || role} at <span className="font-extrabold text-slate-700 dark:text-slate-300">{company}</span>
           </div>
           <div className="text-[12px] text-slate-400 font-semibold uppercase tracking-wider font-mono">
-            {details.estimatedYoe} Years Exp • Inferred Stakeholder Node
+            {isReal ? 'Enriched via Apollo · Real Contact' : `${details.estimatedYoe} Years Exp • Inferred Stakeholder Node`}
           </div>
         </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 shrink-0 self-end sm:self-auto w-full sm:w-auto justify-end">
         <a
-          href={details.linkedinUrl}
+          href={linkedinHref}
           target="_blank"
           rel="noopener noreferrer"
+          title={tooltip}
           className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[13px] cursor-pointer shadow-sm transition-colors text-center w-full sm:w-auto justify-center"
         >
           <Linkedin className="w-3.5 h-3.5 fill-white text-blue-600 dark:text-blue-300 stroke-1" />
-          <span>Real-time LinkedIn Scan</span>
+          <span>{isReal ? 'Open LinkedIn Profile' : 'Search LinkedIn for this role'}</span>
+          <ExternalLink className="w-3.5 h-3.5 opacity-80" />
         </a>
       </div>
     </div>
@@ -1212,7 +1259,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                    const stDetails = getInferredStakeholderDetails(persona.role, account.name);
                    return (
                      <div key={idx} className="p-5 rounded-xl border border-slate-150 dark:border-slate-700 bg-white dark:bg-slate-900 space-y-4 shadow-sm text-left">
-                        <SourceCitation 
+                        <SourceCitation
                           citation={persona.citation || {
                             sourceTier: 'Tertiary',
                             sourceName: 'GTM Persona Mapping & Corporate Hierarchy Inference Engine',
@@ -1220,16 +1267,16 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                             isInferred: true,
                             confidenceScore: 72
                           }}
-                          inlineLabel="Persona workflow mapped on" 
+                          inlineLabel="Persona workflow mapped on"
                         />
-                       
+
                        {/* Interactive Stakeholder LinkedIn Info Box */}
                        <div className="space-y-3">
                          <div className="text-[12px] font-bold text-slate-400 uppercase tracking-widest block font-mono">
                            Identified Account Contact (LinkedIn Synced)
                          </div>
-                         <StakeholderLinkedinCard role={persona.role} company={account.name} />
-                         
+                         <StakeholderLinkedinCard role={persona.role} company={account.name} domain={account.domain} />
+
                          {/* Simulated Live Activity Widget */}
                          <div className="p-3 bg-blue-50/25 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-800/50 rounded-xl space-y-2 font-sans text-xs">
                            <div className="flex items-center justify-between text-[12px] text-blue-800 dark:text-blue-200 font-extrabold uppercase tracking-wider">
@@ -1397,7 +1444,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
 
                                 {/* High-fidelity Compact LinkedIn Contact Scanner Node */}
                                 <div className="pt-0.5">
-                                  <StakeholderLinkedinCard role={step.node.role} company={account.name} compact={true} />
+                                  <StakeholderLinkedinCard role={step.node.role} company={account.name} domain={account.domain} compact={true} />
                                 </div>
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs pt-1">
