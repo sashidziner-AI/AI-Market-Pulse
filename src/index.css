@@ -1,23 +1,44 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Kanit", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 
-  --color-indigo-50: #FFF4EB;
-  --color-indigo-100: #FFE6D1;
-  --color-indigo-200: #FFCEB4;
-  --color-indigo-500: #FA9441;
-  --color-indigo-600: #F58220;
-  --color-indigo-650: #E7781B;
-  --color-indigo-700: #D96F16;
-  --color-indigo-800: #B35400;
-  --color-indigo-900: #592400;
+  /* Brand palette (aliased as "indigo-*" for codebase compatibility).
+     Anchored on the primary #F58220 accent. */
+  --color-indigo-50: #FFF5EC;
+  --color-indigo-100: #FFE7CE;
+  --color-indigo-150: #FFDAB4;
+  --color-indigo-200: #FFCEA0;
+  --color-indigo-300: #FFB268;
+  --color-indigo-400: #FA9540;
+  --color-indigo-500: #F58220;
+  --color-indigo-600: #E37016;
+  --color-indigo-650: #D66811;
+  --color-indigo-700: #C25C0D;
+  --color-indigo-750: #A44E0A;
+  --color-indigo-800: #874108;
+  --color-indigo-900: #4D2404;
+  --color-indigo-950: #2A1502;
 
-  --radius-xl: 12px;
-  --radius-2xl: 16px;
-  --radius-3xl: 24px;
+  /* Secondary charcoal (warm neutral) — used for dark surfaces / muted text.
+     Anchored on the secondary #3E3E3F. */
+  --color-secondary-50: #F5F5F5;
+  --color-secondary-100: #E7E7E7;
+  --color-secondary-200: #CFCFCF;
+  --color-secondary-300: #A9A9AA;
+  --color-secondary-400: #77777A;
+  --color-secondary-500: #545455;
+  --color-secondary-600: #3E3E3F;
+  --color-secondary-700: #2E2E2F;
+  --color-secondary-800: #232324;
+  --color-secondary-900: #171718;
+  --color-secondary-950: #0E0E0F;
+
+  --radius-xl: 10px;
+  --radius-2xl: 12px;
+  --radius-3xl: 16px;
 }
 
 @import "tw-animate-css";
@@ -28,7 +49,7 @@
 
 @theme inline {
     --font-heading: var(--font-sans);
-    --font-sans: 'Geist Variable', sans-serif;
+    --font-sans: 'Kanit', 'Geist Variable', sans-serif;
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -105,40 +126,39 @@
 }
 
 .dark {
-    /* slate-tinted neutrals — matches the slate-700/800/900 chrome used by the
-       rest of the UI so cards/popovers don't read as cool-gray against blue-gray
-       backgrounds. */
-    --background: oklch(0.205 0.012 250);          /* ~slate-950 */
-    --foreground: oklch(0.97 0.005 250);           /* ~slate-50 */
-    --card: oklch(0.262 0.012 250);                /* ~slate-900 */
-    --card-foreground: oklch(0.97 0.005 250);
-    --popover: oklch(0.262 0.012 250);
-    --popover-foreground: oklch(0.97 0.005 250);
-    --primary: oklch(0.92 0.005 250);
-    --primary-foreground: oklch(0.205 0.012 250);
-    --secondary: oklch(0.32 0.014 250);            /* ~slate-800 */
-    --secondary-foreground: oklch(0.97 0.005 250);
-    --muted: oklch(0.32 0.014 250);
-    --muted-foreground: oklch(0.72 0.012 250);     /* ~slate-400 */
-    --accent: oklch(0.32 0.014 250);
-    --accent-foreground: oklch(0.97 0.005 250);
+    /* Warm charcoal neutrals — anchored on the secondary #3E3E3F so panels
+       and cards read as warm-gray in dark mode instead of cool-slate. */
+    --background: oklch(0.19 0.002 60);            /* deep warm charcoal */
+    --foreground: oklch(0.97 0.002 60);            /* near-white */
+    --card: oklch(0.245 0.002 60);                 /* card surface */
+    --card-foreground: oklch(0.97 0.002 60);
+    --popover: oklch(0.245 0.002 60);
+    --popover-foreground: oklch(0.97 0.002 60);
+    --primary: oklch(0.92 0.002 60);
+    --primary-foreground: oklch(0.19 0.002 60);
+    --secondary: oklch(0.315 0.002 60);            /* ~#3E3E3F */
+    --secondary-foreground: oklch(0.97 0.002 60);
+    --muted: oklch(0.315 0.002 60);
+    --muted-foreground: oklch(0.72 0.002 60);
+    --accent: oklch(0.315 0.002 60);
+    --accent-foreground: oklch(0.97 0.002 60);
     --destructive: oklch(0.704 0.191 22.216);
     --border: oklch(1 0 0 / 10%);
     --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0.014 250);
+    --ring: oklch(0.556 0.002 60);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
     --chart-4: oklch(0.371 0 0);
     --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.262 0.012 250);
-    --sidebar-foreground: oklch(0.97 0.005 250);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.97 0.005 250);
-    --sidebar-accent: oklch(0.32 0.014 250);
-    --sidebar-accent-foreground: oklch(0.97 0.005 250);
+    --sidebar: oklch(0.235 0.002 60);
+    --sidebar-foreground: oklch(0.97 0.002 60);
+    --sidebar-primary: oklch(0.68 0.16 55);        /* #F58220 accent */
+    --sidebar-primary-foreground: oklch(0.97 0.002 60);
+    --sidebar-accent: oklch(0.315 0.002 60);
+    --sidebar-accent-foreground: oklch(0.97 0.002 60);
     --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0.014 250);
+    --sidebar-ring: oklch(0.556 0.002 60);
 }
 
 @layer base {

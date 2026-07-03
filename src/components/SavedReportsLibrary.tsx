@@ -151,9 +151,9 @@ export function SavedReportsLibrary({
             <span className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 block">
               <Layers className="w-5 h-5 animate-pulse" />
             </span>
-            <span className="text-xs font-bold tracking-wider uppercase text-slate-400 font-mono">WORKSPACE INTEL</span>
+            <span className="text-xs font-bold tracking-normal uppercase text-slate-400 font-mono">WORKSPACE INTEL</span>
           </div>
-          <h1 className="text-3xl font-black text-slate-900 dark:text-slate-100 tracking-tight font-sans">
+          <h1 className="text-3xl font-semibold text-slate-900 dark:text-slate-100 tracking-tight font-sans">
             Saved Reports & Market Scopes
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-300 font-medium">
@@ -187,8 +187,8 @@ export function SavedReportsLibrary({
                 <FileText className="w-6 h-6" />
               </div>
               <div>
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Saved Reports</span>
-                <span className="text-2xl font-black text-slate-900 dark:text-slate-100 font-mono">{totalReportsCount}</span>
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-normal block">Saved Reports</span>
+                <span className="text-2xl font-bold text-slate-900 dark:text-slate-100 font-mono">{totalReportsCount}</span>
               </div>
             </motion.div>
 
@@ -202,8 +202,8 @@ export function SavedReportsLibrary({
                 <ShieldCheck className="w-6 h-6" />
               </div>
               <div>
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Total Leads Mapped</span>
-                <span className="text-2xl font-black text-slate-900 dark:text-slate-100 font-mono">{totalAccountsDiscovered}</span>
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-normal block">Total Leads Mapped</span>
+                <span className="text-2xl font-bold text-slate-900 dark:text-slate-100 font-mono">{totalAccountsDiscovered}</span>
               </div>
             </motion.div>
 
@@ -217,7 +217,7 @@ export function SavedReportsLibrary({
                 <TrendingUp className="w-6 h-6" />
               </div>
               <div>
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider block">Latest Activity</span>
+                <span className="text-xs font-semibold text-slate-400 uppercase tracking-normal block">Latest Activity</span>
                 <span className="text-sm font-bold text-slate-700 dark:text-slate-300 truncate block max-w-[180px]">{latestReportDate}</span>
               </div>
             </motion.div>
@@ -305,7 +305,7 @@ export function SavedReportsLibrary({
 
                         <div className="space-y-1">
                           <div className="flex items-center justify-between gap-1 group/title">
-                            <h3 className="font-bold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 transition-colors text-base line-clamp-1 flex-1">
+                            <h3 className="font-semibold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 transition-colors text-base line-clamp-1 flex-1">
                               {report.name}
                             </h3>
                             <button
@@ -391,7 +391,7 @@ export function SavedReportsLibrary({
                 <div className="overflow-x-auto w-full">
                   <table className="w-full text-left border-collapse min-w-[700px]">
                     <thead>
-                      <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 font-mono text-[12px] uppercase font-bold tracking-wider">
+                      <tr className="bg-slate-50 dark:bg-slate-800/50 border-b border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 font-mono text-[12px] uppercase font-bold tracking-normal">
                         <th className="py-3 px-6 select-none">Scope Name / Campaign Unit</th>
                         <th className="py-3 px-6 select-none">Client Brand Domain</th>
                         <th className="py-3 px-6 select-none">Industries Targeted</th>
@@ -526,7 +526,7 @@ export function SavedReportsLibrary({
             <FileText className="w-10 h-10 stroke-[1.5]" />
           </div>
           <div className="space-y-2">
-            <h3 className="text-xl font-bold text-slate-950 font-sans">Your Report Library is Empty</h3>
+            <h3 className="text-xl font-semibold text-slate-950 font-sans">Your Report Library is Empty</h3>
             <p className="text-sm text-slate-500 dark:text-slate-300 max-w-sm mx-auto leading-relaxed">
               Generate website market analyzes and target lists first, then click "Save Report" inside the dashboard to build your collection.
             </p>
@@ -543,9 +543,9 @@ export function SavedReportsLibrary({
 
       {/* ✏️ MODAL: RENAME SAVED CONFIGURATION */}
       <Dialog open={isEditModalOpen} onOpenChange={setIsEditModalOpen}>
-        <DialogContent className="sm:max-w-md bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-700 rounded-2xl font-sans select-none shadow-xl">
+        <DialogContent className="sm:max-w-md bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-700 rounded-2xl font-sans select-none shadow-sm">
           <DialogHeader className="space-y-1.5 text-left">
-            <DialogTitle className="text-slate-900 dark:text-slate-100 font-bold text-base flex items-center gap-2">
+            <DialogTitle className="text-slate-900 dark:text-slate-100 font-semibold text-base flex items-center gap-2">
               <Pencil className="w-4 h-4 text-indigo-650 dark:text-indigo-300" />
               <span>Rename Saved Configuration</span>
             </DialogTitle>
@@ -556,7 +556,7 @@ export function SavedReportsLibrary({
 
           <div className="space-y-4 py-3 text-left">
             <div className="space-y-1.5">
-              <label className="text-[13px] font-bold text-slate-550 block text-slate-500 dark:text-slate-300 uppercase tracking-wider">Configuration Name</label>
+              <label className="text-[13px] font-bold text-slate-550 block text-slate-500 dark:text-slate-300 uppercase tracking-normal">Configuration Name</label>
               <input
                 type="text"
                 value={editingReportName}
