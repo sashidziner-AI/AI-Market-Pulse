@@ -48,7 +48,7 @@ export function SourceCitation({ citation, inlineLabel, isSignal = false }: { ci
       {/* Top badges & core metrics */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-dashed border-slate-200 dark:border-slate-700/60 pb-2 mb-2">
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-extrabold border uppercase tracking-wider ${tierColors.bg}`}>
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border uppercase tracking-normal ${tierColors.bg}`}>
             <span className={`w-1.5 h-1.5 rounded-full ${tierColors.dot}`} />
             {tierColors.label}
           </span>
@@ -61,7 +61,7 @@ export function SourceCitation({ citation, inlineLabel, isSignal = false }: { ci
         {confidenceScore !== undefined && (
           <div className="flex items-center gap-1">
             <span className="text-[11px] uppercase font-bold text-slate-400 select-none">Confidence:</span>
-            <span className={`text-[13px] font-black tracking-wide bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-100 dark:border-slate-800 ${confidenceScore >= 85 ? 'text-emerald-700 dark:text-emerald-300' : confidenceScore >= 70 ? 'text-indigo-600 dark:text-indigo-300' : 'text-amber-700 dark:text-amber-300'}`}>
+            <span className={`text-[13px] font-bold tracking-wide bg-white dark:bg-slate-900 px-1.5 py-0.5 rounded border border-slate-100 dark:border-slate-800 ${confidenceScore >= 85 ? 'text-emerald-700 dark:text-emerald-300' : confidenceScore >= 70 ? 'text-indigo-600 dark:text-indigo-300' : 'text-amber-700 dark:text-amber-300'}`}>
               {confidenceScore}%
             </span>
           </div>
@@ -76,12 +76,12 @@ export function SourceCitation({ citation, inlineLabel, isSignal = false }: { ci
           
           {isInferred ? (
             <div className="mt-1 font-semibold text-amber-800 dark:text-amber-200 flex flex-wrap gap-1 items-center bg-amber-50/60 dark:bg-amber-950/40 p-1.5 rounded border border-amber-100/50 dark:border-amber-800/50">
-              <span className="font-black text-[10px] uppercase tracking-wider bg-amber-200 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 px-1 rounded-sm select-none">Inferred claim warning</span>
+              <span className="font-bold text-[10px] uppercase tracking-normal bg-amber-200 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 px-1 rounded-sm select-none">Inferred claim warning</span>
               <span>This claim depends entirely on tertiary public feedback or indirect inference, and should not be treated as a verified fact.</span>
             </div>
           ) : (
             <div className="mt-1 font-semibold text-emerald-800 dark:text-emerald-200 flex flex-wrap gap-1 items-center bg-emerald-50/40 dark:bg-emerald-950/40 p-1 rounded">
-              <span className="font-black text-[10px] uppercase tracking-wider bg-emerald-100 dark:bg-emerald-900/40 text-emerald-900 dark:text-emerald-200 px-1 rounded-sm select-none">Verified Fact</span>
+              <span className="font-bold text-[10px] uppercase tracking-normal bg-emerald-100 dark:bg-emerald-900/40 text-emerald-900 dark:text-emerald-200 px-1 rounded-sm select-none">Verified Fact</span>
               <span>This intelligence is verified from official, high-quality public filings or first-party job posts.</span>
             </div>
           )}
@@ -94,7 +94,7 @@ export function SourceCitation({ citation, inlineLabel, isSignal = false }: { ci
             href={url}
             target="_blank"
             rel="noreferrer noopener"
-            className="inline-flex items-center gap-1 text-[11px] font-black uppercase text-indigo-600 dark:text-indigo-300 hover:text-indigo-700 hover:underline transition-all tracking-wider"
+            className="inline-flex items-center gap-1 text-[11px] font-bold uppercase text-indigo-600 dark:text-indigo-300 hover:text-indigo-700 hover:underline transition-all tracking-normal"
           >
             Go to Source Document
             <ExternalLink className="w-2.5 h-2.5" />
@@ -294,7 +294,7 @@ export function StakeholderLinkedinCard({ role, company, domain, compact = false
           </div>
           <div className="min-w-0 space-y-0.5 text-left">
             <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="font-extrabold text-xs text-slate-800 dark:text-slate-200 truncate">{displayName}</span>
+              <span className="font-semibold text-xs text-slate-800 dark:text-slate-200 truncate">{displayName}</span>
               <span className="bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-[10px] font-bold px-1 rounded-full border border-blue-100 dark:border-blue-800/50 font-mono scale-[0.9]">
                 1st
               </span>
@@ -305,7 +305,7 @@ export function StakeholderLinkedinCard({ role, company, domain, compact = false
               )}
             </div>
             <div className="text-[12px] text-slate-500 dark:text-slate-300 font-medium truncate">
-              {role} at <span className="font-extrabold text-slate-700 dark:text-slate-300">{company}</span>
+              {role} at <span className="font-semibold text-slate-700 dark:text-slate-300">{company}</span>
             </div>
           </div>
         </div>
@@ -314,7 +314,7 @@ export function StakeholderLinkedinCard({ role, company, domain, compact = false
           target="_blank"
           rel="noopener noreferrer"
           title={tooltip}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400 text-white font-extrabold text-[12px] cursor-pointer shadow-sm hover:shadow-md ring-1 ring-blue-500/40 dark:ring-blue-300/40 transition-all shrink-0"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-400 text-white font-semibold text-[12px] cursor-pointer shadow-sm hover:shadow-md ring-1 ring-blue-500/40 dark:ring-blue-300/40 transition-all shrink-0"
         >
           <Linkedin className="w-3.5 h-3.5 fill-white text-blue-600 stroke-1" />
           <span>{isReal ? 'Connect on LinkedIn' : 'Search LinkedIn'}</span>
@@ -332,7 +332,7 @@ export function StakeholderLinkedinCard({ role, company, domain, compact = false
         </div>
         <div className="space-y-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-extrabold text-sm text-slate-900 dark:text-slate-100 leading-none">{displayName}</span>
+            <span className="font-semibold text-sm text-slate-900 dark:text-slate-100 leading-none">{displayName}</span>
             <span className="inline-flex items-center justify-center bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 text-[11px] font-bold px-1.5 py-0.5 rounded-full border border-blue-100 dark:border-blue-800/50 font-mono">
               1st
             </span>
@@ -343,9 +343,9 @@ export function StakeholderLinkedinCard({ role, company, domain, compact = false
             )}
           </div>
           <div className="text-xs text-slate-500 dark:text-slate-300 font-medium leading-none">
-            {enriched?.title || role} at <span className="font-extrabold text-slate-700 dark:text-slate-300">{company}</span>
+            {enriched?.title || role} at <span className="font-semibold text-slate-700 dark:text-slate-300">{company}</span>
           </div>
-          <div className="text-[12px] text-slate-400 font-semibold uppercase tracking-wider font-mono">
+          <div className="text-[12px] text-slate-400 font-semibold uppercase tracking-normal font-mono">
             {isReal ? 'Enriched via Apollo · Real Contact' : `${details.estimatedYoe} Years Exp • Inferred Stakeholder Node`}
           </div>
         </div>
@@ -357,7 +357,7 @@ export function StakeholderLinkedinCard({ role, company, domain, compact = false
           target="_blank"
           rel="noopener noreferrer"
           title={tooltip}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[13px] cursor-pointer shadow-sm transition-colors text-center w-full sm:w-auto justify-center"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold text-[13px] cursor-pointer shadow-sm transition-colors text-center w-full sm:w-auto justify-center"
         >
           <Linkedin className="w-3.5 h-3.5 fill-white text-blue-600 dark:text-blue-300 stroke-1" />
           <span>{isReal ? 'Open LinkedIn Profile' : 'Search LinkedIn for this role'}</span>
@@ -483,7 +483,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
             </div>
           ) : (
             <div className="min-w-0">
-              <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 truncate">{account.name}</h2>
+              <h2 className="text-xl font-semibold text-slate-900 dark:text-slate-100 truncate">{account.name}</h2>
               <p className="text-sm text-slate-500 dark:text-slate-300 font-mono truncate">{account.domain}</p>
             </div>
           )}
@@ -601,7 +601,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
             {isEditing ? (
               <div className="space-y-3 font-sans text-xs text-left">
                 <div className="space-y-1 shadow-2xs bg-slate-50/50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-105">
-                  <label className="text-[12px] font-black uppercase text-slate-400 tracking-wider block">Company Description</label>
+                  <label className="text-[12px] font-bold uppercase text-slate-400 tracking-normal block">Company Description</label>
                   <textarea
                     rows={2}
                     value={editDescription}
@@ -611,7 +611,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                   />
                 </div>
                 <div className="space-y-1 shadow-2xs bg-slate-50/50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-105">
-                  <label className="text-[12px] font-black uppercase text-slate-400 tracking-wider block">ICP Alignment & Fit Evidence Rationale</label>
+                  <label className="text-[12px] font-bold uppercase text-slate-400 tracking-normal block">ICP Alignment & Fit Evidence Rationale</label>
                   <textarea
                     rows={4}
                     value={editRationale}
@@ -649,16 +649,16 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
           <section className="space-y-4 bg-indigo-50/20 dark:bg-indigo-950/40 p-5 rounded-2xl border border-indigo-100 dark:border-indigo-800/50 shadow-2xs text-left">
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                   <Sliders className="w-4 h-4 text-indigo-600 dark:text-indigo-300" />
                   Industry-Specific Buying Intent Calibration
                 </h3>
                 {account.forcedSectorModel ? (
-                  <Badge variant="outline" className="text-[12px] uppercase font-black tracking-wider text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/60">
+                  <Badge variant="outline" className="text-[12px] uppercase font-bold tracking-normal text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/60">
                     🛠️ Overridden
                   </Badge>
                 ) : (
-                  <Badge variant="outline" className="text-[12px] uppercase font-black tracking-wider text-emerald-800 dark:text-emerald-200 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60">
+                  <Badge variant="outline" className="text-[12px] uppercase font-bold tracking-normal text-emerald-800 dark:text-emerald-200 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60">
                     ✓ Auto-Detected
                   </Badge>
                 )}
@@ -730,7 +730,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
           {/* Caution matching Alert indicator */}
           {info.hasCautionMatches && (
             <div className="p-4.5 rounded-2xl bg-amber-50/50 dark:bg-amber-950/40 border border-amber-250 dark:border-amber-800/60 text-left space-y-2">
-              <div className="flex items-center gap-1.5 font-bold text-xs text-amber-800 dark:text-amber-200 uppercase tracking-wider font-sans">
+              <div className="flex items-center gap-1.5 font-bold text-xs text-amber-800 dark:text-amber-200 uppercase tracking-normal font-sans">
                 <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-300 animate-pulse" />
                 <span>Adaptive Caution Warning Triggered</span>
               </div>
@@ -753,12 +753,12 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
           {/* Outreach Loop & Adaptive Feedback Outcomes Console */}
           <section className="space-y-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs text-left">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-black text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <Target className="w-4 h-4 text-indigo-600 dark:text-indigo-300" />
                 Adaptive Feedback & Outreach Outcomes
               </h3>
               {account.outreachOutcome ? (
-                <Badge variant="outline" className={`text-[12px] uppercase font-extrabold tracking-wider ${
+                <Badge variant="outline" className={`text-[12px] uppercase font-semibold tracking-normal ${
                   ['Positive Reply', 'Meeting Booked', 'Deal Won'].includes(account.outreachOutcome)
                     ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-250 dark:border-emerald-800/60'
                     : 'text-slate-650 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700/80'
@@ -778,7 +778,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
 
             <div className="space-y-3.5 pt-1">
               <div>
-                <label className="text-[12px] font-black uppercase text-slate-450 tracking-wider block mb-1.5 font-mono">Outbound Pipeline Stage</label>
+                <label className="text-[12px] font-bold uppercase text-slate-450 tracking-normal block mb-1.5 font-mono">Outbound Pipeline Stage</label>
                 <div className="flex flex-wrap gap-1.5">
                   {(['new', 'viewed', 'contacted'] as const).map((stage) => {
                     const isActive = account.status === stage;
@@ -812,7 +812,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
               {/* Show Outreach Outcomes if contacted */}
               {account.status === 'contacted' && (
                 <div className="space-y-2.5 pt-1.5 border-t border-slate-100 dark:border-slate-800">
-                  <label className="text-[12px] font-black uppercase text-slate-450 tracking-wider block font-mono">Commercial Outreach Outcome</label>
+                  <label className="text-[12px] font-bold uppercase text-slate-450 tracking-normal block font-mono">Commercial Outreach Outcome</label>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                     {([
                       { value: 'No Response', label: '📭 No Response' },
@@ -843,8 +843,8 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                           className={`px-2.5 py-2.5 rounded-xl border text-[13px] font-bold text-left transition-all flex flex-col justify-between cursor-pointer ${
                             isActive
                               ? isPositive 
-                                ? 'bg-emerald-600 text-white border-emerald-700 shadow-md ring-1 ring-emerald-250'
-                                : 'bg-slate-800 text-white border-slate-900 shadow-md ring-1 ring-slate-800'
+                                ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-1 ring-emerald-250'
+                                : 'bg-slate-800 text-white border-slate-900 shadow-xs ring-1 ring-slate-800'
                               : 'bg-white dark:bg-slate-900 text-slate-755 border-slate-205 hover:bg-slate-50'
                           }`}
                         >
@@ -879,7 +879,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
             {/* Intel summary of dynamic calibration boosts / warnings */}
             {account.outreachOutcome && (
               <div className="p-3.5 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-800/50 text-left space-y-1 text-[13px] leading-relaxed">
-                <span className="font-extrabold uppercase text-[11px] text-indigo-750 tracking-wider block mb-1 font-mono">Adaptive AI Recalibration Applied:</span>
+                <span className="font-semibold uppercase text-[11px] text-indigo-750 tracking-normal block mb-1 font-mono">Adaptive AI Recalibration Applied:</span>
                 {['Positive Reply', 'Meeting Booked', 'Deal Won'].includes(account.outreachOutcome) ? (
                   <p className="text-emerald-700 dark:text-emerald-300 font-medium">
                     ✓ <strong>Positive Signal Scaling:</strong> Conversion feedback reinforces and dynamically boosts the weights of all underlying triggering signals by up to 30%, increasing prioritize priority for similar future pipeline entries.
@@ -895,7 +895,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
 
           {/* Outreach Priority & Timing Analytics */}
           <section className="space-y-3.5 bg-slate-50/50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
-            <h3 className="text-xs font-bold text-slate-500 dark:text-slate-300 uppercase tracking-widest flex items-center gap-1.5">
+            <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-300 uppercase tracking-wide flex items-center gap-1.5">
               <Clock className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
               Prioritization & Outreach Timing Intel
             </h3>
@@ -913,15 +913,15 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                 <div className="space-y-3">
                   <div className={`p-3 rounded-lg border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 ${priorityBg}`}>
                     <div>
-                      <span className="text-[12px] uppercase font-bold text-slate-400 tracking-wider">Outreach Target Status</span>
-                      <div className={`text-xs font-black uppercase mt-0.5 tracking-wide ${flagTextClass}`}>
+                      <span className="text-[12px] uppercase font-bold text-slate-400 tracking-normal">Outreach Target Status</span>
+                      <div className={`text-xs font-bold uppercase mt-0.5 tracking-wide ${flagTextClass}`}>
                         {info.priorityFlag === 'Immediate Action Required' ? '🚨 Immediate Action Required' : 
                          info.priorityFlag === 'Nurture Queue' ? '⏳ Nurture Queue - Build Demand' : 
                          '🎯 Standard Follow-up Opportunity'}
                       </div>
                     </div>
                     <div className="sm:text-right">
-                      <span className="text-[12px] uppercase font-bold text-slate-400 tracking-wider">Outreach Window</span>
+                      <span className="text-[12px] uppercase font-bold text-slate-400 tracking-normal">Outreach Window</span>
                       <div className="text-xs font-bold text-slate-700 dark:text-slate-300 mt-0.5 flex items-center gap-1 sm:justify-end">
                         <Clock className="w-3.5 h-3.5 text-indigo-505" />
                         {info.outreachWindow}
@@ -932,15 +932,15 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                   <div className="grid grid-cols-3 gap-3">
                     <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-150 dark:border-slate-700 text-center">
                       <div className="text-[11px] uppercase font-bold text-slate-400">ICP Fit Score</div>
-                      <div className="text-lg font-black text-slate-800 dark:text-slate-200 font-mono mt-0.5">{info.fitScore}%</div>
+                      <div className="text-lg font-bold text-slate-800 dark:text-slate-200 font-mono mt-0.5">{info.fitScore}%</div>
                     </div>
                     <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-150 dark:border-slate-700 text-center">
                       <div className="text-[11px] uppercase font-bold text-slate-400">Timing Score</div>
-                      <div className="text-lg font-black text-slate-800 dark:text-slate-200 font-mono mt-0.5">{info.timingScore}%</div>
+                      <div className="text-lg font-bold text-slate-800 dark:text-slate-200 font-mono mt-0.5">{info.timingScore}%</div>
                     </div>
                     <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-150 dark:border-slate-700 text-center">
                       <div className="text-[11px] uppercase font-bold text-slate-400">Priority Index</div>
-                      <div className="text-lg font-extrabold text-indigo-700 dark:text-indigo-300 font-mono mt-0.5" title="(Fit + Timing) / 2">{info.priorityIndex}</div>
+                      <div className="text-lg font-semibold text-indigo-700 dark:text-indigo-300 font-mono mt-0.5" title="(Fit + Timing) / 2">{info.priorityIndex}</div>
                     </div>
                   </div>
 
@@ -964,7 +964,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
           <section className="space-y-4 bg-slate-50/60 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-700/60 pb-3">
               <div className="text-left">
-                <h3 className="text-sm font-black text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
                   <TrendingUp className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
                   Signal Freshness tuning & Decay Board
                 </h3>
@@ -973,7 +973,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                 </p>
               </div>
               <div className="shrink-0 text-right">
-                <Badge variant="outline" className={`font-mono text-[12px] font-black tracking-wider uppercase ${
+                <Badge variant="outline" className={`font-mono text-[12px] font-bold tracking-normal uppercase ${
                   info.freshnessLabel === 'FRESH' ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200/60 dark:border-emerald-800/60' :
                   info.freshnessLabel === 'AGING' ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200/60 dark:border-amber-800/60' :
                   'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700'
@@ -988,7 +988,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
               <div className="p-4 bg-amber-50 dark:bg-amber-950/40 border border-amber-205 rounded-xl flex items-start gap-3 shadow-3xs animate-fadeIn text-left">
                 <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-300 shrink-0 mt-0.5 animate-bounce" />
                 <div className="space-y-1">
-                  <h4 className="text-xs font-extrabold text-amber-800 dark:text-amber-200 uppercase tracking-wide">🔍 RE-RESEARCH STRONGLY RECOMMENDED</h4>
+                  <h4 className="text-xs font-semibold text-amber-800 dark:text-amber-200 uppercase tracking-wide">🔍 RE-RESEARCH STRONGLY RECOMMENDED</h4>
                   <p className="text-[13px] leading-relaxed text-amber-750 font-bold">
                     All intent signals for this account are older than 180 days and marked as stale. outreach window holds; do not execute active outbound sequence until intelligence is updated.
                   </p>
@@ -1024,15 +1024,15 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                         </span>
                         {/* Signal Category Badge */}
                         <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                          <span className="px-2 py-0.5 rounded text-[11px] font-extrabold uppercase text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-150 dark:border-indigo-800/50">
+                          <span className="px-2 py-0.5 rounded text-[11px] font-semibold uppercase text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-150 dark:border-indigo-800/50">
                             {sig.categoryLabel}
                           </span>
                           {sig.multiplier > 1.0 ? (
-                            <span className="text-[11px] font-black text-emerald-650 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-100 dark:border-emerald-800/50">
+                            <span className="text-[11px] font-bold text-emerald-650 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-100 dark:border-emerald-800/50">
                               {sig.multiplier.toFixed(2)}x Calibration Boost
                             </span>
                           ) : sig.multiplier < 1.0 ? (
-                            <span className="text-[11px] font-black text-amber-650 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-100 dark:border-amber-800/50">
+                            <span className="text-[11px] font-bold text-amber-650 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-100 dark:border-amber-800/50">
                               {sig.multiplier.toFixed(2)}x Runway Penalty
                             </span>
                           ) : (
@@ -1042,7 +1042,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                           )}
                         </div>
                       </div>
-                      <span className={`text-[11px] uppercase tracking-wider font-extrabold px-2 py-0.5 rounded border ${sigBadgeColor} shrink-0`}>
+                      <span className={`text-[11px] uppercase tracking-normal font-semibold px-2 py-0.5 rounded border ${sigBadgeColor} shrink-0`}>
                         {sig.ageDays <= 90 ? 'Fresh (100%)' : sig.ageDays <= 180 ? `Decaying (${Math.round(sig.freshnessWeight*100)}%)` : 'Stale (0%)'}
                       </span>
                     </div>
@@ -1068,7 +1068,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                           Age: <strong className="text-slate-700 dark:text-slate-300 font-mono font-bold">{sig.ageDays} days ago</strong>
                         </span>
                         <span className="font-mono text-[11px]">
-                          calibrated: <strong className="text-indigo-600 dark:text-indigo-300 font-extrabold">{Math.round(sig.freshnessWeight * 100)}% fresh</strong> × <strong className="text-slate-600 dark:text-slate-300 font-extrabold">{sig.multiplier.toFixed(2)}x sector weight</strong> = <strong className="text-indigo-650 dark:text-indigo-300 font-black">{Math.round(sig.calibratedWeight * 100)}% intent</strong>
+                          calibrated: <strong className="text-indigo-600 dark:text-indigo-300 font-semibold">{Math.round(sig.freshnessWeight * 100)}% fresh</strong> × <strong className="text-slate-600 dark:text-slate-300 font-semibold">{sig.multiplier.toFixed(2)}x sector weight</strong> = <strong className="text-indigo-650 dark:text-indigo-300 font-bold">{Math.round(sig.calibratedWeight * 100)}% intent</strong>
                         </span>
                       </div>
                       <input 
@@ -1103,7 +1103,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
             {/* Add New Detected Signal Form */}
             <div className="border-t border-slate-200 dark:border-slate-700/80 pt-4 space-y-3 text-left">
               <div>
-                <span className="text-[12px] uppercase font-bold text-slate-450 tracking-wider flex items-center gap-1">
+                <span className="text-[12px] uppercase font-bold text-slate-450 tracking-normal flex items-center gap-1">
                   <Sparkles className="w-3.5 h-3.5 text-indigo-505 animate-pulse" />
                   Monitor/Detect Live Buying Signal
                 </span>
@@ -1147,7 +1147,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                       if (inputEl) inputEl.value = '';
                     }
                   }}
-                  className="px-3 bg-indigo-600 text-white hover:bg-indigo-700 h-9 font-extrabold text-[13px] shrink-0"
+                  className="px-3 bg-indigo-600 text-white hover:bg-indigo-700 h-9 font-semibold text-[13px] shrink-0"
                 >
                   📡 Detect Signal
                 </Button>
@@ -1184,7 +1184,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                       });
                     }
                   }}
-                  className="px-2.5 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-800/50 hover:bg-indigo-100 text-[12px] text-indigo-705 font-black cursor-pointer transition-colors"
+                  className="px-2.5 py-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-800/50 hover:bg-indigo-100 text-[12px] text-indigo-705 font-bold cursor-pointer transition-colors"
                 >
                   ⚡ Simulate Incoming Intent Event (New 0d)
                 </button>
@@ -1204,7 +1204,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
             <TabsContent value="outreach" className="space-y-6">
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                     <Mail className="w-4 h-4" />
                     Personalized Email Angle
                   </h4>
@@ -1225,7 +1225,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
 
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                     <Linkedin className="w-4 h-4" />
                     LinkedIn Hook
                   </h4>
@@ -1272,14 +1272,14 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
 
                        {/* Interactive Stakeholder LinkedIn Info Box */}
                        <div className="space-y-3">
-                         <div className="text-[12px] font-bold text-slate-400 uppercase tracking-widest block font-mono">
+                         <div className="text-[12px] font-bold text-slate-400 uppercase tracking-wide block font-mono">
                            Identified Account Contact (LinkedIn Synced)
                          </div>
                          <StakeholderLinkedinCard role={persona.role} company={account.name} domain={account.domain} />
 
                          {/* Simulated Live Activity Widget */}
                          <div className="p-3 bg-blue-50/25 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-800/50 rounded-xl space-y-2 font-sans text-xs">
-                           <div className="flex items-center justify-between text-[12px] text-blue-800 dark:text-blue-200 font-extrabold uppercase tracking-wider">
+                           <div className="flex items-center justify-between text-[12px] text-blue-800 dark:text-blue-200 font-semibold uppercase tracking-normal">
                              <span className="flex items-center gap-1.5 leading-none">
                                <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" />
                                LinkedIn Live Signal Feed
@@ -1296,7 +1296,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                        </div>
 
                        <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
-                         <div className="text-[13px] text-slate-400 font-bold uppercase tracking-wider">Potential Pain Points</div>
+                         <div className="text-[13px] text-slate-400 font-bold uppercase tracking-normal">Potential Pain Points</div>
                          <div className="flex flex-wrap gap-2">
                            {persona.painPoints.map((pain, pIdx) => (
                              <span key={pIdx} className="px-2 py-1 rounded bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 text-xs font-medium">
@@ -1306,13 +1306,13 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                          </div>
                        </div>
                        <div className="pt-2">
-                         <div className="text-[13px] text-slate-400 font-bold uppercase tracking-wider mb-1">Value Angle</div>
+                         <div className="text-[13px] text-slate-400 font-bold uppercase tracking-normal mb-1">Value Angle</div>
                          <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed mb-3">{persona.valueAngle}</p>
                        </div>
 
                        {/* Anticipated Objections & Pre-emptive Counter Narratives */}
                        <div className="pt-3.5 border-t border-slate-200 dark:border-slate-700/65">
-                         <div className="text-[13px] text-slate-400 font-bold uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                         <div className="text-[13px] text-slate-400 font-bold uppercase tracking-normal mb-2.5 flex items-center gap-1.5">
                            <ShieldCheck className="w-4 h-4 text-indigo-500 dark:text-indigo-400 font-sans" />
                            <span>Pre-emptive Counter-Narratives & Objection Handling</span>
                          </div>
@@ -1323,19 +1323,19 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                              {persona.counterNarratives.map((cn, cnIdx) => (
                                <div key={cnIdx} className="p-3.5 rounded-xl bg-gradient-to-br from-indigo-50/20 to-slate-50 border border-indigo-100 dark:border-indigo-800/50 space-y-2.5 text-left shadow-2xs">
                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-indigo-100/50 dark:border-indigo-800/50 pb-1.5 font-sans">
-                                   <span className="text-[12px] font-extrabold text-slate-800 dark:text-slate-200 uppercase tracking-wide bg-slate-150 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
+                                   <span className="text-[12px] font-semibold text-slate-800 dark:text-slate-200 uppercase tracking-wide bg-slate-150 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
                                      🚨 {cn.objection}
                                    </span>
-                                   <span className="text-[11px] font-extrabold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded border border-indigo-150 dark:border-indigo-800/50 font-mono self-start sm:self-auto">
+                                   <span className="text-[11px] font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 px-2 py-0.5 rounded border border-indigo-150 dark:border-indigo-800/50 font-mono self-start sm:self-auto">
                                      ⏱ {cn.suggestedMoment}
                                    </span>
                                  </div>
                                  <div className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed pt-0.5">
-                                   <strong className="text-indigo-950 font-black block text-[12px] mb-0.5 uppercase tracking-wide font-sans">Reframing message:</strong>
+                                   <strong className="text-indigo-950 font-bold block text-[12px] mb-0.5 uppercase tracking-wide font-sans">Reframing message:</strong>
                                    <span className="italic font-sans">"{cn.reframingMessage}"</span>
                                  </div>
                                  <div className="text-[13px] text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-700 p-2.5 rounded-lg leading-relaxed font-sans">
-                                   <strong className="text-emerald-700 dark:text-emerald-300 font-bold block text-[12px] mb-0.5 uppercase tracking-wider">💡 Grounded Proof Point:</strong>
+                                   <strong className="text-emerald-700 dark:text-emerald-300 font-bold block text-[12px] mb-0.5 uppercase tracking-normal">💡 Grounded Proof Point:</strong>
                                    {cn.proofPoint}
                                  </div>
                                </div>
@@ -1365,7 +1365,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                     <div className="bg-gradient-to-r from-indigo-50/70 to-blue-50/30 border border-indigo-100 dark:border-indigo-800/50 p-4 rounded-xl space-y-2.5">
                       <div className="flex items-center gap-2">
                         <Network className="w-5 h-5 text-indigo-600 dark:text-indigo-300 animate-pulse" />
-                        <h4 className="text-xs font-bold text-slate-905 uppercase tracking-wider">
+                        <h4 className="text-xs font-semibold text-slate-905 uppercase tracking-normal">
                           Coordinated Multi-Threading Stakeholder Engagement Map
                         </h4>
                       </div>
@@ -1376,7 +1376,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
 
                     {/* Timeline Steps layout */}
                     <div className="space-y-4">
-                      <div className="text-[12px] font-extrabold text-slate-400 uppercase tracking-widest pl-1">
+                      <div className="text-[12px] font-semibold text-slate-400 uppercase tracking-wide pl-1">
                         Threading Sequencing Timeline
                       </div>
                       
@@ -1418,14 +1418,14 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                                       <span className={`px-2 py-0.5 rounded text-[11px] font-bold border font-mono ${badgeBg} shrink-0`}>
                                         {step.node.timing}
                                       </span>
-                                      <span className="text-sm font-black text-slate-800 dark:text-slate-200 leading-tight">
+                                      <span className="text-sm font-bold text-slate-800 dark:text-slate-200 leading-tight">
                                         {step.node.role}
                                       </span>
                                     </div>
                                     
                                     {/* Render standard short-form strategic roles inline */}
                                     {step.node.strategicRole && step.node.strategicRole.length <= 25 && (
-                                      <Badge variant="secondary" className="text-[11px] font-bold tracking-wider px-2 py-0.5 uppercase bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shrink-0 whitespace-nowrap self-start sm:self-auto">
+                                      <Badge variant="secondary" className="text-[11px] font-bold tracking-normal px-2 py-0.5 uppercase bg-slate-50 dark:bg-slate-800/50 text-slate-500 dark:text-slate-300 border border-slate-200 dark:border-slate-700 shrink-0 whitespace-nowrap self-start sm:self-auto">
                                         {step.node.strategicRole}
                                       </Badge>
                                     )}
@@ -1434,7 +1434,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                                   {/* If strategicRole is a descriptive sentence, display it prominently on its own line beneath as an imperative callout */}
                                   {step.node.strategicRole && step.node.strategicRole.length > 25 && (
                                     <div className="text-[12px] leading-relaxed text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 border border-slate-150 dark:border-slate-700 rounded-lg p-2.5 text-left">
-                                      <strong className="text-indigo-650 dark:text-indigo-300 uppercase font-black text-[11px] font-mono block mb-1 tracking-wider leading-none">
+                                      <strong className="text-indigo-650 dark:text-indigo-300 uppercase font-bold text-[11px] font-mono block mb-1 tracking-normal leading-none">
                                         Strategic Target Principle:
                                       </strong>
                                       {step.node.strategicRole}
@@ -1449,7 +1449,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
 
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs pt-1">
                                   <div className="space-y-1">
-                                    <div className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">
+                                    <div className="text-[11px] uppercase font-bold text-slate-400 tracking-normal">
                                       Messaging Angle & Value Focus
                                     </div>
                                     <p className="text-slate-650 dark:text-slate-400 leading-relaxed text-[13px]">
@@ -1457,7 +1457,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                                     </p>
                                   </div>
                                   <div className="space-y-1.5 bg-slate-50/50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-800/80 w-full">
-                                    <div className="text-[11px] uppercase font-bold text-indigo-600 dark:text-indigo-300 tracking-wider flex items-center gap-1.5">
+                                    <div className="text-[11px] uppercase font-bold text-indigo-600 dark:text-indigo-300 tracking-normal flex items-center gap-1.5">
                                       <GitBranch className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400 animate-bounce" />
                                       Tactical Outreach Hook
                                     </div>
@@ -1477,7 +1477,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                     <div className="bg-amber-50/30 dark:bg-amber-950/40 border border-amber-200/50 dark:border-amber-800/60 p-4 rounded-xl space-y-3 shadow-2xs">
                       <div className="flex items-center gap-2 text-amber-800 dark:text-amber-200">
                         <ShieldAlert className="w-4 h-4 text-amber-600 dark:text-amber-300 shrink-0" />
-                        <span className="text-xs font-extrabold uppercase tracking-wider">
+                        <span className="text-xs font-semibold uppercase tracking-normal">
                           Outreach Sequence Collision Prevention Protocols
                         </span>
                       </div>
@@ -1505,11 +1505,11 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
               <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                    <div className="text-[12px] font-bold text-slate-400 uppercase tracking-widest mb-1">Hiring Status</div>
+                    <div className="text-[12px] font-bold text-slate-400 uppercase tracking-wide mb-1">Hiring Status</div>
                     <div className="text-sm font-bold text-emerald-600 dark:text-emerald-300">Active - Sales & Ops</div>
                   </div>
                   <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                    <div className="text-[12px] font-bold text-slate-400 uppercase tracking-widest mb-1">Recent Funding</div>
+                    <div className="text-[12px] font-bold text-slate-400 uppercase tracking-wide mb-1">Recent Funding</div>
                     <div className="text-sm font-bold text-slate-900 dark:text-slate-100">Series B ($22M)</div>
                   </div>
                 </div>
@@ -1548,7 +1548,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
       </div>
       
       <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
-        <Button className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-lg shadow-indigo-200">
+        <Button className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-sm shadow-indigo-200">
           Sync to CRM (Salesforce/Hubspot)
         </Button>
       </div>
@@ -1583,7 +1583,7 @@ function CompetitorCard({ comp }: { comp: any; key?: any }) {
     <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-700/65 bg-white dark:bg-slate-900 space-y-3.5 shadow-sm">
       <div className="flex items-start justify-between">
         <div>
-          <h4 className="text-sm font-bold text-slate-800 dark:text-slate-200 flex flex-wrap items-center gap-1.5 leading-tight">
+          <h4 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex flex-wrap items-center gap-1.5 leading-tight">
             <span>{comp.name}</span>
             <span className="text-[12px] font-medium text-slate-400">({comp.category})</span>
           </h4>
@@ -1598,13 +1598,13 @@ function CompetitorCard({ comp }: { comp: any; key?: any }) {
 
       <div className="grid grid-cols-2 gap-3 bg-slate-50/70 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800">
         <div>
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Switch Likelihood</span>
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-normal block mb-0.5">Switch Likelihood</span>
           <span className={`text-[13px] leading-tight ${getLikelihoodColor(comp.switchingLikelihood)}`}>
             {comp.switchingLikelihood}
           </span>
         </div>
         <div>
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-0.5">Timing Sensitivity</span>
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-normal block mb-0.5">Timing Sensitivity</span>
           <span className="text-[13px] font-semibold text-slate-700 dark:text-slate-300 leading-tight">
             {comp.timingSensitivity}
           </span>
@@ -1612,7 +1612,7 @@ function CompetitorCard({ comp }: { comp: any; key?: any }) {
       </div>
 
       <div className="bg-slate-50/20 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800">
-        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Competitive Positioning Pitch</span>
+        <span className="text-[11px] font-bold text-slate-400 uppercase tracking-normal block mb-1">Competitive Positioning Pitch</span>
         <p className="text-[13px] text-slate-700 dark:text-slate-300 leading-relaxed font-normal">
           {comp.competitivePositioningAngle}
         </p>

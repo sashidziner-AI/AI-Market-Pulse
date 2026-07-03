@@ -19,6 +19,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { toast } from 'sonner';
 import { computeWeightsRecalibration, SellerChannelPartner, DEFAULT_CHANNEL_PARTNERS, computePathwayAssessment } from '../utils/calibration';
 import { ThemeToggle } from './ThemeToggle';
+import { PieChart, Pie, Cell, BarChart, Bar, ResponsiveContainer, Tooltip } from 'recharts';
 
 interface DashboardProps {
   analysis: BusinessAnalysis;
@@ -713,7 +714,7 @@ export function Dashboard({
   };
 
   return (
-    <div className="flex bg-slate-100 dark:bg-slate-800/50 min-h-screen">
+    <div className="flex bg-white dark:bg-[#1F1F20] min-h-screen text-zinc-900 dark:text-zinc-100 font-sans">
       <input 
         type="file" 
         ref={fileInputRef} 
@@ -722,10 +723,13 @@ export function Dashboard({
         className="hidden" 
       />
       {/* Sidebar */}
-      <aside className="w-64 border-r border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 sticky top-0 h-screen hidden lg:flex flex-col flex-shrink-0">
-        <div className="p-6">
+      <aside className="w-64 border-r border-white/[0.06] bg-[#2A2A2B] sticky top-0 h-screen hidden lg:flex flex-col flex-shrink-0">
+        <div className="p-5">
           <div className="flex items-center gap-2 mb-8">
-            <span className="font-bold text-slate-900 dark:text-slate-100 tracking-tight text-base">AI Market Pulse</span>
+            <div className="w-6 h-6 rounded-md bg-gradient-to-br from-amber-400 via-orange-500 to-orange-600 flex items-center justify-center shadow-[0_1px_2px_rgba(245,130,32,0.5)]">
+              <span className="text-white text-[10px] font-bold">M</span>
+            </div>
+            <span className="font-semibold text-zinc-100 tracking-tight text-[13px]" style={{ letterSpacing: '-0.02em' }}>AI Market Pulse</span>
           </div>
 
           <nav className="space-y-1">
@@ -737,27 +741,27 @@ export function Dashboard({
 
           {crmConnected !== 'none' && (
             <>
-              <Separator className="my-6" />
+              <Separator className="my-6 bg-white/[0.06]" />
               <div className="mt-4 px-2">
-                <div className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-800/50 flex flex-col gap-2">
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex flex-col gap-2">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-1.5">
                       <span className="relative flex h-2 w-2">
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                         <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                       </span>
-                      <span className="text-[12px] font-bold text-emerald-800 dark:text-emerald-200 uppercase tracking-wider">
+                      <span className="text-[12px] font-bold text-emerald-300 uppercase tracking-normal">
                         {getCrmName(crmConnected).toUpperCase()} Connected
                       </span>
                     </div>
-                    <button 
+                    <button
                       onClick={() => setIsCrmOpen(true)}
-                      className="text-[12px] font-semibold text-indigo-600 dark:text-indigo-300 hover:text-indigo-800 underline transition-colors"
+                      className="text-[12px] font-semibold text-indigo-400 hover:text-indigo-300 underline transition-colors cursor-pointer"
                     >
                       Manage
                     </button>
                   </div>
-                  <div className="text-[11px] text-emerald-700 dark:text-emerald-300 leading-normal">
+                  <div className="text-[11px] text-emerald-200/80 leading-normal">
                     Secure real-time sync active. Data refreshed hourly.
                   </div>
                 </div>
@@ -766,57 +770,57 @@ export function Dashboard({
           )}
         </div>
 
-        <div className="mt-auto p-4 border-t border-slate-100 dark:border-slate-800">
-           <div className="p-4 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-800/50">
-              <div className="text-xs font-bold text-indigo-900 dark:text-indigo-200 mb-1">Business Context</div>
-              <p className="text-[12px] text-indigo-700 dark:text-indigo-300 font-medium mb-2 opacity-80">{analysis.businessName}</p>
-              <div className="text-[12px] text-indigo-900 dark:text-indigo-200 font-bold uppercase tracking-wider mb-1">ICP Target</div>
-              <p className="text-[12px] text-indigo-700 dark:text-indigo-300 leading-tight">{analysis.icp.title}</p>
+        <div className="mt-auto p-4 border-t border-white/[0.06]">
+           <div className="p-4 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
+              <div className="text-xs font-bold text-indigo-300 mb-1">Business Context</div>
+              <p className="text-[12px] text-indigo-200/85 font-medium mb-2">{analysis.businessName}</p>
+              <div className="text-[12px] text-indigo-300 font-bold uppercase tracking-normal mb-1">ICP Target</div>
+              <p className="text-[12px] text-indigo-200/85 leading-tight">{analysis.icp.title}</p>
            </div>
         </div>
       </aside>
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0">
-        <header className="flex flex-col border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 sticky top-0 z-20 font-sans select-none">
+        <header className="flex flex-col border-b border-white/[0.06] bg-[#2A2A2B] backdrop-blur-md sticky top-0 z-20 font-sans select-none">
           {/* Row 1: Context, Navigation and CRM */}
           <div className="h-14 px-8 flex items-center justify-between">
             <div className="flex items-center gap-3">
               {onBack && (
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  className="gap-1.5 text-xs text-slate-500 dark:text-slate-300 hover:text-indigo-600 hover:bg-slate-50 px-2.5 py-1 h-8 rounded-lg border border-slate-200 dark:border-slate-700 cursor-pointer"
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5 text-xs text-zinc-300 hover:text-white hover:bg-white/[0.06] px-2.5 py-1 h-8 rounded-lg border border-white/[0.08] cursor-pointer"
                   onClick={onBack}
                   title="Go back to seller website adding page"
                 >
-                  <ArrowLeft className="w-3.5 h-3.5 text-slate-500 dark:text-slate-300" />
+                  <ArrowLeft className="w-3.5 h-3.5 text-zinc-300" />
                   <span>Back</span>
                 </Button>
               )}
-              <h2 className="font-extrabold text-slate-900 dark:text-slate-100 text-sm md:text-base lg:text-lg tracking-tight">
-                {activeTab === 'recommendations' ? 'Market Pulse' : 
-                 activeTab === 'clusters' ? 'Strategic Account Clusters' : 
+              <h2 className="font-semibold text-zinc-100 text-sm md:text-base lg:text-lg tracking-tight">
+                {activeTab === 'recommendations' ? 'Market Pulse' :
+                 activeTab === 'clusters' ? 'Strategic Account Clusters' :
                  activeTab === 'partner-pathways' ? 'Partner Referral & Warm Pathways' : 'Pipeline'}
               </h2>
-              <Badge variant="secondary" className="bg-emerald-55 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-800/50 font-mono font-bold text-[12px] px-2 py-0.5 rounded-full">
+              <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-mono font-bold text-[12px] px-2 py-0.5 rounded-full">
                 {filteredAccounts.length} Leads
               </Badge>
             </div>
 
             <div className="flex items-center gap-3">
-               <Button variant="ghost" size="icon" className="text-slate-400 relative hover:bg-slate-50 h-8 w-8 rounded-lg">
+               <Button variant="ghost" size="icon" className="text-zinc-400 relative hover:text-zinc-100 hover:bg-white/[0.06] h-8 w-8 rounded-lg">
                  <Bell className="w-4 h-4" />
-                 <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full border border-white" />
+                 <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full border border-[#2A2A2B]" />
                </Button>
-               <div className="h-6 w-[1px] bg-slate-200 dark:bg-slate-700/80 mx-1" />
+               <div className="h-6 w-[1px] bg-white/[0.08] mx-1" />
                <Button
                  variant="outline"
                  size="sm"
-                 className={`h-8 gap-1.5 text-xs transition-all ${crmConnected !== 'none' ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-50/75 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60 hover:bg-emerald-100/50 font-bold' : 'text-slate-650 dark:text-slate-400 hover:bg-slate-50'}`}
+                 className={`h-8 gap-1.5 text-xs transition-all cursor-pointer ${crmConnected !== 'none' ? 'text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 hover:bg-emerald-500/15 font-bold' : 'text-zinc-300 bg-transparent border-white/[0.08] hover:bg-white/[0.06] hover:text-zinc-100'}`}
                  onClick={() => setIsCrmOpen(true)}
                >
-                 <Database className={`w-3.5 h-3.5 ${crmConnected !== 'none' ? 'text-emerald-600 dark:text-emerald-300 animate-pulse' : 'text-indigo-500 dark:text-indigo-400'}`} />
+                 <Database className={`w-3.5 h-3.5 ${crmConnected !== 'none' ? 'text-emerald-400 animate-pulse' : 'text-indigo-400'}`} />
                  <span>{crmConnected !== 'none' ? `${crmConnected.charAt(0).toUpperCase() + crmConnected.slice(1)} Active` : 'Connect CRM'}</span>
                </Button>
                <ThemeToggle />
@@ -824,12 +828,12 @@ export function Dashboard({
           </div>
 
           {/* Row 2: Campaign Scope Actions and Lead File Sync Controls */}
-          <div className="h-12 px-8 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/50 border-t border-slate-100 dark:border-slate-800">
+          <div className="h-12 px-8 flex items-center justify-between bg-white/[0.02] border-t border-white/[0.04]">
             {/* Left side: Report Saved Status */}
             <div className="flex items-center gap-2">
               {activeReportId ? (
                 <div className="flex items-center gap-1.5 group/header-title animate-fadeIn">
-                  <span className="text-[13px] bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-150 dark:border-indigo-800/50 text-indigo-700 dark:text-indigo-300 px-2.5 py-0.5 rounded-md font-bold font-sans flex items-center gap-1.5 shadow-2xs">
+                  <span className="text-[13px] bg-indigo-500/10 border border-indigo-500/25 text-indigo-300 px-2.5 py-0.5 rounded-md font-bold font-sans flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse shrink-0" />
                     <span className="truncate max-w-[150px] md:max-w-[240px]">Target Unit: {savedReports.find(r => r.id === activeReportId)?.name || 'Saved Plan'}</span>
                   </span>
@@ -841,14 +845,14 @@ export function Dashboard({
                         setIsRenameReportOpen(true);
                       }
                     }}
-                    className="opacity-0 group-hover/header-title:opacity-100 hover:text-indigo-600 text-slate-400 p-1 bg-white dark:bg-slate-900 hover:bg-slate-100 rounded border border-slate-150 dark:border-slate-700 shadow-xxs transition-all cursor-pointer inline-flex items-center"
+                    className="opacity-0 group-hover/header-title:opacity-100 hover:text-indigo-300 text-zinc-400 p-1 bg-white/[0.04] hover:bg-white/[0.08] rounded border border-white/[0.08] transition-all cursor-pointer inline-flex items-center"
                     title="Rename Current Saved Plan"
                   >
                     <Pencil className="w-3 h-3" />
                   </button>
                 </div>
               ) : (
-                <span className="text-[13px] bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-700 dark:text-amber-300 px-2.5 py-0.5 rounded-md font-bold font-sans flex items-center gap-1.5">
+                <span className="text-[13px] bg-amber-500/10 border border-amber-500/25 text-amber-300 px-2.5 py-0.5 rounded-md font-bold font-sans flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 bg-amber-400 rounded-full shrink-0 animate-pulse" />
                   <span>Interactive Outreach Draft</span>
                 </span>
@@ -862,7 +866,7 @@ export function Dashboard({
                   variant="default"
                   size="sm"
                   onClick={triggerSaveReportInitiation}
-                  className="h-8 text-[13px] font-bold gap-1 bg-indigo-600 hover:bg-indigo-700 text-white px-3 rounded-lg border-0 cursor-pointer transition-all shadow-2xs shrink-0"
+                  className="h-8 text-[13px] font-bold gap-1 bg-indigo-600 hover:bg-indigo-500 text-white px-3 rounded-lg border-0 cursor-pointer transition-all shadow-[0_1px_2px_rgba(245,130,32,0.35)] shrink-0"
                   title="Save current analysis and target list view"
                 >
                   <FolderOpen className="w-3.5 h-3.5" />
@@ -874,20 +878,20 @@ export function Dashboard({
                   variant="outline"
                   size="sm"
                   onClick={() => setIsEditReportOpen(true)}
-                  className="h-8 text-[13px] font-bold gap-1 px-3 rounded-lg border-slate-200 dark:border-slate-700 hover:bg-sky-50/20 text-slate-650 dark:text-slate-400 cursor-pointer bg-white dark:bg-slate-900 shrink-0"
+                  className="h-8 text-[13px] font-bold gap-1 px-3 rounded-lg border-white/[0.08] hover:bg-white/[0.06] text-zinc-300 hover:text-zinc-100 cursor-pointer bg-transparent shrink-0"
                   title="Configure Ideal Customer Profile and analysis parameters"
                 >
-                  <Sliders className="w-3.5 h-3.5 text-slate-500 dark:text-slate-300" />
+                  <Sliders className="w-3.5 h-3.5 text-zinc-400" />
                   <span>Edit Blueprint</span>
                 </Button>
               )}
-              
-              <div className="h-4 w-[1px] bg-slate-200 dark:bg-slate-700/80 mx-1 shrink-0" />
-              
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="h-8 text-[13px] text-slate-500 dark:text-slate-300 hover:text-indigo-600 hover:bg-slate-50 flex items-center gap-1 px-2.5 rounded-lg border border-dashed border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900/70 select-none cursor-pointer shrink-0"
+
+              <div className="h-4 w-[1px] bg-white/[0.08] mx-1 shrink-0" />
+
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 text-[13px] text-zinc-300 hover:text-zinc-100 hover:bg-white/[0.06] flex items-center gap-1 px-2.5 rounded-lg border border-dashed border-white/[0.10] bg-transparent select-none cursor-pointer shrink-0"
                 onClick={() => {
                   const headers = "Domain,Company Name,Target Tech,Industry\nexample.com,Example Corp,React | Figma,Technology\nanthropic.com,Anthropic,Python | AWS,Artificial Intelligence\nopenai.com,OpenAI,Node | Google Cloud,Artificial Intelligence\n";
                   const blob = new Blob([headers], { type: 'text/csv;charset=utf-8;' });
@@ -902,25 +906,25 @@ export function Dashboard({
                   toast.success("Accounts template CSV downloaded!");
                 }}
               >
-                <Download className="w-3.5 h-3.5 text-slate-400" /> 
+                <Download className="w-3.5 h-3.5 text-zinc-400" />
                 <span className="hidden sm:inline">Download Template</span>
               </Button>
-              
-              <Button 
-                variant="outline" 
-                size="sm" 
-                className={`h-8 gap-1 text-[13px] font-semibold bg-white dark:bg-slate-900 shrink-0 cursor-pointer ${uploadedFile ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-250 dark:border-emerald-800/60' : 'border-slate-200 dark:border-slate-700 text-slate-650 dark:text-slate-400 hover:bg-slate-50'}`}
+
+              <Button
+                variant="outline"
+                size="sm"
+                className={`h-8 gap-1 text-[13px] font-semibold shrink-0 cursor-pointer ${uploadedFile ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/25' : 'bg-transparent border-white/[0.08] text-zinc-300 hover:text-zinc-100 hover:bg-white/[0.06]'}`}
                 onClick={() => fileInputRef.current?.click()}
               >
-                <FileUp className="w-3.5 h-3.5 text-slate-400" /> 
+                <FileUp className="w-3.5 h-3.5 text-zinc-400" />
                 <span>{uploadedFile ? `Imported: ${uploadedFile.name.substring(0, 12)}${uploadedFile.name.length > 12 ? '...' : ''}` : 'Import CSV'}</span>
               </Button>
 
               {uploadedFile && (
-                <Button 
-                  size="sm" 
-                  className="h-8 bg-indigo-650 hover:bg-indigo-700 text-white gap-1 shadow-2xs text-[13px] px-3 font-bold animate-in fade-in slide-in-from-right duration-200 shrink-0 cursor-pointer" 
-                  onClick={handleRunFile} 
+                <Button
+                  size="sm"
+                  className="h-8 bg-indigo-650 hover:bg-indigo-600 text-white gap-1 shadow-[0_1px_2px_rgba(245,130,32,0.35)] text-[13px] px-3 font-bold animate-in fade-in slide-in-from-right duration-200 shrink-0 cursor-pointer"
+                  onClick={handleRunFile}
                   disabled={isDiscovering}
                 >
                   {isDiscovering ? <Zap className="w-3.5 h-3.5 animate-pulse" /> : <Play className="w-3.5 h-3.5" />}
@@ -937,7 +941,7 @@ export function Dashboard({
               <div className="p-4 rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/70 dark:bg-amber-950/40 flex items-start gap-3 shadow-xs animate-in fade-in duration-300">
                 <CloudLightning className="w-5 h-5 text-amber-500 dark:text-amber-400 shrink-0 mt-0.5 animate-pulse" />
                 <div className="space-y-1">
-                  <h4 className="text-xs font-bold text-amber-900 dark:text-amber-200">OpenAI Live API Unavailable (Quota Reached or Key Missing)</h4>
+                  <h4 className="text-xs font-semibold text-amber-900 dark:text-amber-200">OpenAI Live API Unavailable (Quota Reached or Key Missing)</h4>
                   <p className="text-[13px] text-amber-850 dark:text-amber-200 leading-relaxed max-w-4xl">
                     The OpenAI API call did not return live data. To prevent interruptions,
                     <strong> GTM Intelligence has automatically activated localized high-fidelity simulated backups</strong>,
@@ -952,23 +956,23 @@ export function Dashboard({
 
             {/* Adaptive Scoring Intelligence Board */}
             {recalib.hasFeedback && (
-              <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 text-white shadow-lg space-y-4 relative overflow-hidden animate-in fade-in duration-500">
+              <div className="p-6 rounded-3xl bg-slate-900 border border-slate-800 text-white shadow-sm space-y-4 relative overflow-hidden animate-in fade-in duration-500">
                 <div className="absolute inset-0 bg-gradient-to-r from-indigo-950/25 via-transparent to-slate-900/10 pointer-events-none" />
                 
                 <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div className="space-y-1 text-left">
-                    <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 text-[12px] font-black uppercase tracking-wider border border-emerald-500/20 font-mono">
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 text-[12px] font-bold uppercase tracking-normal border border-emerald-500/20 font-mono">
                       <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block mr-1" />
                       <span>Adaptive Closed-Loop Active</span>
                     </div>
-                    <h3 className="text-base font-black tracking-tight font-sans flex items-center gap-2">
+                    <h3 className="text-base font-semibold tracking-tight font-sans flex items-center gap-2">
                       <Sparkles className="w-4.5 h-4.5 text-indigo-400 dark:text-indigo-300" />
                       Continuous Score Optimization Engine
                     </h3>
                   </div>
 
                   <div className="text-[12px] font-mono font-medium text-slate-450 text-left md:text-right">
-                    <span>Analyzed <strong className="font-extrabold text-white">{accounts.filter(a => !!a.outreachOutcome).length}</strong> commercial outcomes</span>
+                    <span>Analyzed <strong className="font-semibold text-white">{accounts.filter(a => !!a.outreachOutcome).length}</strong> commercial outcomes</span>
                   </div>
                 </div>
 
@@ -979,7 +983,7 @@ export function Dashboard({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1.5 text-left relative">
                   {/* Calibrated Multipliers Column */}
                   <div className="p-4 rounded-2xl bg-slate-950/40 border border-slate-800/80 space-y-3">
-                    <div className="text-[12px] font-extrabold text-indigo-300 uppercase tracking-wider font-mono">Dynamic Signal Calibrations</div>
+                    <div className="text-[12px] font-semibold text-indigo-300 uppercase tracking-normal font-mono">Dynamic Signal Calibrations</div>
                     
                     {recalib.appliedBoosts.length === 0 && recalib.appliedPenalties.length === 0 ? (
                       <p className="text-[13px] text-slate-500 dark:text-slate-300 italic font-normal py-1">Scoring weights configured at standard sector parity. Continue logging outcomes to drive calibrations.</p>
@@ -1003,7 +1007,7 @@ export function Dashboard({
 
                   {/* Warning Profiles Column */}
                   <div className="p-4 rounded-2xl bg-slate-950/40 border border-slate-800/80 space-y-3">
-                    <div className="text-[12px] font-extrabold text-amber-400 dark:text-amber-300 uppercase tracking-wider font-mono">Closed-Loop Custody & Risk Flags</div>
+                    <div className="text-[12px] font-semibold text-amber-400 dark:text-amber-300 uppercase tracking-normal font-mono">Closed-Loop Custody & Risk Flags</div>
                     
                     {recalib.sectorCautions.length === 0 && recalib.sizeCautions.length === 0 && recalib.financialCautions.length === 0 ? (
                       <p className="text-[13px] text-slate-500 dark:text-slate-300 italic font-normal py-1">No cautionary flags compiled yet. No high-risk pipeline trends detected.</p>
@@ -1037,67 +1041,246 @@ export function Dashboard({
               </div>
             )}
 
-            {/* Interactive GTM Outreach priority wave segments */}
+            {/* Interactive GTM Outreach priority wave segments — Market Pulse tab only */}
+            {activeTab === 'recommendations' && (
             <div className="space-y-2">
-              <h3 className="text-xs font-extrabold uppercase tracking-widest text-slate-500 dark:text-slate-300">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-300">
                 GTM Outreach Priority Waves & Intent Timing
               </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              {(() => {
+                const total = Math.max(1, priorityOverview.total);
+                const immediatePct = Math.round((priorityOverview.immediate / total) * 100);
+                const nurturePct = Math.round((priorityOverview.nurture / total) * 100);
+                const standardPct = Math.round((priorityOverview.standard / total) * 100);
+
+                const compositionData = [
+                  { name: 'Immediate', value: priorityOverview.immediate, fill: '#f43f5e' },
+                  { name: 'Nurture', value: priorityOverview.nurture, fill: '#14b8a6' },
+                  { name: 'Standard', value: priorityOverview.standard, fill: '#94a3b8' },
+                ].filter(d => d.value > 0);
+
+                // Fit-score histograms (5 bins) per priority bucket
+                const emptyBins = () => [
+                  { range: '0-19', count: 0 },
+                  { range: '20-39', count: 0 },
+                  { range: '40-59', count: 0 },
+                  { range: '60-79', count: 0 },
+                  { range: '80+', count: 0 },
+                ];
+                const immBins = emptyBins();
+                const nurBins = emptyBins();
+                const stdBins = emptyBins();
+                evaluatedAccounts.forEach(acc => {
+                  const info = getAccountPriorityInfo(acc);
+                  if (acc.isDisqualified || info.priorityFlag === 'Do Not Pursue') return;
+                  const idx = Math.min(4, Math.floor((acc.fitScore ?? 0) / 20));
+                  if (info.priorityFlag === 'Immediate Action Required') immBins[idx].count++;
+                  else if (info.priorityFlag === 'Nurture Queue') nurBins[idx].count++;
+                  else stdBins[idx].count++;
+                });
+
+                const tooltipStyle = {
+                  background: 'rgba(15,15,17,0.92)',
+                  border: '1px solid rgba(255,255,255,0.10)',
+                  borderRadius: 8,
+                  color: '#fafafa',
+                  fontSize: 11,
+                  padding: '4px 8px',
+                } as const;
+                const tooltipLabelStyle = { color: '#a1a1aa', fontSize: 10 } as const;
+                const tooltipItemStyle = { color: '#fafafa' } as const;
+
+                return (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Card 1: All Candidates — HERO DONUT with vertical legend list */}
                 <div
                   onClick={() => setPriorityFilter('all')}
-                  className={`p-4 rounded-xl border transition-all cursor-pointer text-left ${priorityFilter === 'all' ? 'border-indigo-600 dark:border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40 ring-1 ring-indigo-550/20 dark:ring-indigo-400/30' : 'border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800/60'}`}
+                  className="relative overflow-hidden p-4 rounded-2xl border transition-all cursor-pointer text-left border-[#1d8ecd] bg-gradient-to-br from-[#1d8ecd]/15 to-[#1d8ecd]/[0.05] dark:from-[#1d8ecd]/30 dark:to-[#1d8ecd]/15 ring-1 ring-[#1d8ecd]/30"
                 >
-                  <div className="flex items-center gap-1.5 mb-1.5">
-                    <Compass className={`w-4 h-4 ${priorityFilter === 'all' ? 'text-indigo-600 dark:text-indigo-300' : 'text-indigo-500 dark:text-indigo-400'}`} />
-                    <span className={`text-[12px] font-bold uppercase tracking-wider ${priorityFilter === 'all' ? 'text-indigo-700 dark:text-indigo-200' : 'text-slate-500 dark:text-slate-300'}`}>All Candidates</span>
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Compass className="w-4 h-4 text-[#1d8ecd]" />
+                    <span className="text-[18px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">All Candidates</span>
                   </div>
-                  <div className={`text-2xl font-black font-mono ${priorityFilter === 'all' ? 'text-indigo-900 dark:text-indigo-100' : 'text-slate-800 dark:text-slate-200'}`}>{priorityOverview.total}</div>
-                  <div className={`text-[12px] mt-1 ${priorityFilter === 'all' ? 'text-indigo-700/80 dark:text-indigo-200/80' : 'text-slate-500 dark:text-slate-300'}`}>Total identified opportunities</div>
+                  <p className="text-[11px] text-slate-600 dark:text-zinc-400 mb-3 leading-snug">
+                    Full pipeline coverage across every priority tier
+                  </p>
+
+                  <div className="flex items-center gap-3">
+                    {/* Prominent donut on the left */}
+                    <div className="relative w-20 h-20 shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={compositionData.length ? compositionData : [{ name: 'Empty', value: 1, fill: '#e5e7eb' }]}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={26}
+                            outerRadius={38}
+                            paddingAngle={compositionData.length > 1 ? 3 : 0}
+                            dataKey="value"
+                            stroke="none"
+                          >
+                            {(compositionData.length ? compositionData : [{ fill: '#e5e7eb' }]).map((d, i) => (
+                              <Cell key={i} fill={d.fill} />
+                            ))}
+                          </Pie>
+                          {compositionData.length > 0 && (
+                            <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
+                          )}
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                        <span className="text-lg font-semibold font-mono text-slate-900 dark:text-zinc-50 leading-none" style={{ letterSpacing: '-0.03em' }}>{priorityOverview.total}</span>
+                      </div>
+                    </div>
+                    {/* Vertical legend list */}
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="flex items-center gap-1.5 text-slate-600 dark:text-zinc-300"><span className="w-1.5 h-1.5 rounded-full bg-rose-500" />Immediate</span>
+                        <span className="font-mono font-semibold text-slate-700 dark:text-zinc-200">{priorityOverview.immediate}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="flex items-center gap-1.5 text-slate-600 dark:text-zinc-300"><span className="w-1.5 h-1.5 rounded-full bg-teal-500" />Nurture</span>
+                        <span className="font-mono font-semibold text-slate-700 dark:text-zinc-200">{priorityOverview.nurture}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[11px]">
+                        <span className="flex items-center gap-1.5 text-slate-600 dark:text-zinc-300"><span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500" />Standard</span>
+                        <span className="font-mono font-semibold text-slate-700 dark:text-zinc-200">{priorityOverview.standard}</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
 
-                <div 
+                {/* Card 2: Immediate Action — URGENT ALERT with pulsing accent bar + gradient */}
+                <div
                   onClick={() => setPriorityFilter('immediate')}
-                  className={`p-4 rounded-xl border transition-all cursor-pointer text-left relative overflow-hidden ${priorityFilter === 'immediate' ? 'border-rose-500 bg-rose-50/25 dark:bg-rose-950/40 ring-1 ring-rose-300' : 'border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-900 hover:bg-slate-50'}`}
+                  className="relative overflow-hidden p-4 rounded-2xl border transition-all cursor-pointer text-left border-rose-500 bg-gradient-to-br from-rose-100 to-rose-50 dark:from-rose-900/30 dark:to-rose-950/20 ring-1 ring-rose-300"
                 >
-                  {priorityOverview.immediate > 0 && (
-                    <span className="absolute top-2 right-2 flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-500"></span>
-                    </span>
-                  )}
-                  <div className="flex items-center gap-1.5 mb-1.5">
-                    <TrendingUp className="w-4 h-4 text-rose-500 dark:text-rose-400" />
-                    <span className="text-[12px] font-bold text-slate-500 dark:text-slate-300 uppercase tracking-wider">Immediate Action</span>
+                  {/* Pulsing accent bar at top */}
+                  <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-rose-400 via-rose-500 to-orange-500 animate-pulse" />
+
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-1.5">
+                      <TrendingUp className="w-4 h-4 text-rose-500 dark:text-rose-400" />
+                      <span className="text-[18px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Immediate Action</span>
+                    </div>
+                    {priorityOverview.immediate > 0 && (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-semibold text-rose-700 dark:text-rose-300 bg-rose-100 dark:bg-rose-500/20 border border-rose-200 dark:border-rose-500/30 uppercase tracking-wider">
+                        <span className="relative flex h-1.5 w-1.5">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75"></span>
+                          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-rose-500"></span>
+                        </span>
+                        Urgent
+                      </span>
+                    )}
                   </div>
-                  <div className="text-2xl font-black text-rose-700 dark:text-rose-300 font-mono">{priorityOverview.immediate}</div>
-                  <div className="text-[12px] text-slate-500 dark:text-slate-300 mt-1">High ICP fit + urgent buyers</div>
+
+                  {/* Huge dominant count */}
+                  <div className="text-5xl font-semibold font-mono text-rose-600 dark:text-rose-300 leading-none mb-1" style={{ letterSpacing: '-0.04em' }}>
+                    {priorityOverview.immediate}
+                  </div>
+                  <div className="text-[11px] text-rose-700/80 dark:text-rose-300/80 mb-3 font-medium">
+                    high-intent accounts
+                  </div>
+
+                  {/* Slim bar chart at the bottom */}
+                  <div className="h-8 -mx-1" onClick={(e) => e.stopPropagation()}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={immBins} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
+                        <Bar dataKey="count" fill="#f43f5e" radius={[2, 2, 0, 0]} />
+                        <Tooltip cursor={{ fill: 'rgba(244,63,94,0.12)' }} contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <div className="mt-1 text-[9px] font-mono uppercase tracking-wider text-rose-500/70 dark:text-rose-300/70">Fit-score distribution</div>
                 </div>
 
-                <div 
+                {/* Card 3: Nurture Queue — CENTERED RADIAL GAUGE dominating the card */}
+                <div
                   onClick={() => setPriorityFilter('nurture')}
-                  className={`p-4 rounded-xl border transition-all cursor-pointer text-left ${priorityFilter === 'nurture' ? 'border-teal-500 bg-teal-50/25 dark:bg-teal-950/40 ring-1 ring-teal-300' : 'border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-900 hover:bg-slate-50'}`}
+                  className="relative overflow-hidden p-4 rounded-2xl border transition-all cursor-pointer text-left flex flex-col items-center border-teal-500 bg-gradient-to-br from-teal-100 to-teal-50 dark:from-teal-900/40 dark:to-teal-950/20 ring-1 ring-teal-300"
                 >
-                  <div className="flex items-center gap-1.5 mb-1.5">
+                  <div className="w-full flex items-center gap-1.5 mb-2">
                     <Clock className="w-4 h-4 text-teal-600 dark:text-teal-300" />
-                    <span className="text-[12px] font-bold text-slate-500 dark:text-slate-300 uppercase tracking-wider">Nurture Queue</span>
+                    <span className="text-[18px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Nurture Queue</span>
                   </div>
-                  <div className="text-2xl font-black text-teal-700 dark:text-teal-300 font-mono">{priorityOverview.nurture}</div>
-                  <div className="text-[12px] text-slate-500 dark:text-slate-300 mt-1">High ICP fit, early awareness</div>
+
+                  {/* Big centered radial gauge */}
+                  <div className="relative w-28 h-28 my-1" onClick={(e) => e.stopPropagation()}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={[
+                            { name: 'Nurture', value: priorityOverview.nurture, fill: '#14b8a6' },
+                            { name: 'Rest', value: Math.max(0, priorityOverview.total - priorityOverview.nurture), fill: 'transparent' },
+                          ]}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={42}
+                          outerRadius={54}
+                          startAngle={90}
+                          endAngle={-270}
+                          dataKey="value"
+                          stroke="none"
+                          cornerRadius={6}
+                        />
+                        <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    {/* Background ring */}
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="w-[108px] h-[108px] rounded-full border-[12px] border-slate-100 dark:border-white/[0.05] -z-10 absolute" />
+                    </div>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                      <span className="text-2xl font-semibold font-mono text-teal-600 dark:text-teal-300 leading-none" style={{ letterSpacing: '-0.03em' }}>{nurturePct}%</span>
+                      <span className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500 mt-0.5">share</span>
+                    </div>
+                  </div>
+
+                  <div className="w-full mt-2 flex items-center justify-between text-[10px] font-mono text-slate-500 dark:text-zinc-400">
+                    <span>Queued</span>
+                    <span className="font-semibold text-teal-600 dark:text-teal-300">{priorityOverview.nurture}/{priorityOverview.total}</span>
+                  </div>
                 </div>
 
-                <div 
+                {/* Card 4: Standard follow-up — MINIMAL TYPOGRAPHIC (no chart, tabular list) */}
+                <div
                   onClick={() => setPriorityFilter('standard')}
-                  className={`p-4 rounded-xl border transition-all cursor-pointer text-left ${priorityFilter === 'standard' ? 'border-slate-550 bg-slate-50/40 dark:bg-slate-800/50 ring-1 ring-slate-350/20' : 'border-slate-200 dark:border-slate-700/60 bg-white dark:bg-slate-900 hover:bg-slate-50'}`}
+                  className="p-4 rounded-2xl border transition-all cursor-pointer text-left border-amber-500 bg-gradient-to-br from-amber-100 to-amber-50 dark:from-amber-900/40 dark:to-amber-950/20 ring-1 ring-amber-300"
                 >
-                  <div className="flex items-center gap-1.5 mb-1.5">
-                    <Lightbulb className="w-4 h-4 text-slate-500 dark:text-slate-300" />
-                    <span className="text-[12px] font-bold text-slate-500 dark:text-slate-300 uppercase tracking-wider">Standard follow-up</span>
+                  <div className="flex items-center gap-1.5 mb-2">
+                    <Lightbulb className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
+                    <span className="text-[18px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Standard follow-up</span>
                   </div>
-                  <div className="text-2xl font-black text-slate-750 font-mono">{priorityOverview.standard}</div>
-                  <div className="text-[12px] text-slate-500 dark:text-slate-300 mt-1">Normal buying evaluation cycle</div>
+
+                  {/* Big monospace number, no chart */}
+                  <div className="text-4xl font-semibold font-mono text-slate-700 dark:text-zinc-100 leading-none mb-3" style={{ letterSpacing: '-0.03em' }}>
+                    {priorityOverview.standard}
+                  </div>
+
+                  {/* Tabular distribution list (fit-score bins) */}
+                  <div className="border-t border-slate-200/70 dark:border-white/[0.06] pt-2 space-y-1">
+                    {stdBins.map((bin, idx) => (
+                      <div key={idx} className="flex items-center justify-between text-[10px] font-mono text-slate-500 dark:text-zinc-500">
+                        <span>Fit {bin.range}</span>
+                        <span className="flex items-center gap-2">
+                          <span className="w-8 h-0.5 bg-slate-200 dark:bg-white/[0.06] rounded-full overflow-hidden">
+                            <span
+                              className="block h-full bg-slate-500 dark:bg-zinc-400"
+                              style={{ width: `${bin.count === 0 ? 0 : Math.min(100, (bin.count / Math.max(1, Math.max(...stdBins.map(b => b.count)))) * 100)}%` }}
+                            />
+                          </span>
+                          <span className="font-semibold text-slate-700 dark:text-zinc-200 w-3 text-right">{bin.count}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
+                );
+              })()}
             </div>
+            )}
 
             {/* ICP Exclusion & Disqualification Signal Controls */}
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-xs hover:shadow-sm transition-all text-left">
@@ -1110,7 +1293,7 @@ export function Dashboard({
                     <AlertTriangle className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex flex-wrap items-center gap-2">
                       ICP Exclusion & Automated Disqualification Engine
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-bold text-red-700 dark:text-red-300 bg-red-100/80 dark:bg-red-900/40 border border-red-200 dark:border-red-800/60">
                         {priorityOverview.doNotPursue} Account{priorityOverview.doNotPursue === 1 ? '' : 's'} Excluded
@@ -1141,11 +1324,11 @@ export function Dashboard({
                         {/* Header / Config controls */}
                         <div className="space-y-4">
                           <div>
-                            <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">1. Company Headcount Exclusions</h4>
+                            <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-normal mb-2">1. Company Headcount Exclusions</h4>
                             <div className="p-4 bg-slate-50/70 dark:bg-slate-800/50 rounded-xl border border-slate-150 dark:border-slate-700 space-y-3">
                               <div className="flex justify-between items-center">
                                 <span className="text-[13px] text-slate-500 dark:text-slate-300 font-semibold">Min Headcount Target:</span>
-                                <span className="text-xs font-black text-slate-700 dark:text-slate-300 font-mono">{minSize} employees</span>
+                                <span className="text-xs font-bold text-slate-700 dark:text-slate-300 font-mono">{minSize} employees</span>
                               </div>
                               <input 
                                 type="range" 
@@ -1161,7 +1344,7 @@ export function Dashboard({
                           </div>
 
                           <div>
-                            <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">2. Geographic Boundaries Exclusions</h4>
+                            <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-normal mb-2">2. Geographic Boundaries Exclusions</h4>
                             <div className="p-4 bg-slate-50/70 dark:bg-slate-800/50 rounded-xl border border-slate-150 dark:border-slate-700 space-y-2">
                               <p className="text-[12px] text-slate-450 mb-2">Exclude campaigns from regions with trade blocks, complex timezone issues, or structural barriers:</p>
                               <div className="flex flex-wrap gap-1.5">
@@ -1192,7 +1375,7 @@ export function Dashboard({
 
                         <div className="space-y-4">
                           <div>
-                            <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">3. Prohibited/Restricted Sectors Exclusions</h4>
+                            <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-normal mb-2">3. Prohibited/Restricted Sectors Exclusions</h4>
                             <div className="p-4 bg-slate-50/70 dark:bg-slate-800/50 rounded-xl border border-slate-150 dark:border-slate-700 space-y-2">
                               <p className="text-[12px] text-slate-450 mb-2">Exclude fields experiencing public sovereignty blocks, intense ITAR security, or high general volatility:</p>
                               <div className="flex flex-wrap gap-1.5">
@@ -1221,7 +1404,7 @@ export function Dashboard({
                           </div>
 
                           <div>
-                            <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2">4. Technology Incompatibilities & Financial Strains</h4>
+                            <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-normal mb-2">4. Technology Incompatibilities & Financial Strains</h4>
                             <div className="grid grid-cols-2 gap-3 text-left">
                               <div className="p-3 bg-slate-50/70 dark:bg-slate-800/50 rounded-xl border border-slate-150 dark:border-slate-700">
                                 <span className="text-[12px] font-bold text-slate-500 dark:text-slate-300 block mb-1.5">Legacy Core Tech:</span>
@@ -1237,7 +1420,7 @@ export function Dashboard({
                                           );
                                         }}
                                         className={`px-1.5 py-0.5 rounded text-[11px] font-bold border transition-colors cursor-pointer ${
-                                          active ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300 font-extrabold shadow-xxs' : 'bg-white dark:bg-slate-900 border-slate-150 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:bg-slate-105'
+                                          active ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300 font-semibold shadow-xxs' : 'bg-white dark:bg-slate-900 border-slate-150 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:bg-slate-105'
                                         }`}
                                       >
                                         {tech}
@@ -1261,7 +1444,7 @@ export function Dashboard({
                                           );
                                         }}
                                         className={`px-1.5 py-0.5 rounded text-[11px] font-bold border transition-colors cursor-pointer ${
-                                          active ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300 font-extrabold shadow-xxs' : 'bg-white dark:bg-slate-900 border-slate-150 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:bg-slate-105'
+                                          active ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300 font-semibold shadow-xxs' : 'bg-white dark:bg-slate-900 border-slate-150 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:bg-slate-105'
                                         }`}
                                       >
                                         {stress}
@@ -1281,7 +1464,7 @@ export function Dashboard({
                             variant={hideDisqualified ? 'destructive' : 'outline'}
                             size="sm"
                             onClick={() => setHideDisqualified(!hideDisqualified)}
-                            className="gap-2 text-[13px] font-extrabold h-9 cursor-pointer"
+                            className="gap-2 text-[13px] font-semibold h-9 cursor-pointer"
                           >
                             {hideDisqualified ? '👁️ Show Excluded Accounts' : '🙈 Hide Disqualified From Grid'}
                           </Button>
@@ -1499,7 +1682,7 @@ export function Dashboard({
                       >
                         <div className="flex-1 min-w-0">
                           <div className="flex flex-wrap items-center gap-2 mb-1.5 font-sans">
-                            <h3 className="font-bold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 transition-colors text-base truncate">
+                            <h3 className="font-semibold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 transition-colors text-base truncate">
                               {account.name}
                             </h3>
                             <div className="flex items-center text-xs text-slate-450 gap-1 font-mono font-normal">
@@ -1508,19 +1691,19 @@ export function Dashboard({
 
                             {/* Status identifier badge */}
                             {isEnrolled && (
-                              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wider text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-800/50 uppercase flex items-center gap-1">
+                              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-normal text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-800/50 uppercase flex items-center gap-1">
                                 <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
                                 Enrolled
                               </span>
                             )}
                             {isReviewing && (
-                              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wider text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-100 dark:border-amber-800/50 uppercase flex items-center gap-1">
+                              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-normal text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border border-amber-100 dark:border-amber-800/50 uppercase flex items-center gap-1">
                                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
                                 Reviewing
                               </span>
                             )}
                             {isToEngage && (
-                              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-wider text-slate-650 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 uppercase flex items-center gap-1">
+                              <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold tracking-normal text-slate-650 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 uppercase flex items-center gap-1">
                                 <span className="w-1.5 h-1.5 rounded-full bg-slate-400" />
                                 To Engage
                               </span>
@@ -1543,8 +1726,8 @@ export function Dashboard({
                         {/* Weighted score details right-aligned */}
                         <div className="flex flex-wrap sm:flex-nowrap items-center gap-5 sm:self-center shrink-0">
                           <div className="text-left sm:text-right">
-                            <div className="text-[12px] text-slate-450 font-mono font-bold uppercase tracking-wider mb-0.5">Weighted Score</div>
-                            <div className="text-sm font-extrabold text-slate-850 dark:text-slate-200 text-slate-800 font-mono">
+                            <div className="text-[12px] text-slate-450 font-mono font-bold uppercase tracking-normal mb-0.5">Weighted Score</div>
+                            <div className="text-sm font-semibold text-slate-850 dark:text-slate-200 text-slate-800 font-mono">
                               {info.priorityIndex} <span className="text-[13px] text-slate-400 font-normal">pts</span>
                             </div>
                           </div>
@@ -1612,14 +1795,14 @@ export function Dashboard({
               /* Account Clusters View */
               <div className="space-y-6">
                 {/* Top stats explanation banner */}
-                <div className="bg-slate-900 text-white rounded-3xl p-6 relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-md border border-slate-800">
+                <div className="bg-slate-900 text-white rounded-3xl p-6 relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-xs border border-slate-800">
                    <div className="absolute inset-0 bg-gradient-to-r from-indigo-950/40 via-transparent to-slate-900 opacity-80" />
                    <div className="relative space-y-2 max-w-2xl text-left">
-                     <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-[12px] font-black uppercase tracking-wider border border-indigo-500/30">
+                     <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-[12px] font-bold uppercase tracking-normal border border-indigo-500/30">
                        <Users className="w-3" />
                        <span>Cluster Campaign Automation</span>
                      </div>
-                     <h3 className="text-xl font-black tracking-tight text-white font-sans">Coordinated Pattern Targeting</h3>
+                     <h3 className="text-xl font-semibold tracking-tight text-white font-sans">Coordinated Pattern Targeting</h3>
                      <p className="text-xs text-slate-300 leading-relaxed font-sans font-normal">
                        Instead of treating every account as an isolated outpost, focus on cohesive, high-density similarity groups.
                        Run coordinated, template-driven campaigns targeting verified operational commonalities for maximum resonance.
@@ -1662,7 +1845,7 @@ export function Dashboard({
                 ) : clusters.length === 0 ? (
                   <div className="text-center py-24 bg-white dark:bg-slate-900 border border-dashed border-slate-205 rounded-3xl p-6">
                     <Users className="w-12 h-12 text-slate-400 mx-auto mb-4" />
-                    <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200 font-sans">No Target Clusters Formed</h3>
+                    <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 font-sans">No Target Clusters Formed</h3>
                     <p className="text-xs text-slate-500 dark:text-slate-300 max-w-sm mx-auto mt-1 leading-relaxed font-sans font-normal">
                       Clusters require active discovered or imported accounts to formulate similarities of scale. Use the "Discovery" tab or upload custom accounts first.
                     </p>
@@ -1681,13 +1864,13 @@ export function Dashboard({
                           <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 font-sans">
                             <div className="space-y-2">
                               <div className="flex flex-wrap items-center gap-2">
-                                <h3 className="text-[17px] font-black text-slate-900 dark:text-slate-100 tracking-tight leading-snug">{cluster.clusterName}</h3>
-                                <span className="text-[12px] font-extrabold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-150 dark:border-indigo-800/50 px-2.5 py-1 rounded-full uppercase tracking-wider">
+                                <h3 className="text-[17px] font-semibold text-slate-900 dark:text-slate-100 tracking-tight leading-snug">{cluster.clusterName}</h3>
+                                <span className="text-[12px] font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-150 dark:border-indigo-800/50 px-2.5 py-1 rounded-full uppercase tracking-normal">
                                   {cluster.characteristicType}
                                 </span>
                               </div>
                               <p className="text-xs text-slate-500 dark:text-slate-300 leading-relaxed font-normal">
-                                Formulated based on structural characteristics across <span className="font-extrabold text-slate-805 font-mono">{matchedAccounts.length} account{matchedAccounts.length === 1 ? '' : 's'}</span>
+                                Formulated based on structural characteristics across <span className="font-semibold text-slate-805 font-mono">{matchedAccounts.length} account{matchedAccounts.length === 1 ? '' : 's'}</span>
                               </p>
                             </div>
                             
@@ -1709,9 +1892,9 @@ export function Dashboard({
 
                           {/* Characteristics Badges */}
                           <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 flex flex-wrap gap-2 items-center">
-                            <span className="text-[12px] font-black uppercase text-slate-400 tracking-widest mr-2 font-mono">Core Commonalities:</span>
+                            <span className="text-[12px] font-bold uppercase text-slate-400 tracking-wide mr-2 font-mono">Core Commonalities:</span>
                             {cluster.sharedCharacteristics?.map((char: string, cIdx: number) => (
-                              <span key={cIdx} className="text-[12px] font-extrabold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-2.5 py-1 rounded-lg shadow-xxs font-sans">
+                              <span key={cIdx} className="text-[12px] font-semibold text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-2.5 py-1 rounded-lg shadow-xxs font-sans">
                                 ✨ {char}
                               </span>
                             ))}
@@ -1721,7 +1904,7 @@ export function Dashboard({
                             {/* Attractiveness & Pain Points */}
                             <div className="space-y-5">
                               <div className="space-y-2 text-left">
-                                <h4 className="text-[13px] font-black uppercase tracking-wider text-slate-400 font-sans flex items-center gap-1.5">
+                                <h4 className="text-[13px] font-semibold uppercase tracking-normal text-slate-400 font-sans flex items-center gap-1.5">
                                   <TrendingUp className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
                                   <span>Collective Attractiveness & ROI Drivers</span>
                                 </h4>
@@ -1731,7 +1914,7 @@ export function Dashboard({
                               </div>
 
                               <div className="space-y-2 text-left">
-                                <h4 className="text-[13px] font-black uppercase tracking-wider text-slate-400 font-sans flex items-center gap-1.5">
+                                <h4 className="text-[13px] font-semibold uppercase tracking-normal text-slate-400 font-sans flex items-center gap-1.5">
                                   <AlertTriangle className="w-4 h-4 text-rose-500 dark:text-rose-400" />
                                   <span>Shared Common Bottlenecks</span>
                                 </h4>
@@ -1749,7 +1932,7 @@ export function Dashboard({
                             {/* Campaign Pattern & Target Cards */}
                             <div className="space-y-5">
                               <div className="space-y-2 text-left bg-gradient-to-br from-indigo-50/10 via-slate-50/10 to-transparent p-4.5 rounded-2xl border border-slate-100 dark:border-slate-800">
-                                <h4 className="text-[13px] font-black uppercase tracking-wider text-indigo-950 font-sans flex items-center gap-1.5 mb-2">
+                                <h4 className="text-[13px] font-semibold uppercase tracking-normal text-indigo-950 font-sans flex items-center gap-1.5 mb-2">
                                   <Zap className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
                                   <span>Unified Outreach Pitch Template</span>
                                 </h4>
@@ -1757,13 +1940,13 @@ export function Dashboard({
                                   "{cluster.unifiedValueMessage}"
                                 </div>
                                 <div className="pt-3 px-1 text-[13px] text-slate-500 dark:text-slate-300 leading-relaxed font-sans">
-                                  <strong className="font-extrabold uppercase text-[12px] text-indigo-650 dark:text-indigo-300 block mb-0.5 tracking-wider font-mono">Coordinated Outreach Angle:</strong>
+                                  <strong className="font-semibold uppercase text-[12px] text-indigo-650 dark:text-indigo-300 block mb-0.5 tracking-normal font-mono">Coordinated Outreach Angle:</strong>
                                   <span className="font-normal">{cluster.coordinatedOutreachAngle}</span>
                                 </div>
                               </div>
 
                               <div className="space-y-2 text-left">
-                                <h4 className="text-[13px] font-black uppercase tracking-wider text-slate-400 font-sans flex items-center gap-1.5">
+                                <h4 className="text-[13px] font-semibold uppercase tracking-normal text-slate-400 font-sans flex items-center gap-1.5">
                                   <Users className="w-4 h-4 text-slate-400" />
                                   <span>Mapped Accounts in Cluster ({matchedAccounts.length})</span>
                                 </h4>
@@ -1784,7 +1967,7 @@ export function Dashboard({
                                           <div className="font-bold text-xs text-slate-800 dark:text-slate-200 group-hover:text-indigo-950 truncate">{acc.name}</div>
                                           <div className="text-[12px] font-mono text-slate-450 truncate">{acc.domain}</div>
                                         </div>
-                                        <span className="text-[12px] font-extrabold font-mono text-indigo-650 dark:text-indigo-300 shrink-0">
+                                        <span className="text-[12px] font-semibold font-mono text-indigo-650 dark:text-indigo-300 shrink-0">
                                           {acc.fitScore}% →
                                         </span>
                                       </div>
@@ -1804,14 +1987,14 @@ export function Dashboard({
               /* New Partner Referral & Warm Pathways View */
               <div className="space-y-8 animate-fadeIn text-left">
                 {/* Pathway Engine Banner */}
-                <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-3xl p-6 relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-md border border-slate-800">
+                <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-3xl p-6 relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-6 shadow-xs border border-slate-800">
                   <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-indigo-900/30 via-transparent to-transparent opacity-60" />
                   <div className="relative space-y-2 max-w-2xl">
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/25 text-indigo-300 text-[12px] font-black uppercase tracking-wider border border-indigo-500/30">
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/25 text-indigo-300 text-[12px] font-bold uppercase tracking-normal border border-indigo-500/30">
                       <Network className="w-3" />
                       <span>Warm Referral & Alliance Intelligence</span>
                     </div>
-                    <h3 className="text-xl md:text-2xl font-black tracking-tight text-white font-sans">Dynamic Partner Pathways</h3>
+                    <h3 className="text-xl md:text-2xl font-semibold tracking-tight text-white font-sans">Dynamic Partner Pathways</h3>
                     <p className="text-xs text-slate-300 leading-relaxed font-sans font-normal">
                       Bypass cold calling. The system scans tech stack ecosystems, investor alliances, and vendor networks 
                       to calculate warm intro triggers. Matches accounts dynamically based on keywords and relationship strengths.
@@ -1832,9 +2015,9 @@ export function Dashboard({
                 {/* Pathway Stats Section */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs flex flex-col justify-between">
-                    <div className="text-[12px] font-bold text-slate-400 uppercase tracking-wider font-sans">Warm Pathways Found</div>
+                    <div className="text-[12px] font-bold text-slate-400 uppercase tracking-normal font-sans">Warm Pathways Found</div>
                     <div className="flex items-baseline gap-2 mt-2">
-                      <span className="text-3xl font-black text-indigo-600 dark:text-indigo-300 font-sans">
+                      <span className="text-3xl font-bold text-indigo-600 dark:text-indigo-300 font-sans">
                         {filteredAccounts.map(a => getAccountPriorityInfo(a)).filter(p => (p.pathway?.warmIntroductionPaths?.length ?? 0) > 0).length}
                       </span>
                       <span className="text-xs font-bold text-slate-405 text-slate-500 dark:text-slate-300">
@@ -1847,9 +2030,9 @@ export function Dashboard({
                   </div>
 
                   <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs flex flex-col justify-between">
-                    <div className="text-[12px] font-bold text-slate-400 uppercase tracking-wider font-sans">Direct Cold Approach</div>
+                    <div className="text-[12px] font-bold text-slate-400 uppercase tracking-normal font-sans">Direct Cold Approach</div>
                     <div className="flex items-baseline gap-2 mt-2">
-                      <span className="text-3xl font-black text-slate-700 dark:text-slate-300 font-sans font-sans">
+                      <span className="text-3xl font-bold text-slate-700 dark:text-slate-300 font-sans font-sans">
                         {filteredAccounts.map(a => getAccountPriorityInfo(a)).filter(p => (p.pathway?.warmIntroductionPaths?.length ?? 0) === 0).length}
                       </span>
                       <span className="text-xs font-bold text-slate-500 dark:text-slate-300">
@@ -1862,9 +2045,9 @@ export function Dashboard({
                   </div>
 
                   <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs flex flex-col justify-between">
-                    <div className="text-[12px] font-bold text-slate-400 uppercase tracking-wider font-sans">Avg. Conversion Likelihood</div>
+                    <div className="text-[12px] font-bold text-slate-400 uppercase tracking-normal font-sans">Avg. Conversion Likelihood</div>
                     <div className="flex items-baseline gap-2 mt-2">
-                      <span className="text-3xl font-black text-emerald-600 dark:text-emerald-300 font-sans font-sans">
+                      <span className="text-3xl font-bold text-emerald-600 dark:text-emerald-300 font-sans font-sans">
                         {Math.round(
                           filteredAccounts.map(a => getAccountPriorityInfo(a)).reduce((sum, curr) => sum + (curr.pathway?.channelScore || 32), 0) / (filteredAccounts.length || 1)
                         )}%
@@ -1879,9 +2062,9 @@ export function Dashboard({
                   </div>
 
                   <div className="bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs flex flex-col justify-between">
-                    <div className="text-[12px] font-bold text-slate-400 uppercase tracking-wider font-sans">Defined Networks</div>
+                    <div className="text-[12px] font-bold text-slate-400 uppercase tracking-normal font-sans">Defined Networks</div>
                     <div className="flex items-baseline gap-2 mt-2">
-                      <span className="text-3xl font-black text-indigo-900 dark:text-indigo-200 font-sans">
+                      <span className="text-3xl font-bold text-indigo-900 dark:text-indigo-200 font-sans">
                         {channelPartners.length}
                       </span>
                       <span className="text-xs font-bold text-slate-500 dark:text-slate-300">Alliances</span>
@@ -1899,7 +2082,7 @@ export function Dashboard({
                     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs overflow-hidden">
                       <div className="px-6 py-5 border-b border-slate-150 dark:border-slate-700 flex items-center justify-between">
                         <div className="text-left space-y-0.5">
-                          <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100 font-sans">Dynamic Account Pathway Matrix</h4>
+                          <h4 className="font-semibold text-sm text-slate-900 dark:text-slate-100 font-sans">Dynamic Account Pathway Matrix</h4>
                           <p className="text-[13px] text-slate-500 dark:text-slate-300">
                             Scanned accounts mapped in order of warm conversion capability.
                           </p>
@@ -1923,24 +2106,24 @@ export function Dashboard({
                                 <div key={acc.id} className="p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 hover:bg-slate-50/50 transition-colors">
                                   <div className="space-y-1.5 text-left min-w-0 flex-1">
                                     <div className="flex flex-wrap items-center gap-2">
-                                      <span className="font-extrabold text-sm text-slate-900 dark:text-slate-100 truncate">{acc.name}</span>
+                                      <span className="font-semibold text-sm text-slate-900 dark:text-slate-100 truncate">{acc.name}</span>
                                       <span className="text-[12px] font-mono text-slate-400">({acc.domain})</span>
                                       
                                       {/* Approach Type Tag */}
                                       {pathway?.approachType === 'Direct' ? (
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 uppercase tracking-wider font-mono">
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-slate-100 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 uppercase tracking-normal font-mono">
                                           Direct Outreach
                                         </span>
                                       ) : pathway?.approachType === 'Channel Partner' ? (
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-800/50 uppercase tracking-wider font-mono">
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-100 dark:border-amber-800/50 uppercase tracking-normal font-mono">
                                           Channel Partner Pathway
                                         </span>
                                       ) : pathway?.approachType === 'Integration Partner' ? (
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-100 dark:border-blue-800/50 uppercase tracking-wider font-mono">
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border border-blue-100 dark:border-blue-800/50 uppercase tracking-normal font-mono">
                                           Integration Partner Pathway
                                         </span>
                                       ) : (
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 border border-emerald-100 dark:border-emerald-800/50 uppercase tracking-wider font-mono">
+                                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 border border-emerald-100 dark:border-emerald-800/50 uppercase tracking-normal font-mono">
                                           Mutual Warm Referral
                                         </span>
                                       )}
@@ -1953,7 +2136,7 @@ export function Dashboard({
                                     {/* Mapped warm introduction pathways detail tags */}
                                     {wsFound && pathway && (
                                       <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                                        <span className="text-[12px] text-slate-400 font-bold uppercase tracking-wider font-mono">Paths Tracked:</span>
+                                        <span className="text-[12px] text-slate-400 font-bold uppercase tracking-normal font-mono">Paths Tracked:</span>
                                         {pathway.warmIntroductionPaths.map((p, pIdx) => {
                                           let colorCode = 'bg-slate-50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700';
                                           if (p.type === 'vendor') colorCode = 'bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border-sky-100 dark:border-sky-800/50';
@@ -1975,9 +2158,9 @@ export function Dashboard({
                                   {/* Right side alignment conversion scoring */}
                                   <div className="flex items-center gap-4.5 justify-between md:justify-end shrink-0">
                                     <div className="text-left md:text-right space-y-0.5 min-w-[120px]">
-                                      <div className="text-[11px] text-slate-400 uppercase font-black font-mono tracking-wider">Likelihood Score</div>
+                                      <div className="text-[11px] text-slate-400 uppercase font-bold font-mono tracking-normal">Likelihood Score</div>
                                       <div className="flex items-baseline gap-1 mt-0.5">
-                                        <span className="text-lg font-black text-slate-900 dark:text-slate-100 font-sans">{(pathway?.channelScore ?? 32)}%</span>
+                                        <span className="text-lg font-bold text-slate-900 dark:text-slate-100 font-sans">{(pathway?.channelScore ?? 32)}%</span>
                                         <span className="text-[11px] text-slate-450 font-mono">Assisted</span>
                                       </div>
                                       <div className="text-[11px] font-mono text-slate-400">
@@ -2007,7 +2190,7 @@ export function Dashboard({
                     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700/80 p-5 shadow-xs space-y-4">
                       <div className="flex items-center justify-between">
                         <div className="text-left space-y-0.5">
-                          <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100 font-sans">Active Partners Grid</h4>
+                          <h4 className="font-semibold text-sm text-slate-900 dark:text-slate-100 font-sans">Active Partners Grid</h4>
                           <p className="text-[12px] text-slate-400 leading-normal">
                             Configure networks scanned by the matching engine.
                           </p>
@@ -2032,7 +2215,7 @@ export function Dashboard({
                                   partner.strength === 'High' ? 'bg-emerald-500' :
                                   partner.strength === 'Medium' ? 'bg-amber-400' : 'bg-slate-400'
                                 }`} title={`Relationship: ${partner.strength}`}/>
-                                <Badge variant="outline" className="text-[10px] uppercase px-1 rounded bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 shrink-0 font-mono text-slate-500 dark:text-slate-300 tracking-wider">
+                                <Badge variant="outline" className="text-[10px] uppercase px-1 rounded bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 shrink-0 font-mono text-slate-500 dark:text-slate-300 tracking-normal">
                                   {partner.type}
                                 </Badge>
                               </div>
@@ -2081,9 +2264,9 @@ export function Dashboard({
 
                 {/* Modal to add/edit channel partner dynamically */}
                 <Dialog open={isPartnerFormOpen} onOpenChange={setIsPartnerFormOpen}>
-                  <DialogContent className="sm:max-w-2xl bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-700 rounded-2xl font-sans shadow-xl max-h-[90vh] overflow-y-auto">
+                  <DialogContent className="sm:max-w-2xl bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-700 rounded-2xl font-sans shadow-sm max-h-[90vh] overflow-y-auto">
                     <DialogHeader className="space-y-1.5 text-left border-b border-slate-100 dark:border-slate-800 pb-3">
-                      <DialogTitle className="font-extrabold text-sm text-slate-900 dark:text-slate-100 font-sans">
+                      <DialogTitle className="font-medium text-sm text-slate-900 dark:text-slate-100 font-sans">
                         {partnerFormType === 'add' ? 'Define New Referral Partner or Network' : 'Edit Alliance Network Configuration'}
                       </DialogTitle>
                       <DialogDescription className="text-[12px] text-slate-500 dark:text-slate-400 font-sans">
@@ -2094,7 +2277,7 @@ export function Dashboard({
                     <form onSubmit={handleAddOrEditPartnerSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                       {/* Name */}
                       <div className="space-y-1.5">
-                        <label className="text-[12px] font-bold text-slate-400 uppercase tracking-wider font-sans">Partner Name *</label>
+                        <label className="text-[12px] font-bold text-slate-400 uppercase tracking-normal font-sans">Partner Name *</label>
                         <input
                           type="text"
                           required
@@ -2107,7 +2290,7 @@ export function Dashboard({
 
                       {/* Connection Type */}
                       <div className="space-y-1.5">
-                        <label className="text-[12px] font-bold text-slate-400 uppercase tracking-wider font-sans">Connection Type</label>
+                        <label className="text-[12px] font-bold text-slate-400 uppercase tracking-normal font-sans">Connection Type</label>
                         <select
                           value={newPartnerType}
                           onChange={(e: any) => setNewPartnerType(e.target.value)}
@@ -2122,7 +2305,7 @@ export function Dashboard({
 
                       {/* Strength */}
                       <div className="space-y-1.5">
-                        <label className="text-[12px] font-bold text-slate-400 uppercase tracking-wider font-sans">Alliance Strength</label>
+                        <label className="text-[12px] font-bold text-slate-400 uppercase tracking-normal font-sans">Alliance Strength</label>
                         <select
                           value={newPartnerStrength}
                           onChange={(e: any) => setNewPartnerStrength(e.target.value)}
@@ -2136,7 +2319,7 @@ export function Dashboard({
 
                       {/* Warm Contact */}
                       <div className="space-y-1.5">
-                        <label className="text-[12px] font-bold text-slate-400 uppercase tracking-wider font-sans">Key Warm Contact Name/Title</label>
+                        <label className="text-[12px] font-bold text-slate-400 uppercase tracking-normal font-sans">Key Warm Contact Name/Title</label>
                         <input
                           type="text"
                           placeholder="e.g. Sarah Jenkins (VP Global Alliances)"
@@ -2148,7 +2331,7 @@ export function Dashboard({
 
                       {/* Keywords */}
                       <div className="space-y-1.5 md:col-span-2">
-                        <label className="text-[12px] font-bold text-slate-400 uppercase tracking-wider font-sans">Keyword Match Tags (comma separated) *</label>
+                        <label className="text-[12px] font-bold text-slate-400 uppercase tracking-normal font-sans">Keyword Match Tags (comma separated) *</label>
                         <input
                           type="text"
                           required
@@ -2164,7 +2347,7 @@ export function Dashboard({
 
                       {/* Description */}
                       <div className="space-y-1.5 md:col-span-2">
-                        <label className="text-[12px] font-bold text-slate-400 uppercase tracking-wider font-sans">Strategic Partner Footprint</label>
+                        <label className="text-[12px] font-bold text-slate-400 uppercase tracking-normal font-sans">Strategic Partner Footprint</label>
                         <textarea
                           rows={2}
                           placeholder="Brief description of the alliance scope, shared workflows, or reference portfolios..."
@@ -2187,7 +2370,7 @@ export function Dashboard({
                         <Button
                           type="submit"
                           size="sm"
-                          className="bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold h-10 px-6 rounded-xl shadow-md border-0 text-xs cursor-pointer"
+                          className="bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold h-10 px-6 rounded-xl shadow-xs border-0 text-xs cursor-pointer"
                         >
                           {partnerFormType === 'add' ? 'Save New Partner' : 'Apply Configuration'}
                         </Button>
@@ -2200,7 +2383,7 @@ export function Dashboard({
               /* Standard Pulse/Discovery Grid View */
               <motion.div 
                 layout
-                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-fadeIn"
+                className="grid grid-cols-1 xl:grid-cols-2 gap-5 animate-fadeIn"
               >
                 <AnimatePresence mode="popLayout">
                   {sortedFilteredAccounts.map((account) => (
@@ -2231,138 +2414,132 @@ export function Dashboard({
                 )}
               </motion.div>
             ) : (
-              /* Standard Pulse/Discovery Compact List View */
-              <div className="flex flex-col gap-3.5 animate-fadeIn">
+              /* Standard Pulse/Discovery Compact List View — slim horizontal split */
+              <div className="flex flex-col gap-2.5 animate-fadeIn">
                 {sortedFilteredAccounts.map((account) => {
                   const info = getAccountPriorityInfo(account);
-                  const scoreColor = account.isDisqualified
-                    ? 'text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border-red-150 dark:border-red-800/50'
-                    : info.fitScore >= 80 ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-100 dark:border-emerald-800/50' : 
-                                    info.fitScore >= 60 ? 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border-amber-100 dark:border-amber-800/50' : 'text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-800';
 
-                  const timingColor = account.isDisqualified
-                    ? 'text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border-red-150 dark:border-red-800/50'
-                    : info.timingScore >= 80 ? 'text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 border-rose-100 dark:border-rose-800/50' :
-                                     info.timingScore >= 60 ? 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border-amber-100 dark:border-amber-800/50' : 'text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/40 border-purple-100 dark:border-purple-800/50';
+                  const fitTone = account.isDisqualified ? 'text-red-600 dark:text-red-300'
+                    : info.fitScore >= 80 ? 'text-emerald-600 dark:text-emerald-300'
+                    : info.fitScore >= 60 ? 'text-amber-600 dark:text-amber-300'
+                    : 'text-slate-500 dark:text-zinc-400';
+                  const timingTone = account.isDisqualified ? 'text-red-600 dark:text-red-300'
+                    : info.timingScore >= 80 ? 'text-rose-600 dark:text-rose-300'
+                    : info.timingScore >= 60 ? 'text-amber-600 dark:text-amber-300'
+                    : 'text-purple-600 dark:text-purple-300';
 
-                  const priorityColor = account.isDisqualified
-                    ? 'text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/60'
-                    : info.priorityIndex >= 80 ? 'text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 border-indigo-150 dark:border-indigo-800/50' :
-                                        info.priorityIndex >= 60 ? 'text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700' : 'text-slate-500 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 border-slate-100 dark:border-slate-800';
+                  let tierBorder = 'border-amber-400 dark:border-amber-700/60 hover:border-amber-500 dark:hover:border-amber-600/70';
+                  let railBg = 'bg-amber-50/70 dark:bg-amber-500/10';
+                  let chipClass = 'bg-amber-100 dark:bg-amber-500/15 border-amber-300 dark:border-amber-500/30 text-amber-800 dark:text-amber-300';
+                  let scoreText = 'text-amber-700 dark:text-amber-300';
+                  let chipLabel = 'Standard';
+                  let showDot = false;
+                  if (account.isDisqualified) {
+                    tierBorder = 'border-red-200/70 dark:border-red-900/50 border-dashed';
+                    railBg = 'bg-red-50/40 dark:bg-red-500/5';
+                    chipClass = 'bg-red-100/70 dark:bg-red-500/15 border-red-200 dark:border-red-500/25 text-red-700 dark:text-red-300';
+                    scoreText = 'text-red-500 dark:text-red-400';
+                    chipLabel = 'Excluded';
+                  } else if (info.reResearchRecommended) {
+                    tierBorder = 'border-amber-300/70 dark:border-amber-800/50 border-dashed';
+                    railBg = 'bg-amber-50/40 dark:bg-amber-500/5';
+                    chipClass = 'bg-amber-100/70 dark:bg-amber-500/15 border-amber-200 dark:border-amber-500/25 text-amber-700 dark:text-amber-300';
+                    scoreText = 'text-amber-600 dark:text-amber-300';
+                    chipLabel = 'Re-research';
+                  } else if (info.priorityFlag === 'Immediate Action Required') {
+                    tierBorder = 'border-rose-300/70 dark:border-rose-800/50 hover:border-rose-400 dark:hover:border-rose-700/60';
+                    railBg = 'bg-rose-50/40 dark:bg-rose-500/5';
+                    chipClass = 'bg-rose-100/70 dark:bg-rose-500/15 border-rose-200 dark:border-rose-500/25 text-rose-700 dark:text-rose-300';
+                    scoreText = 'text-rose-700 dark:text-rose-300';
+                    chipLabel = 'Immediate';
+                    showDot = true;
+                  } else if (info.priorityFlag === 'Nurture Queue') {
+                    tierBorder = 'border-teal-300/70 dark:border-teal-800/50 hover:border-teal-400 dark:hover:border-teal-700/60';
+                    railBg = 'bg-teal-50/40 dark:bg-teal-500/5';
+                    chipClass = 'bg-teal-100/70 dark:bg-teal-500/15 border-teal-200 dark:border-teal-500/25 text-teal-700 dark:text-teal-300';
+                    scoreText = 'text-teal-700 dark:text-teal-300';
+                    chipLabel = 'Nurture';
+                  }
 
                   return (
                     <motion.div
                       layout
                       key={account.id}
-                      whileHover={{ x: 4 }}
+                      whileHover={{ x: 2 }}
                       onClick={() => {
                         onAnalyzeAccount(account.id);
                         setSelectedAccountId(account.id);
                       }}
-                      className={`p-4 rounded-xl bg-white dark:bg-slate-900 border transition-all cursor-pointer group flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-left ${
-                        account.isDisqualified ? 'border-red-200 dark:border-red-800/60 bg-red-50/5 dark:bg-red-950/40' : 'border-slate-200 dark:border-slate-700 hover:border-indigo-300 shadow-2xs hover:shadow-xs'
-                      }`}
+                      className={`rounded-xl bg-white dark:bg-[#2A2A2B] border transition-all cursor-pointer group flex flex-col sm:flex-row overflow-hidden shadow-xs hover:shadow-sm ${tierBorder}`}
                     >
-                      {/* Name & Main Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-2 mb-1.5 font-sans">
-                          <h3 className="font-bold text-slate-900 dark:text-slate-100 group-hover:text-indigo-600 transition-colors text-base truncate">
-                            {account.name}
-                          </h3>
-                          <div className="flex items-center text-xs text-slate-450 gap-1 font-mono font-normal">
-                            <span>({account.domain})</span>
-                          </div>
-                          
-                          {/* Priority flag badge */}
-                          {account.isDisqualified ? (
-                            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold tracking-wider text-red-750 bg-red-100 dark:bg-red-900/40 border border-red-200 dark:border-red-800/60 uppercase">
-                              Excluded
-                            </span>
-                          ) : info.reResearchRecommended ? (
-                            <span className="px-2 py-0.5 rounded-full text-[11px] font-black tracking-wider text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/40 border border-amber-200 dark:border-amber-800/60 uppercase">
-                              Re-Research Req
-                            </span>
-                          ) : info.priorityFlag === 'Immediate Action Required' ? (
-                            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold tracking-wider text-rose-700 dark:text-rose-300 bg-rose-100 dark:bg-rose-900/40 border border-rose-200 dark:border-rose-800/60 animate-pulse">
-                              Immediate Outreach
-                            </span>
-                          ) : info.priorityFlag === 'Nurture Queue' ? (
-                            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold tracking-wider text-teal-700 dark:text-teal-300 bg-teal-100 dark:bg-teal-900/40 border border-teal-200 dark:border-teal-800/60">
-                              Nurture
-                            </span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-full text-[11px] font-medium text-slate-500 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700">
-                              Standard
+                      {/* LEFT RAIL: chip + big score */}
+                      <div className={`w-full sm:w-28 shrink-0 flex sm:flex-col items-center justify-between sm:justify-center gap-2 sm:gap-1 px-3 py-2 sm:py-3 sm:border-r border-b sm:border-b-0 border-slate-100 dark:border-white/[0.05] ${railBg}`}>
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold uppercase tracking-normal border ${chipClass}`}>
+                          {showDot && (
+                            <span className="relative flex h-1.5 w-1.5">
+                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-rose-400 opacity-75"></span>
+                              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-rose-500"></span>
                             </span>
                           )}
-
-                          {info.weightedSectorMultiplier > 1.0 && (
-                            <span className="text-[11px] font-mono font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-1 py-0.2 rounded border border-emerald-100 dark:border-emerald-800/50">
-                              +{((info.weightedSectorMultiplier - 1) * 100).toFixed(0)}% Boost
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Domain / Industry description */}
-                        <p className="text-xs text-slate-500 dark:text-slate-300 line-clamp-1 mb-2 font-normal leading-normal font-sans">
-                          {account.description || account.fitReason}
-                        </p>
-
-                        {/* Signals summary on the left */}
-                        <div className="flex flex-wrap gap-1.5">
-                          {(account.signals || []).slice(0, 3).map((sig, i) => (
-                            <span key={i} className="text-[12px] text-slate-800 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2.5 py-1 rounded border border-slate-150 dark:border-slate-700 font-sans">
-                              {sig}
-                            </span>
-                          ))}
-                          {(account.signals || []).length > 3 && (
-                            <span className="text-[11px] text-slate-400 font-medium self-center font-sans">
-                              +{(account.signals || []).length - 3} more
-                            </span>
-                          )}
+                          {chipLabel}
+                        </span>
+                        <div className={`text-2xl font-semibold font-mono leading-none ${scoreText}`} style={{ letterSpacing: '-0.03em' }}>
+                          {account.isDisqualified ? '—' : info.priorityIndex}
                         </div>
                       </div>
 
-                      {/* Right Hand Stats & Metrics Column */}
-                      <div className="flex flex-wrap items-center gap-4 sm:gap-6 shrink-0 pt-3 sm:pt-0 border-t sm:border-t-0 border-slate-100 dark:border-slate-800">
-                        {/* Metrics Panel */}
-                        <div className="flex items-center gap-3 bg-slate-50 dark:bg-slate-800/50 p-1.5 rounded-lg border border-slate-105 font-mono shadow-2xs">
-                          <div className="text-center px-2">
-                            <div className="text-[10px] font-extrabold text-slate-450 uppercase tracking-wide">FIT</div>
-                            <div className={`text-xs font-bold mt-0.5 ${scoreColor} px-1.5 rounded border`}>
-                              {info.fitScore}%
-                            </div>
+                      {/* RIGHT BODY: identity + stats + description + signals + actions */}
+                      <div className="flex-1 min-w-0 flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 p-3.5">
+                        {/* Identity + description + signals */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-baseline gap-2 mb-1">
+                            <h3 className="text-[15px] font-semibold text-slate-900 dark:text-zinc-50 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate" style={{ letterSpacing: '-0.015em' }}>
+                              {account.name}
+                            </h3>
+                            <span className="text-[11px] font-mono text-slate-500 dark:text-zinc-500 truncate">
+                              {account.domain}
+                            </span>
                           </div>
-                          <div className="h-6 w-[1.5px] bg-slate-200 dark:bg-slate-700/60" />
-                          <div className="text-center px-2">
-                            <div className="text-[10px] font-extrabold text-slate-450 uppercase tracking-wide">TIMING</div>
-                            <div className={`text-xs font-bold mt-0.5 ${timingColor} px-1.5 rounded border`}>
-                              {info.timingScore}%
-                            </div>
-                          </div>
-                          <div className="h-6 w-[1.5px] bg-slate-200 dark:bg-slate-700/60" />
-                          <div className="text-center px-2">
-                            <div className="text-[10px] font-extrabold text-slate-450 uppercase tracking-wide">PRIORITY</div>
-                            <div className={`text-xs font-bold mt-0.5 ${priorityColor} px-1.5 rounded border`}>
-                              {account.isDisqualified ? 'EXCL' : info.priorityIndex}
-                            </div>
+                          <p className="text-[12px] text-slate-600 dark:text-zinc-300 line-clamp-1 mb-1.5 leading-relaxed">
+                            {account.description || account.fitReason}
+                          </p>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {(account.signals || []).slice(0, 3).map((sig, i) => (
+                              <span key={i} className="text-[11px] px-2 py-0.5 rounded-md bg-slate-100 dark:bg-white/[0.04] text-slate-600 dark:text-zinc-300 border border-slate-150 dark:border-white/[0.05] leading-snug">
+                                {sig}
+                              </span>
+                            ))}
+                            {(account.signals || []).length > 3 && (
+                              <span className="text-[11px] text-slate-400 dark:text-zinc-500 font-mono">
+                                +{(account.signals || []).length - 3}
+                              </span>
+                            )}
                           </div>
                         </div>
 
-                        {/* Outreach window / outreach stage action buttons */}
-                        <div className="flex flex-col items-end gap-1.5 min-w-[120px] font-sans">
-                          <div className="text-[12px] text-slate-500 dark:text-slate-300 font-mono flex items-center gap-1 font-medium">
-                            <Clock className="w-3 text-indigo-505" />
-                            <span>{info.outreachWindow}</span>
+                        {/* Compact stats + CTA */}
+                        <div className="flex items-center gap-4 sm:gap-5 shrink-0 sm:border-l border-slate-100 dark:border-white/[0.05] sm:pl-4">
+                          <div className="text-center">
+                            <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500">Fit</div>
+                            <div className={`text-sm font-semibold font-mono ${fitTone}`}>{info.fitScore}%</div>
                           </div>
-                          
-                          <Button 
-                            variant="ghost" 
-                            size="sm" 
-                            className="text-indigo-600 dark:text-indigo-300 hover:text-indigo-700 hover:bg-indigo-50 px-2 py-0.5 h-8 text-xs gap-1 font-semibold border border-transparent hover:border-indigo-200 rounded-lg transition-all"
-                          >
-                            Intel Details <ChevronRight className="w-3.5 h-3.5" />
-                          </Button>
+                          <div className="text-center">
+                            <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500">Timing</div>
+                            <div className={`text-sm font-semibold font-mono ${timingTone}`}>{info.timingScore}%</div>
+                          </div>
+                          <div className="flex flex-col items-end gap-1 min-w-[110px]">
+                            <div className="text-[11px] text-slate-500 dark:text-zinc-400 font-mono flex items-center gap-1">
+                              <Clock className="w-3 h-3" />
+                              <span>{info.outreachWindow}</span>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:bg-indigo-50/60 dark:hover:bg-indigo-500/10 px-2 h-7 text-[12px] font-semibold gap-1 cursor-pointer"
+                            >
+                              View Intel <ChevronRight className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     </motion.div>
@@ -2390,7 +2567,7 @@ export function Dashboard({
                   <BarChart3 className="w-12 h-12" />
                 </div>
                 <div className="space-y-1">
-                  <h3 className="font-bold text-slate-900 dark:text-slate-100 text-lg">No accounts discovered yet</h3>
+                  <h3 className="font-semibold text-slate-900 dark:text-slate-100 text-lg">No accounts discovered yet</h3>
                   <p className="text-slate-500 dark:text-slate-300 max-w-xs text-sm">Run an autonomous discovery to find target accounts based on your business profile.</p>
                 </div>
                 <Button onClick={onRefreshDiscovery} className="bg-indigo-600">Start Discovery</Button>
@@ -2420,7 +2597,7 @@ export function Dashboard({
       </AnimatePresence>
 
       <Dialog open={isCrmOpen} onOpenChange={setIsCrmOpen}>
-        <DialogContent className="sm:max-w-md bg-white dark:bg-slate-900 border border-slate-205 p-6 rounded-2xl shadow-xl z-50">
+        <DialogContent className="sm:max-w-md bg-white dark:bg-slate-900 border border-slate-205 p-6 rounded-2xl shadow-sm z-50">
           {crmConnected !== 'none' ? (
             /* Connected Content */
             <div className="text-center py-4 px-2 space-y-4">
@@ -2428,7 +2605,7 @@ export function Dashboard({
                 <CheckCircle2 className="w-6 h-6 animate-pulse" />
               </div>
               <div className="space-y-1">
-                <h3 className="font-bold text-slate-800 dark:text-slate-200 text-sm">Secure Sync Connection Active</h3>
+                <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm">Secure Sync Connection Active</h3>
                 <p className="text-[13px] text-slate-500 dark:text-slate-300 leading-normal max-w-xs mx-auto">
                   Your workspace is dynamically syncing CAD Design intent signals and buyer personas with **{getCrmName(crmConnected).toUpperCase()}**.
                 </p>
@@ -2480,7 +2657,7 @@ export function Dashboard({
             /* Select CRM Step 1 */
             <>
               <DialogHeader>
-                <DialogTitle className="text-slate-900 dark:text-slate-100 font-bold text-base">Connect CRM System</DialogTitle>
+                <DialogTitle className="text-slate-900 dark:text-slate-100 font-semibold text-base">Connect CRM System</DialogTitle>
                 <DialogDescription className="text-slate-500 dark:text-slate-300 text-xs text-left leading-normal">
                   Synchronize qualified target accounts, key buyer personas, and CAD CAD operational triggers seamlessly with your CRM pipeline.
                 </DialogDescription>
@@ -2542,7 +2719,7 @@ export function Dashboard({
             /* Configure CRM Step 2 */
             <>
               <DialogHeader>
-                <DialogTitle className="text-slate-900 dark:text-slate-100 font-bold text-base">Configure CRM Access</DialogTitle>
+                <DialogTitle className="text-slate-900 dark:text-slate-100 font-semibold text-base">Configure CRM Access</DialogTitle>
                 <DialogDescription className="text-slate-500 dark:text-slate-300 text-xs text-left leading-normal">
                   Please provide access credentials to authorize synchronization with **{getCrmName(selectedCrmType).toUpperCase()}**.
                 </DialogDescription>
@@ -2634,7 +2811,7 @@ export function Dashboard({
                   <FolderOpen className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 leading-tight">Save Market Scope View</h3>
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 leading-tight">Save Market Scope View</h3>
                   <p className="text-xs text-slate-500 dark:text-slate-300">Lock in your current calibrated targets, fit filters, and pipeline stages.</p>
                 </div>
               </div>
@@ -2698,7 +2875,7 @@ export function Dashboard({
                     <Sliders className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 leading-tight flex items-center gap-1.5">
+                    <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 leading-tight flex items-center gap-1.5">
                       <span>Edit Market Strategy Blueprint</span>
                       <span className="text-[12px] bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 font-mono font-bold px-1.5 py-0.5 rounded border border-indigo-100 dark:border-indigo-800/50 uppercase">Interactive</span>
                     </h3>
@@ -2749,7 +2926,7 @@ export function Dashboard({
                 </div>
 
                 <div className="space-y-2 md:col-span-2 p-4 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 rounded-xl space-y-4">
-                  <h4 className="text-xs font-black text-indigo-900 dark:text-indigo-200 uppercase tracking-wide border-b border-indigo-100 dark:border-indigo-800/50 pb-1 flex items-center gap-1">
+                  <h4 className="text-xs font-semibold text-indigo-900 dark:text-indigo-200 uppercase tracking-wide border-b border-indigo-100 dark:border-indigo-800/50 pb-1 flex items-center gap-1">
                     <Sparkles className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" /> Key Ideal Customer Persona (ICP) Controls
                   </h4>
                   
@@ -2843,7 +3020,7 @@ export function Dashboard({
                   <Plus className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-black text-slate-900 dark:text-slate-100 leading-tight">Append Target Organization</h3>
+                  <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 leading-tight">Append Target Organization</h3>
                   <p className="text-xs text-slate-500 dark:text-slate-300 font-medium">Add a hand-crafted prospect company directly into this outreach report view.</p>
                 </div>
               </div>
@@ -2955,9 +3132,9 @@ export function Dashboard({
 
       {/* ✏️ MODAL: RENAME CURRENT LOADED CONFIGURATION */}
       <Dialog open={isRenameReportOpen} onOpenChange={setIsRenameReportOpen}>
-        <DialogContent className="sm:max-w-md bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-700 rounded-2xl font-sans select-none shadow-xl">
+        <DialogContent className="sm:max-w-md bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-700 rounded-2xl font-sans select-none shadow-sm">
           <DialogHeader className="space-y-1.5 text-left">
-            <DialogTitle className="text-slate-900 dark:text-slate-100 font-bold text-base flex items-center gap-2">
+            <DialogTitle className="text-slate-900 dark:text-slate-100 font-semibold text-base flex items-center gap-2">
               <Pencil className="w-4 h-4 text-indigo-605" />
               <span>Rename Current Plan</span>
             </DialogTitle>
@@ -2968,7 +3145,7 @@ export function Dashboard({
 
           <div className="space-y-4 py-3 text-left">
             <div className="space-y-1.5">
-              <label className="text-[13px] font-bold text-slate-500 dark:text-slate-300 uppercase tracking-wider">Plan Name</label>
+              <label className="text-[13px] font-bold text-slate-500 dark:text-slate-300 uppercase tracking-normal">Plan Name</label>
               <input
                 type="text"
                 value={newReportName}
@@ -3014,7 +3191,7 @@ export function Dashboard({
         open={!!selectedPathwayStrategyAccount} 
         onOpenChange={(open) => { if (!open) setSelectedPathwayStrategyAccount(null); }}
       >
-        <DialogContent className="sm:max-w-2xl bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-700 rounded-2xl font-sans text-left shadow-xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-2xl bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-700 rounded-2xl font-sans text-left shadow-sm max-h-[90vh] overflow-y-auto">
           {selectedPathwayStrategyAccount && (() => {
             const acc = selectedPathwayStrategyAccount;
             const info = getAccountPriorityInfo(acc);
@@ -3028,7 +3205,7 @@ export function Dashboard({
                     <div className="p-1.5 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-650 dark:text-indigo-300">
                       <Network className="w-4 h-4" />
                     </div>
-                    <DialogTitle className="text-slate-900 dark:text-slate-100 font-extrabold text-base">
+                    <DialogTitle className="text-slate-900 dark:text-slate-100 font-medium text-base">
                       Referral Routing Plan: {acc.name}
                     </DialogTitle>
                   </div>
@@ -3041,15 +3218,15 @@ export function Dashboard({
                   {/* Stats Row */}
                   <div className="grid grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-100 dark:border-slate-800">
                     <div className="space-y-0.5">
-                      <span className="text-[12px] font-bold text-slate-400 uppercase tracking-wider font-mono">Conversion Likelihood</span>
-                      <div className="text-xl font-extrabold text-emerald-600 dark:text-emerald-300 font-sans">
+                      <span className="text-[12px] font-bold text-slate-400 uppercase tracking-normal font-mono">Conversion Likelihood</span>
+                      <div className="text-xl font-semibold text-emerald-600 dark:text-emerald-300 font-sans">
                         {pathway?.channelScore ?? 32}%
                         <span className="text-xs text-slate-400 font-normal ml-1">(assisted list)</span>
                       </div>
                     </div>
                     <div className="space-y-0.5">
-                      <span className="text-[12px] font-bold text-slate-400 uppercase tracking-wider font-mono">Cold Fit Rating</span>
-                      <div className="text-xl font-extrabold text-slate-700 dark:text-slate-300 font-sans">
+                      <span className="text-[12px] font-bold text-slate-400 uppercase tracking-normal font-mono">Cold Fit Rating</span>
+                      <div className="text-xl font-semibold text-slate-700 dark:text-slate-300 font-sans">
                         {acc.fitScore ?? 75}%
                         <span className="text-xs text-slate-400 font-normal ml-1">(traditional index)</span>
                       </div>
@@ -3058,7 +3235,7 @@ export function Dashboard({
 
                   {/* Approach Type */}
                   <div className="space-y-1 font-sans">
-                    <h5 className="text-[12px] font-bold text-slate-400 uppercase tracking-wider font-mono">Assessed Approach Pathway</h5>
+                    <h5 className="text-[12px] font-semibold text-slate-400 uppercase tracking-normal font-mono">Assessed Approach Pathway</h5>
                     <div className="flex items-center gap-2 mt-1">
                       {pathway?.approachType === 'Direct' ? (
                         <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-105 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
@@ -3083,12 +3260,12 @@ export function Dashboard({
                   {/* Warm Intro Connections List */}
                   {wsFound && (
                     <div className="space-y-2">
-                      <h5 className="text-[12px] font-bold text-slate-400 uppercase tracking-wider font-mono">Identified Introducer Nodes</h5>
+                      <h5 className="text-[12px] font-semibold text-slate-400 uppercase tracking-normal font-mono">Identified Introducer Nodes</h5>
                       <div className="space-y-2">
                         {pathway?.warmIntroductionPaths.map((p, idx) => (
                           <div key={idx} className="p-3.5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50 space-y-1.5">
                             <div className="flex items-center justify-between">
-                              <span className="text-xs font-extrabold text-slate-900 dark:text-slate-100 font-sans">{p.name}</span>
+                              <span className="text-xs font-semibold text-slate-900 dark:text-slate-100 font-sans">{p.name}</span>
                               <Badge variant="outline" className="text-[11px] uppercase font-bold shrink-0 bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700">
                                 {p.type === 'defined_network' ? 'Your Referral Network' : p.type}
                               </Badge>
@@ -3111,7 +3288,7 @@ export function Dashboard({
                   {pathway?.distinctOutreachStrategy && (
                     <div className="space-y-3 pt-1">
                       <div className="flex items-center justify-between">
-                        <h5 className="text-[12px] font-bold text-slate-400 uppercase tracking-wider font-mono">Personalized Pathway Outreach Sequence</h5>
+                        <h5 className="text-[12px] font-semibold text-slate-400 uppercase tracking-normal font-mono">Personalized Pathway Outreach Sequence</h5>
                         <Button
                           variant="ghost"
                           size="sm"
@@ -3137,7 +3314,7 @@ export function Dashboard({
                         </div>
 
                         <div className="space-y-1.5">
-                          <label className="text-[11px] font-bold text-slate-400 uppercase tracking-wider font-mono font-sans">Sequenced Multitouch Campaign</label>
+                          <label className="text-[11px] font-bold text-slate-400 uppercase tracking-normal font-mono font-sans">Sequenced Multitouch Campaign</label>
                           <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-300">
                             {pathway.distinctOutreachStrategy.sequenceSteps.map((step, sIdx) => (
                               <div key={sIdx} className="bg-slate-55 bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800 flex items-start gap-2.5 leading-relaxed">
@@ -3197,7 +3374,7 @@ function PipelineColumn({
     <div className="bg-slate-100 dark:bg-slate-800/70 p-4 rounded-2xl flex flex-col h-[calc(100vh-250px)] min-h-[480px] border border-slate-200 dark:border-slate-700/50 shadow-inner">
       <div className="mb-4">
         <div className="flex items-center justify-between mb-1">
-          <h3 className="font-bold text-slate-800 dark:text-slate-200 text-sm flex items-center gap-2">
+          <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm flex items-center gap-2">
             <span>{title}</span>
             <span className="px-2 py-0.5 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-mono text-xs">{count}</span>
           </h3>
@@ -3235,13 +3412,14 @@ function SidebarItem({ icon, label, active, onClick }: { icon: React.ReactNode, 
   return (
     <button 
       onClick={onClick}
-      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-        active 
-        ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 shadow-sm border border-indigo-100 dark:border-indigo-800/50' 
-        : 'text-slate-500 dark:text-slate-300 hover:text-slate-900 hover:bg-slate-50 border border-transparent'
+      className={`w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] font-medium transition-all cursor-pointer ${
+        active
+        ? 'bg-white/[0.08] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.05)]'
+        : 'text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.04]'
       }`}
+      style={{ letterSpacing: '-0.005em' }}
     >
-      {React.cloneElement(icon as React.ReactElement, { className: 'w-5 h-5' })}
+      {React.cloneElement(icon as React.ReactElement, { className: 'w-4 h-4' })}
       {label}
     </button>
   );
