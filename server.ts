@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
-import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 
 dotenv.config();
 
@@ -11,7 +11,7 @@ const PORT = 3000;
 
 app.use(express.json());
 
-// In-Memory Caches to completely avoid redundant OpenAI API quota consumption
+// In-Memory Caches to completely avoid redundant AI API quota consumption
 const businessCache = new Map<string, any>();
 const discoveryCache = new Map<string, any>();
 const accountAnalysisCache = new Map<string, any>();
@@ -19,7 +19,7 @@ const enrichmentCache = new Map<string, any>();
 
 // JSON-Schema type constants. Naming preserved so the existing endpoint
 // schemas (Type.OBJECT, Type.STRING, ...) continue to compile and now
-// emit valid JSON Schema directly.
+// emit valid JSON Schema directly (consumed as Anthropic tool input_schema).
 const Type = {
   OBJECT: "object",
   STRING: "string",
@@ -28,17 +28,17 @@ const Type = {
   BOOLEAN: "boolean",
 } as const;
 
-let openai: OpenAI | null = null;
+let anthropic: Anthropic | null = null;
 
-function getOpenAI() {
-  const apiKey = process.env.OPENAI_API_KEY;
+function getAnthropic() {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    throw new Error("OPENAI_API_KEY is not set. Add it to your .env file to enable AI features.");
+    throw new Error("ANTHROPIC_API_KEY is not set. Add it to your .env file to enable AI features.");
   }
-  if (!openai) {
-    openai = new OpenAI({ apiKey });
+  if (!anthropic) {
+    anthropic = new Anthropic({ apiKey });
   }
-  return openai;
+  return anthropic;
 }
 
 // Helper to clean up any raw logs from containing automated alert keywords (e.g. error, fail, exception)
@@ -50,62 +50,125 @@ function sanitizeString(str: string): string {
     .replace(/exception/gi, "signal");
 }
 
-// Helper for schema-based generation with automatic retries and fallback models
-async function generateStructuredData(prompt: string, schema: any) {
-  const models = ["gpt-4o-mini", "gpt-4o"];
+// Static system prompt — Anthropic caches this across calls when marked ephemeral,
+// so we only pay full token cost the first time in each 5-minute window.
+const SYSTEM_PROMPT_TEXT =
+  "You are a B2B go-to-market analyst assistant. Return ONLY structured data via the `submit_result` tool. " +
+  "Do not include any conversational text outside the tool call. " +
+  "Every claim must be evidence-based and grounded in real, verifiable information — do NOT fabricate company names, funding rounds, employee counts, or dates. " +
+  "When you are uncertain, use conservative estimates and mark citations with lower confidence scores. " +
+  "When a field expects an enum-style value (e.g. Priority Flag, Timing Stage), you MUST use exactly one of the listed values verbatim.";
+
+// Options for the generation call. useWebSearch enables Anthropic's native
+// web_search server tool — the model can search the live web before submitting,
+// grounding the response in real, current information (not just training data).
+interface GenerateOptions {
+  useWebSearch?: boolean;
+  maxSearches?: number; // cap on web_search invocations per call
+  maxTokens?: number;   // per-call output ceiling (default 8192)
+}
+
+// Helper for schema-based generation with automatic retries and fallback models.
+// Uses Anthropic Claude Opus 4.7 primary / Haiku 4.5 fallback, with strict-schema tool use
+// (Anthropic's equivalent of OpenAI's structured outputs — guarantees valid JSON matching schema).
+// When useWebSearch is set, the model is allowed to invoke the built-in web_search server tool
+// before calling submit_result — turning discovery/analysis endpoints into grounded lookups.
+async function generateStructuredData(
+  prompt: string,
+  schema: any,
+  options: GenerateOptions = {}
+) {
+  const models = ["claude-opus-4-7", "claude-haiku-4-5-20251001"];
+  const wantsArray = schema?.type === "array";
+  // Anthropic tool input_schema must have a top-level object shape. If the caller
+  // asked for an array, wrap it in { items: [...] } and unwrap after the call.
+  const toolSchema = wantsArray
+    ? { type: "object", properties: { items: schema }, required: ["items"] }
+    : schema;
+
+  const tools: any[] = [];
+  if (options.useWebSearch) {
+    tools.push({
+      type: "web_search_20250305",
+      name: "web_search",
+      max_uses: options.maxSearches ?? 5,
+    });
+  }
+  tools.push({
+    name: "submit_result",
+    description:
+      "Submit the final structured analysis result. Call this exactly once, at the end, with the fully populated payload matching the input schema.",
+    input_schema: toolSchema,
+  });
+
+  // When web search is on we must let the model choose (search first, then submit).
+  // When it's off we can force submit_result up front for a single-turn call.
+  const tool_choice: any = options.useWebSearch
+    ? { type: "auto" }
+    : { type: "tool", name: "submit_result" };
+
+  const maxTokens = options.maxTokens ?? 8192;
   let lastError: any = null;
 
   for (const model of models) {
-    let attempts = 3;
+    const attempts = 3;
     let delay = 1000; // start with 1 second delay
 
     for (let attempt = 1; attempt <= attempts; attempt++) {
       try {
-        const ai = getOpenAI();
+        const ai = getAnthropic();
 
-        console.log(`[OpenAI Request] Model: ${model}, Attempt: ${attempt}/${attempts}`);
-        const response = await ai.chat.completions.create({
+        console.log(
+          `[Anthropic Request] Model: ${model}, Attempt: ${attempt}/${attempts}${options.useWebSearch ? " (web_search enabled)" : ""}`
+        );
+        const response = await ai.messages.create({
           model,
-          messages: [
+          max_tokens: maxTokens,
+          system: [
             {
-              role: "system",
-              content:
-                "You are a structured-data generator. Respond ONLY with a JSON value that conforms exactly to the JSON Schema provided in the user message. Do not wrap the JSON in markdown fences or commentary.",
-            },
-            {
-              role: "user",
-              content: `${prompt}\n\nRespond with JSON matching this JSON Schema:\n${JSON.stringify(schema)}`,
+              type: "text",
+              text: SYSTEM_PROMPT_TEXT,
+              cache_control: { type: "ephemeral" },
             },
           ],
-          response_format: { type: "json_object" },
+          tools,
+          tool_choice,
+          messages: [
+            {
+              role: "user",
+              content: prompt,
+            },
+          ],
         });
 
-        const text = response.choices?.[0]?.message?.content;
-        if (!text) {
-          console.log(`[OpenAI API Info] Empty response for model ${model}`);
-          const finishReason = response.choices?.[0]?.finish_reason;
-          if (finishReason === "content_filter") {
-            throw new Error("OpenAI response was blocked by content filters. Please try a different query.");
+        // Skip web_search_tool_use / web_search_tool_result blocks — we only want the
+        // final submit_result payload the model settled on after grounding.
+        const toolUse = response.content.find(
+          (c: any) => c.type === "tool_use" && c.name === "submit_result"
+        );
+        if (!toolUse) {
+          console.log(
+            `[Anthropic API Info] Model ${model} did not emit a submit_result tool_use block (stop_reason: ${response.stop_reason})`
+          );
+          if (response.stop_reason === "refusal") {
+            throw new Error("Anthropic response was refused. Please try a different query.");
           }
-          throw new Error("OpenAI returned an empty response.");
+          throw new Error("Model did not use the submit_result tool.");
         }
 
-        let parsed: any;
-        try {
-          parsed = JSON.parse(text);
-        } catch (parseError) {
-          console.log(`[OpenAI API Info] JSON parse failure for model ${model}`);
-          throw new Error("Model generated invalid JSON output. Please try again.");
+        if (options.useWebSearch) {
+          const searchCount = response.content.filter(
+            (c: any) => c.type === "web_search_tool_use" || c.type === "server_tool_use"
+          ).length;
+          if (searchCount > 0) {
+            console.log(`[Anthropic Info] Model ${model} used web_search ${searchCount} time(s)`);
+          }
         }
 
-        // json_object mode forces an object wrapper. If the caller wanted an
-        // array, the model typically returns { items: [...] } / { results: [...] }
-        // / { data: [...] }. Unwrap a single array property to match the schema.
-        if (schema?.type === "array" && !Array.isArray(parsed)) {
-          const arrayProp = Object.values(parsed).find((v) => Array.isArray(v));
-          if (arrayProp) parsed = arrayProp;
+        let parsed: any = (toolUse as any).input;
+        if (wantsArray && parsed && typeof parsed === "object" && Array.isArray(parsed.items)) {
+          parsed = parsed.items;
         }
-
         return parsed;
       } catch (error: any) {
         lastError = error;
@@ -114,14 +177,19 @@ async function generateStructuredData(prompt: string, schema: any) {
 
         // Log simple info rather than full stack/raw json to avoid triggering build/test suite alerts
         const shortError = sanitizeString(errorStr.substring(0, 150));
-        console.log(`[OpenAI Info] Model ${model} attempt ${attempt} handled issue: ${shortError}`);
+        console.log(`[Anthropic Info] Model ${model} attempt ${attempt} handled issue: ${shortError}`);
 
-        const isQuota = status === 429 || errorStr.includes("quota") || errorStr.includes("insufficient_quota");
+        const isQuota =
+          status === 429 ||
+          errorStr.includes("quota") ||
+          errorStr.includes("rate_limit") ||
+          errorStr.includes("credit balance");
         const isPermission =
           status === 401 ||
           status === 403 ||
           errorStr.includes("invalid_api_key") ||
-          errorStr.includes("Incorrect API key") ||
+          errorStr.includes("authentication_error") ||
+          errorStr.includes("permission_error") ||
           errorStr.includes("not set");
 
         if (isQuota || isPermission) {
@@ -134,9 +202,11 @@ async function generateStructuredData(prompt: string, schema: any) {
           status === 502 ||
           status === 503 ||
           status === 504 ||
+          status === 529 ||
           errorStr.includes("timeout") ||
           errorStr.includes("ECONNRESET") ||
-          errorStr.includes("socket");
+          errorStr.includes("socket") ||
+          errorStr.includes("overloaded");
 
         if (isTransient && attempt < attempts) {
           console.log(`Retrying in ${delay}ms...`);
@@ -152,24 +222,29 @@ async function generateStructuredData(prompt: string, schema: any) {
 
   const status = lastError?.status;
   const errorStr = String(lastError?.message || lastError || "");
-  const isQuota = status === 429 || errorStr.includes("quota") || errorStr.includes("insufficient_quota");
+  const isQuota =
+    status === 429 ||
+    errorStr.includes("quota") ||
+    errorStr.includes("rate_limit") ||
+    errorStr.includes("credit balance");
   const isPermission =
     status === 401 ||
     status === 403 ||
     errorStr.includes("invalid_api_key") ||
-    errorStr.includes("Incorrect API key") ||
+    errorStr.includes("authentication_error") ||
+    errorStr.includes("permission_error") ||
     errorStr.includes("not set");
 
   if (isQuota) {
-    console.log("[OpenAI Info] Quota limits active. Scaling to fallback profiles.");
-    throw new Error("OpenAI API quota exceeded. Please wait a moment or upgrade your plan.");
+    console.log("[Anthropic Info] Quota or rate limits active. Scaling to fallback profiles.");
+    throw new Error("Anthropic API quota exceeded. Please wait a moment or upgrade your plan.");
   } else if (isPermission) {
-    console.log("[OpenAI Info] Access denied or key missing. Scaling to fallback profiles.");
-    throw new Error("OpenAI API access denied. Please ensure OPENAI_API_KEY is set to a valid key.");
+    console.log("[Anthropic Info] Access denied or key missing. Scaling to fallback profiles.");
+    throw new Error("Anthropic API access denied. Please ensure ANTHROPIC_API_KEY is set to a valid key.");
   } else {
     const sanitizedMsg = sanitizeString(errorStr.substring(0, 150));
-    console.log(`[OpenAI Info] API issue after fallback strategy: ${sanitizedMsg}`);
-    throw lastError || new Error("Failed to communicate with OpenAI API.");
+    console.log(`[Anthropic Info] API issue after fallback strategy: ${sanitizedMsg}`);
+    throw lastError || new Error("Failed to communicate with Anthropic API.");
   }
 }
 
@@ -804,7 +879,7 @@ app.post("/api/analyze-business", async (req, res) => {
     businessCache.set(cacheKey, data);
     res.json(data);
   } catch (error: any) {
-    console.log(`[GTM Sandbox Advisory] Analysis request redirected to high-fidelity localized simulation metadata due to OpenAI API limits.`);
+    console.log(`[GTM Sandbox Advisory] Analysis request redirected to high-fidelity localized simulation metadata due to AI API limits.`);
     const fallbackData = getAnalyzeBusinessFallback(url);
     res.json(fallbackData);
   }
@@ -825,21 +900,37 @@ app.post("/api/discover-accounts", async (req, res) => {
   }
 
   try {
-    const prompt = `Based on this seller's business: ${JSON.stringify(businessContext)} and their ICP: ${JSON.stringify(icp)}, discover 5-8 high-potential target companies that are currently likely to need these services. 
-    Analyze the recency, velocity, and intensity of their buying signals to assess optimal outreach timing.
-    For each company, provide:
-    - Company Name
-    - Website URL
-    - A brief description of what they do
-    - Why they are a fit (Evidence-based)
-    - Detected Signals
-    - Estimated Fit Score (0-100)
-    - Timing Score (0-100): Calculated based on the recency, intensity, and velocity of signals.
-    - Timing Stage: Must be exactly one of "Early Awareness", "Active Evaluation", or "Urgent Decision".
-    - Outreach Window: Recommended window, e.g., "Within 48 hours", "This week", "This month".
-    - Priority Index (0-100): Composite average priority rating combining Fit Score and Timing Score.
-    - Priority Flag: Must be exactly "Immediate Action Required" (if fit >= 85 and timing >= 80), "Nurture Queue" (if fit is high but timing timing score is low, e.g., < 75), or "Standard Follow-up" for other standard scenarios.
-    - Suggested Outreach Angle.`;
+    const prompt = `You have access to a web_search tool. Use it to ground every discovered account in REAL, VERIFIABLE data from the live web — do NOT rely on training-data recall alone.
+
+Seller's business: ${JSON.stringify(businessContext)}
+Their ICP: ${JSON.stringify(icp)}
+
+STEP 1 — Search the web (using web_search) for 5–8 companies that currently show buying signals matching this ICP. Prioritize signals from the last 90 days:
+  • Recent funding announcements (Series A/B/C, growth rounds)
+  • Executive hiring for relevant roles
+  • Job postings that match the seller's service areas
+  • Product launches or platform migrations
+  • Press releases about digital transformation, expansion, or new initiatives
+
+STEP 2 — For each company you shortlist, verify its real domain via web_search (do not invent domains).
+
+STEP 3 — Only after grounding your list in web_search results, call submit_result with the payload.
+
+For each company, populate:
+  - name: Real, verified company name
+  - domain: Real, verified domain (checked via web_search)
+  - description: Brief real business description
+  - fitReason: Evidence-based explanation citing at least one detected live signal
+  - signals: 2-4 specific recent signals you actually found in web_search results (include source hints inline, e.g. "Series B announcement per TechCrunch, Mar 2026")
+  - fitScore (0-100): How well the account matches the ICP
+  - timingScore (0-100): Calculated based on the recency, intensity, and velocity of signals
+  - timingStage: Exactly one of "Early Awareness", "Active Evaluation", or "Urgent Decision"
+  - outreachWindow: Recommended window — "Within 48 hours", "This week", or "This month"
+  - priorityIndex (0-100): Average of fitScore and timingScore
+  - priorityFlag: Exactly "Immediate Action Required" (fit >= 85 AND timing >= 80), "Warm Track" (fit >= 80 AND timing < 75), or "Standard Follow-up" for everything else
+  - outreachAngle: A specific outreach angle tied to the signals you found
+
+If you cannot verify a company via web_search, DO NOT include it. It is better to return 3 verified accounts than 8 speculative ones.`;
 
     const schema = {
       type: Type.ARRAY,
@@ -863,11 +954,15 @@ app.post("/api/discover-accounts", async (req, res) => {
       }
     };
 
-    const data = await generateStructuredData(prompt, schema);
+    const data = await generateStructuredData(prompt, schema, {
+      useWebSearch: true,
+      maxSearches: 6,
+      maxTokens: 16384,
+    });
     discoveryCache.set(cacheKey, data);
     res.json(data);
   } catch (error: any) {
-    console.log(`[GTM Sandbox Advisory] Account discovery redirected to high-fidelity localized simulation metadata due to OpenAI API limits.`);
+    console.log(`[GTM Sandbox Advisory] Account discovery redirected to high-fidelity localized simulation metadata due to AI API limits.`);
     const fallbackData = getDiscoverAccountsFallback(businessContext, icp);
     res.json(fallbackData);
   }
