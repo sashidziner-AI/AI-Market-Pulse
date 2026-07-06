@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npm start` — runs the production build (`node dist/server.cjs`). Set `NODE_ENV=production` so the server serves `dist/` statically instead of Vite middleware.
 - `npm run lint` — `tsc --noEmit`. There is no test suite.
 
-`ANTHROPIC_API_KEY` must be set in `.env` for live AI responses. Without it, every `/api/*` endpoint silently returns rich hand-authored fallback data (see "Fallback Strategy" below) — the UI still works but every response will be marked `isFallback: true` and the frontend will show a banner.
+One of `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` must be set in `.env` for live AI responses. If both are set, Anthropic wins (better feature set: native web_search + prompt caching). Without either, every `/api/*` endpoint silently returns rich hand-authored fallback data (see "Fallback Strategy" below) — the UI still works but every response will be marked `isFallback: true` and the frontend will show a banner.
 
 Set `DISABLE_HMR=true` to turn off Vite HMR and file watching (used by hosted AI Studio environments to avoid flicker during agent edits).
 
@@ -32,20 +32,21 @@ Each is POST + JSON. They form a 4-stage pipeline:
 
 All four endpoints go through this single helper. It:
 
-- Tries `claude-opus-4-7`, then `claude-haiku-4-5-20251001` if the first model exhausts retries.
-- Retries transient errors (5xx, 529 overloaded, ECONNRESET, timeout) with exponential backoff (1s → 2s → 4s, 3 attempts per model).
-- On `401/403`, `429`/quota, or `credit balance` errors it short-circuits immediately (no retries, no fallback model) and the route handler then returns the canned fallback data.
-- Uses Anthropic **tool use** with a single `submit_result` tool whose `input_schema` is the caller's JSON Schema — guarantees the model returns valid JSON matching the shape. If the caller's schema is `type: "array"`, the helper wraps it in `{ items: [...] }` for the tool then unwraps `.items` after.
-- The static system prompt is sent with `cache_control: { type: "ephemeral" }` so Anthropic's prompt-caching kicks in on repeat calls within a ~5-minute window, cutting cost on rapid re-clicks.
+- Auto-picks provider: **Anthropic if `ANTHROPIC_API_KEY` is set, else OpenAI if `OPENAI_API_KEY` is set**, else throws (triggering the endpoint's fallback data).
+- **Anthropic path** (`runAnthropic`): tries `claude-opus-4-7`, then `claude-haiku-4-5-20251001`. Uses **tool_use** with a single `submit_result` tool for guaranteed-valid JSON. Supports **native web_search** server tool (`web_search_20250305`) when `useWebSearch: true`. System prompt marked `cache_control: ephemeral` for prompt caching.
+- **OpenAI path** (`runOpenAI`): tries `gpt-4o`, then `gpt-4o-mini`. Uses **Chat Completions `response_format: { type: "json_schema" }`** for structured outputs. `useWebSearch` degrades to a no-op with a log warning (Chat Completions doesn't expose web search — Responses API + `web_search_preview` tool would restore it).
+- Both paths: retry transient errors (5xx, 529 overloaded, ECONNRESET, timeout) with exponential backoff (1s → 2s → 4s, 3 attempts per model). On `401/403`, `429`/quota errors they short-circuit immediately.
+- Both paths: if caller's schema is `type: "array"`, the helper wraps it in `{ items: [...] }` then unwraps `.items` after the call (both providers require an object at the top level).
+- Every attempt (ok or error) writes a JSONL entry to `logs/ai-calls.jsonl` for the `npm run inspect` aggregator (per-endpoint token spend, latency, cache hit rate, USD estimate).
 - All log lines run through `sanitizeString()` which rewrites tokens like `error`, `fail`, `exception` to neutral synonyms so logs don't trigger build-system alerting rules.
 
 ### Fallback strategy
 
-Each endpoint has a `getXxxFallback(...)` function that returns realistic, hand-authored seed data (different sets for AEC/construction vs general SaaS) with `isFallback: true` flags. Whenever the Anthropic call throws (typically quota/permission), the catch block calls the fallback and returns 200 — the frontend treats the data identically and surfaces a toast saying simulated data was loaded. **Do not** change endpoints to return 5xx on AI failure — the UX assumes a successful response with `isFallback: true`.
+Each endpoint has a `getXxxFallback(...)` function that returns realistic, hand-authored seed data (different sets for AEC/construction vs general SaaS) with `isFallback: true` flags. Whenever the AI call throws (typically quota/permission), the catch block calls the fallback and returns 200 — the frontend treats the data identically and surfaces a toast saying simulated data was loaded. **Do not** change endpoints to return 5xx on AI failure — the UX assumes a successful response with `isFallback: true`.
 
 ### In-memory caches
 
-`businessCache`, `discoveryCache`, `accountAnalysisCache`, `clustersCache` are `Map`s keyed by request inputs. They exist purely to avoid burning Anthropic quota during repeated UI clicks within a single server lifetime. They are not persistent.
+`businessCache`, `discoveryCache`, `accountAnalysisCache`, `clustersCache` are `Map`s keyed by request inputs. They exist purely to avoid burning AI provider quota during repeated UI clicks within a single server lifetime. They are not persistent.
 
 ### Frontend orchestration (`src/App.tsx`)
 

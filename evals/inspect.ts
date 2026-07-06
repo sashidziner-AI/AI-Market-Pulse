@@ -36,9 +36,13 @@ interface AiCallLog {
 // USD per 1M tokens — rough public list prices at time of writing.
 // Cache reads land at ~10% of the base input rate for supported models.
 const PRICING: Record<string, { in: number; out: number; cacheRead: number }> = {
+  // Anthropic Claude
   "claude-opus-4-7": { in: 15, out: 75, cacheRead: 1.5 },
   "claude-sonnet-4-6": { in: 3, out: 15, cacheRead: 0.3 },
   "claude-haiku-4-5-20251001": { in: 1, out: 5, cacheRead: 0.1 },
+  // OpenAI GPT-4o family (auto-cache discount on cached input tokens)
+  "gpt-4o": { in: 2.5, out: 10, cacheRead: 1.25 },
+  "gpt-4o-mini": { in: 0.15, out: 0.6, cacheRead: 0.075 },
 };
 const WEB_SEARCH_USD_PER_1000 = 10; // ~$0.01 per search
 

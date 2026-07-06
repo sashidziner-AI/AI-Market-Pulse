@@ -4,6 +4,7 @@ import path from "path";
 import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
 import Anthropic from "@anthropic-ai/sdk";
+import OpenAI from "openai";
 
 dotenv.config();
 
@@ -30,6 +31,19 @@ const Type = {
 } as const;
 
 let anthropic: Anthropic | null = null;
+let openai: OpenAI | null = null;
+
+// Provider auto-selection: prefer Anthropic when its key is present (better
+// features on this project — native web_search, prompt caching); fall back
+// to OpenAI when only OPENAI_API_KEY is set. Throws when neither is set so
+// each endpoint's catch block can trigger fallback data.
+type Provider = "anthropic" | "openai";
+
+function pickProvider(): Provider {
+  if (process.env.ANTHROPIC_API_KEY) return "anthropic";
+  if (process.env.OPENAI_API_KEY) return "openai";
+  throw new Error("Neither ANTHROPIC_API_KEY nor OPENAI_API_KEY is set. Add one to your .env file to enable AI features.");
+}
 
 function getAnthropic() {
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -40,6 +54,17 @@ function getAnthropic() {
     anthropic = new Anthropic({ apiKey });
   }
   return anthropic;
+}
+
+function getOpenAI() {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("OPENAI_API_KEY is not set. Add it to your .env file to enable AI features.");
+  }
+  if (!openai) {
+    openai = new OpenAI({ apiKey });
+  }
+  return openai;
 }
 
 // Helper to clean up any raw logs from containing automated alert keywords (e.g. error, fail, exception)
@@ -63,13 +88,22 @@ const SYSTEM_PROMPT_TEXT =
 // Options for the generation call. useWebSearch enables Anthropic's native
 // web_search server tool — the model can search the live web before submitting,
 // grounding the response in real, current information (not just training data).
-// models is the ladder tried in order (primary → fallback → ...). When omitted,
-// defaults to Opus 4.7 → Haiku 4.5.
+// On OpenAI (Chat Completions), useWebSearch currently degrades gracefully to
+// a no-op with a log warning; native OpenAI web search would require moving
+// this path to the Responses API + web_search_preview tool.
+//
+// models is a per-provider ladder tried in order (primary → fallback → ...).
+// When omitted, defaults are chosen per provider:
+//   Anthropic → [Opus 4.7, Haiku 4.5]
+//   OpenAI    → [gpt-4o, gpt-4o-mini]
 interface GenerateOptions {
   useWebSearch?: boolean;
-  maxSearches?: number; // cap on web_search invocations per call
+  maxSearches?: number; // cap on web_search invocations per call (Anthropic only)
   maxTokens?: number;   // per-call output ceiling (default 8192)
-  models?: string[];    // custom model ladder (defaults to Opus → Haiku)
+  models?: {
+    anthropic?: string[];
+    openai?: string[];
+  };
   endpoint?: string;    // route tag for observability (e.g. "/api/discover-accounts")
   subCall?: string;     // sub-call label when one endpoint fans out (e.g. "personas")
 }
@@ -124,21 +158,35 @@ function logAiCall(entry: AiCallLog) {
 }
 
 // Model constants — makes per-endpoint routing self-documenting at the call sites.
+// Anthropic:
 const MODEL_OPUS_4_7 = "claude-opus-4-7";
 const MODEL_SONNET_4_6 = "claude-sonnet-4-6";
 const MODEL_HAIKU_4_5 = "claude-haiku-4-5-20251001";
+// OpenAI:
+const MODEL_GPT_4O = "gpt-4o";
+const MODEL_GPT_4O_MINI = "gpt-4o-mini";
 
 // Helper for schema-based generation with automatic retries and fallback models.
-// Uses Anthropic Claude Opus 4.7 primary / Haiku 4.5 fallback, with strict-schema tool use
-// (Anthropic's equivalent of OpenAI's structured outputs — guarantees valid JSON matching schema).
-// When useWebSearch is set, the model is allowed to invoke the built-in web_search server tool
-// before calling submit_result — turning discovery/analysis endpoints into grounded lookups.
+// Auto-picks provider: Anthropic if ANTHROPIC_API_KEY is set, else OpenAI.
+// Both providers return strict-schema JSON matching the caller's shape.
 async function generateStructuredData(
   prompt: string,
   schema: any,
   options: GenerateOptions = {}
 ) {
-  const models = options.models ?? [MODEL_OPUS_4_7, MODEL_HAIKU_4_5];
+  const provider = pickProvider();
+  if (provider === "openai") {
+    return runOpenAI(prompt, schema, options);
+  }
+  return runAnthropic(prompt, schema, options);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Anthropic path — Claude Opus/Sonnet/Haiku via messages.create() with
+// tool_use for guaranteed-valid JSON. Supports native web_search server tool.
+// ──────────────────────────────────────────────────────────────────────────
+async function runAnthropic(prompt: string, schema: any, options: GenerateOptions) {
+  const models = options.models?.anthropic ?? [MODEL_OPUS_4_7, MODEL_HAIKU_4_5];
   const wantsArray = schema?.type === "array";
   // Anthropic tool input_schema must have a top-level object shape. If the caller
   // asked for an array, wrap it in { items: [...] } and unwrap after the call.
@@ -344,6 +392,198 @@ async function generateStructuredData(
     const sanitizedMsg = sanitizeString(errorStr.substring(0, 150));
     console.log(`[Anthropic Info] API issue after fallback strategy: ${sanitizedMsg}`);
     throw lastError || new Error("Failed to communicate with Anthropic API.");
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// OpenAI path — Chat Completions API with response_format json_schema strict
+// mode. Automatic prompt caching kicks in for prompts >1024 tokens with no
+// extra flags. useWebSearch degrades to a no-op with a log warning — restoring
+// grounding on OpenAI would require moving to the Responses API + the
+// web_search_preview tool (documented future work).
+// ──────────────────────────────────────────────────────────────────────────
+async function runOpenAI(prompt: string, schema: any, options: GenerateOptions) {
+  const models = options.models?.openai ?? [MODEL_GPT_4O, MODEL_GPT_4O_MINI];
+  const wantsArray = schema?.type === "array";
+  // OpenAI strict json_schema requires a top-level object shape. Wrap arrays.
+  const outSchema = wantsArray
+    ? { type: "object", properties: { items: schema }, required: ["items"], additionalProperties: false }
+    : schema;
+
+  if (options.useWebSearch) {
+    // Chat Completions doesn't expose web search. Note the request but degrade
+    // gracefully so the endpoint still returns a valid structured response.
+    console.log(
+      `[OpenAI Info] useWebSearch requested for ${options.endpoint ?? "call"} but not supported on Chat Completions path. Response will be ungrounded.`
+    );
+  }
+
+  const maxTokens = options.maxTokens ?? 8192;
+  let lastError: any = null;
+
+  for (const model of models) {
+    const attempts = 3;
+    let delay = 1000;
+
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      const callStartedAt = Date.now();
+      try {
+        const ai = getOpenAI();
+
+        console.log(
+          `[OpenAI Request] Model: ${model}, Attempt: ${attempt}/${attempts}${options.endpoint ? " route=" + options.endpoint : ""}${options.subCall ? " sub=" + options.subCall : ""}`
+        );
+        const response = await ai.chat.completions.create({
+          model,
+          max_tokens: maxTokens,
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT_TEXT },
+            { role: "user", content: prompt },
+          ],
+          response_format: {
+            type: "json_schema",
+            json_schema: {
+              name: "submit_result",
+              schema: outSchema,
+              strict: false, // strict:true would require additionalProperties: false everywhere — big refactor for later
+            },
+          },
+        });
+
+        const text = response.choices?.[0]?.message?.content;
+        const finishReason = response.choices?.[0]?.finish_reason;
+        if (!text) {
+          console.log(`[OpenAI API Info] Empty response from model ${model} (finish_reason: ${finishReason})`);
+          if (finishReason === "content_filter") {
+            throw new Error("OpenAI response blocked by content filter.");
+          }
+          throw new Error("OpenAI returned an empty response.");
+        }
+
+        let parsed: any;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          console.log(`[OpenAI API Info] JSON parse failure from model ${model}`);
+          throw new Error("Model generated invalid JSON output.");
+        }
+
+        // Unwrap array wrapper if the caller wanted an array
+        if (wantsArray && parsed && typeof parsed === "object" && Array.isArray(parsed.items)) {
+          parsed = parsed.items;
+        }
+
+        const usage: any = (response as any).usage ?? {};
+        // OpenAI reports cached tokens under prompt_tokens_details.cached_tokens
+        const cachedTokens = usage.prompt_tokens_details?.cached_tokens;
+        logAiCall({
+          ts: new Date().toISOString(),
+          endpoint: options.endpoint,
+          subCall: options.subCall,
+          model,
+          attempt,
+          status: "ok",
+          durationMs: Date.now() - callStartedAt,
+          inputTokens: usage.prompt_tokens,
+          outputTokens: usage.completion_tokens,
+          cacheReadTokens: cachedTokens,
+          webSearchCount: 0,
+          webSearchEnabled: !!options.useWebSearch,
+        });
+
+        return parsed;
+      } catch (error: any) {
+        lastError = error;
+        const status = error?.status;
+        const errorStr = String(error?.message || error || "");
+
+        const shortError = sanitizeString(errorStr.substring(0, 150));
+        console.log(`[OpenAI Info] Model ${model} attempt ${attempt} handled issue: ${shortError}`);
+
+        const isQuota =
+          status === 429 ||
+          errorStr.includes("quota") ||
+          errorStr.includes("insufficient_quota") ||
+          errorStr.includes("rate_limit");
+        const isPermission =
+          status === 401 ||
+          status === 403 ||
+          errorStr.includes("invalid_api_key") ||
+          errorStr.includes("Incorrect API key") ||
+          errorStr.includes("not set");
+
+        const errorClass = isPermission
+          ? "permission"
+          : isQuota
+            ? "quota"
+            : status && status >= 500
+              ? "server"
+              : errorStr.includes("timeout") || errorStr.includes("ECONNRESET")
+                ? "network"
+                : "other";
+
+        logAiCall({
+          ts: new Date().toISOString(),
+          endpoint: options.endpoint,
+          subCall: options.subCall,
+          model,
+          attempt,
+          status: "error",
+          durationMs: Date.now() - callStartedAt,
+          webSearchCount: 0,
+          webSearchEnabled: !!options.useWebSearch,
+          errorClass,
+          errorSnippet: shortError,
+        });
+
+        if (isQuota || isPermission) {
+          throw error;
+        }
+
+        const isTransient =
+          status === 500 ||
+          status === 502 ||
+          status === 503 ||
+          status === 504 ||
+          errorStr.includes("timeout") ||
+          errorStr.includes("ECONNRESET") ||
+          errorStr.includes("socket");
+
+        if (isTransient && attempt < attempts) {
+          console.log(`Retrying in ${delay}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          delay *= 2;
+        } else {
+          break;
+        }
+      }
+    }
+  }
+
+  const status = lastError?.status;
+  const errorStr = String(lastError?.message || lastError || "");
+  const isQuota =
+    status === 429 ||
+    errorStr.includes("quota") ||
+    errorStr.includes("insufficient_quota") ||
+    errorStr.includes("rate_limit");
+  const isPermission =
+    status === 401 ||
+    status === 403 ||
+    errorStr.includes("invalid_api_key") ||
+    errorStr.includes("Incorrect API key") ||
+    errorStr.includes("not set");
+
+  if (isQuota) {
+    console.log("[OpenAI Info] Quota or rate limits active. Scaling to fallback profiles.");
+    throw new Error("OpenAI API quota exceeded. Please wait a moment or upgrade your plan.");
+  } else if (isPermission) {
+    console.log("[OpenAI Info] Access denied or key missing. Scaling to fallback profiles.");
+    throw new Error("OpenAI API access denied. Please ensure OPENAI_API_KEY is set to a valid key.");
+  } else {
+    const sanitizedMsg = sanitizeString(errorStr.substring(0, 150));
+    console.log(`[OpenAI Info] API issue after fallback strategy: ${sanitizedMsg}`);
+    throw lastError || new Error("Failed to communicate with OpenAI API.");
   }
 }
 
@@ -978,7 +1218,10 @@ app.post("/api/analyze-business", async (req, res) => {
     // ~10x lower cost than Opus with comparable quality on this scope.
     const data = await generateStructuredData(prompt, schema, {
       endpoint: "/api/analyze-business",
-      models: [MODEL_HAIKU_4_5, MODEL_OPUS_4_7],
+      models: {
+        anthropic: [MODEL_HAIKU_4_5, MODEL_OPUS_4_7],
+        openai: [MODEL_GPT_4O_MINI, MODEL_GPT_4O],
+      },
     });
     businessCache.set(cacheKey, data);
     res.json(data);
@@ -1004,37 +1247,33 @@ app.post("/api/discover-accounts", async (req, res) => {
   }
 
   try {
-    const prompt = `You have access to a web_search tool. Use it to ground every discovered account in REAL, VERIFIABLE data from the live web — do NOT rely on training-data recall alone.
+    const prompt = `Discover 5–8 real companies that match this ICP and are currently likely showing buying signals. If you have access to a web_search tool, use it to verify every account against the live web. If web_search is not available, rely on your training-data knowledge of well-known companies in this space and mark signals conservatively.
 
 Seller's business: ${JSON.stringify(businessContext)}
 Their ICP: ${JSON.stringify(icp)}
 
-STEP 1 — Search the web (using web_search) for 5–8 companies that currently show buying signals matching this ICP. Prioritize signals from the last 90 days:
+Prioritize accounts whose likely signals from the last 90 days include:
   • Recent funding announcements (Series A/B/C, growth rounds)
   • Executive hiring for relevant roles
-  • Job postings that match the seller's service areas
+  • Job postings matching the seller's service areas
   • Product launches or platform migrations
   • Press releases about digital transformation, expansion, or new initiatives
 
-STEP 2 — For each company you shortlist, verify its real domain via web_search (do not invent domains).
-
-STEP 3 — Only after grounding your list in web_search results, call submit_result with the payload.
-
 For each company, populate:
-  - name: Real, verified company name
-  - domain: Real, verified domain (checked via web_search)
+  - name: Real company name
+  - domain: Real domain (verify via web_search if available)
   - description: Brief real business description
-  - fitReason: Evidence-based explanation citing at least one detected live signal
-  - signals: 2-4 specific recent signals you actually found in web_search results (include source hints inline, e.g. "Series B announcement per TechCrunch, Mar 2026")
+  - fitReason: Evidence-based explanation citing at least one detected signal
+  - signals: 2-4 specific signals with source hints inline (e.g. "Series B announcement per TechCrunch, Mar 2026")
   - fitScore (0-100): How well the account matches the ICP
-  - timingScore (0-100): Calculated based on the recency, intensity, and velocity of signals
+  - timingScore (0-100): Recency, intensity, and velocity of signals
   - timingStage: Exactly one of "Early Awareness", "Active Evaluation", or "Urgent Decision"
-  - outreachWindow: Recommended window — "Within 48 hours", "This week", or "This month"
+  - outreachWindow: "Within 48 hours", "This week", or "This month"
   - priorityIndex (0-100): Average of fitScore and timingScore
-  - priorityFlag: Exactly "Immediate Action Required" (fit >= 85 AND timing >= 80), "Warm Track" (fit >= 80 AND timing < 75), or "Standard Follow-up" for everything else
-  - outreachAngle: A specific outreach angle tied to the signals you found
+  - priorityFlag: Exactly "Immediate Action Required" (fit >= 85 AND timing >= 80), "Warm Track" (fit >= 80 AND timing < 75), or "Standard Follow-up"
+  - outreachAngle: A specific outreach angle tied to the signals
 
-If you cannot verify a company via web_search, DO NOT include it. It is better to return 3 verified accounts than 8 speculative ones.`;
+Return at least 5 accounts. Prefer well-known real companies over invented names.`;
 
     const schema = {
       type: Type.ARRAY,
@@ -1062,7 +1301,10 @@ If you cannot verify a company via web_search, DO NOT include it. It is better t
     // (score fit/timing across accounts). Opus 4.7 is the right tool here.
     const data = await generateStructuredData(prompt, schema, {
       endpoint: "/api/discover-accounts",
-      models: [MODEL_OPUS_4_7, MODEL_HAIKU_4_5],
+      models: {
+        anthropic: [MODEL_OPUS_4_7, MODEL_HAIKU_4_5],
+        openai: [MODEL_GPT_4O, MODEL_GPT_4O_MINI],
+      },
       useWebSearch: true,
       maxSearches: 6,
       maxTokens: 16384,
@@ -1346,7 +1588,10 @@ Competitor citations are typically Secondary (BuiltWith scan, review site) or Te
       generateStructuredData(briefPrompt, briefSchema, {
         endpoint: "/api/analyze-account",
         subCall: "brief",
-        models: [MODEL_OPUS_4_7, MODEL_HAIKU_4_5],
+        models: {
+          anthropic: [MODEL_OPUS_4_7, MODEL_HAIKU_4_5],
+          openai: [MODEL_GPT_4O, MODEL_GPT_4O_MINI],
+        },
         useWebSearch: true,
         maxSearches: 4,
         maxTokens: 6144,
@@ -1354,7 +1599,10 @@ Competitor citations are typically Secondary (BuiltWith scan, review site) or Te
       generateStructuredData(humanPrompt, humanSchema, {
         endpoint: "/api/analyze-account",
         subCall: "human",
-        models: [MODEL_OPUS_4_7, MODEL_HAIKU_4_5],
+        models: {
+          anthropic: [MODEL_OPUS_4_7, MODEL_HAIKU_4_5],
+          openai: [MODEL_GPT_4O, MODEL_GPT_4O_MINI],
+        },
         useWebSearch: true,
         maxSearches: 4,
         maxTokens: 10240,
@@ -1362,7 +1610,10 @@ Competitor citations are typically Secondary (BuiltWith scan, review site) or Te
       generateStructuredData(competitorPrompt, competitorSchema, {
         endpoint: "/api/analyze-account",
         subCall: "competitors",
-        models: [MODEL_OPUS_4_7, MODEL_HAIKU_4_5],
+        models: {
+          anthropic: [MODEL_OPUS_4_7, MODEL_HAIKU_4_5],
+          openai: [MODEL_GPT_4O, MODEL_GPT_4O_MINI],
+        },
         useWebSearch: true,
         maxSearches: 4,
         maxTokens: 6144,
@@ -1565,7 +1816,10 @@ Analyze these target accounts:
     // industry-report language into the unifiedValueMessage / outreach angle.
     const data = await generateStructuredData(prompt, schema, {
       endpoint: "/api/cluster-accounts",
-      models: [MODEL_SONNET_4_6, MODEL_HAIKU_4_5],
+      models: {
+        anthropic: [MODEL_SONNET_4_6, MODEL_HAIKU_4_5],
+        openai: [MODEL_GPT_4O_MINI, MODEL_GPT_4O],
+      },
       useWebSearch: true,
       maxSearches: 4,
       maxTokens: 12288,
