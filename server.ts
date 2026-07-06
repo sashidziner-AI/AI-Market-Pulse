@@ -1315,8 +1315,16 @@ app.post("/api/cluster-accounts", async (req, res) => {
   }
 
   try {
-    const prompt = `You are an expert sales analyst and B2B go-to-market architect.
-    Analyze these target accounts:
+    const prompt = `You are an expert sales analyst and B2B go-to-market architect. You have access to a web_search tool — use it (up to 4 times) to ground your segment naming and messaging in CURRENT industry terminology.
+
+GROUNDING PLAN — before calling submit_result, run a small number of targeted searches:
+  1. Look up 2026 industry trend articles for the dominant sub-vertical(s) you're seeing (e.g. "SaaS payment orchestration trends 2026").
+  2. Verify the "buzz words" and current pain-point language the market uses so the unifiedValueMessage doesn't sound generic or dated.
+  3. Optionally search for real analyst reports (Gartner / Forrester / IDC) referencing the space so the coordinatedOutreachAngle can cite a real market signal.
+
+Do NOT search individual accounts (they were already grounded upstream). Only search for market-level context.
+
+Analyze these target accounts:
     ${JSON.stringify(accounts)}
     And the seller's business context:
     ${JSON.stringify(businessContext)}
@@ -1371,8 +1379,13 @@ app.post("/api/cluster-accounts", async (req, res) => {
 
     // Segment synthesis is a mid-effort pattern-finding task. Sonnet 4.6 gives
     // Opus-adjacent quality on grouping/summarization at a fraction of the cost.
+    // Web search adds a small grounding pass (up to 4 searches) to pull current
+    // industry-report language into the unifiedValueMessage / outreach angle.
     const data = await generateStructuredData(prompt, schema, {
       models: [MODEL_SONNET_4_6, MODEL_HAIKU_4_5],
+      useWebSearch: true,
+      maxSearches: 4,
+      maxTokens: 12288,
     });
     const formattedData = data.map((cluster: any, idx: number) => ({
       ...cluster,
