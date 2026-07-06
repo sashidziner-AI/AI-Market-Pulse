@@ -18,7 +18,7 @@
     {
       "type": "llmJudge",
       "path": "competitors",
-      "rubric": "Competitors for a modern developer tools account should be recognizable dev-tools names — think Jira, Notion, Height, Shortcut, ClickUp, GitHub Projects, Coda, Airtable. Score high if 2+ real known competitor names appear. Score low if generic 'Enterprise CRM' names appear.",
+      "rubric": "The seller is GridPulse (engineering performance analytics). Competitors here means engineering-analytics / observability / dev-productivity vendors that Linear likely USES today — the tools GridPulse would displace. Recognizable good answers: Jellyfish, LinearB, Waydev, Code Climate, Sleuth, Swarmia, Datadog engineering metrics, homegrown dashboards. Score low if the list is cloud infrastructure (AWS, GCP, Algolia) or Linear's own market competitors (Jira, Notion).",
       "passingScore": 6
     },
     {

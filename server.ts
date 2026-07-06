@@ -1388,13 +1388,25 @@ app.post("/api/analyze-business", async (req, res) => {
   }
 
   try {
-    const prompt = `Analyze the website ${url}. Identify the business model, products, services, value proposition, and target industries. Then, generate a detailed Ideal Customer Profile (ICP). Include:
-    - Business Overview
-    - Core Services
-    - Value Proposition
-    - Target Industries (List)
-    - Ideal Customer Sub-types
-    - Key Pain Points they solve.`;
+    const prompt = `Analyze the website ${url}. Identify the business model, products, services, value proposition, and target industries. Then, generate a HIGHLY SPECIFIC Ideal Customer Profile (ICP) — avoid generic B2B language.
+
+Requirements:
+- businessName + overview + services + valueProp + targetIndustries as normal
+- icp.title: name a specific role at a specific company profile (e.g. "VP Engineering at Series B-D SaaS post-PMF" — not "Business Owner")
+- icp.description: MUST reference concrete attributes tied to who actually buys this product:
+    * Company scale band (employee count OR funding stage OR revenue tier)
+    * Industry or vertical specificity (e.g. "growth-stage fintechs handling >$500M/yr in transactions" — not "financial services companies")
+    * Where relevant: founder/leader profile, technical maturity level, geographic concentration
+- icp.targetRoles: 3-5 specific job titles that would actually own a purchase decision at this account type
+- icp.buyingSignals: 4-6 CONCRETE TRIGGERS with time bounds — not vague growth indicators. Each signal should be:
+    * A specific event you could see externally (funding round, exec hire, product launch, regulatory shift, competitive pressure)
+    * With enough specificity that if you saw it in a news feed you'd flag it
+    * BAD: "Growing team" or "Digital transformation"
+    * GOOD: "New CFO announced within last 6 months from a payments-adjacent company"
+    * GOOD: "PSD2 or open-banking compliance deadline approaching in next 12 months"
+    * GOOD: "Public commitment to reducing vendor sprawl in last earnings call"
+
+Reject generic filler. If a signal could apply to any B2B SaaS company, it's not specific enough.`;
 
     const schema = {
       type: Type.OBJECT,
@@ -1487,7 +1499,18 @@ FEW-SHOT EXAMPLE — the SHAPE and DEPTH of a great entry:
   "outreachAngle": "Lead with how our orchestration layer would reduce their integration surface area from 12 payment rails to 1 — echo their platform-consolidation stance from the Feb podcast."
 }
 
-Populate every field. Ground every signal in a real source. Do NOT fabricate URLs.`;
+Populate every field. Ground every signal in a real source. Do NOT fabricate URLs.
+
+CRITICAL — outreachAngle field:
+Every outreachAngle MUST reference AT LEAST ONE specific signal you actually surfaced for THAT account. If the outreachAngle would work for any company in the industry, it fails.
+
+Counter-example (BAD) and correct version (GOOD):
+BAD (generic — would work for anyone):
+  "Highlight our SOC2 compliance to accelerate their enterprise readiness."
+GOOD (references the account's specific signal):
+  "Reference their Head of Security hire announced on the Feb 3 blog post — position our audit-automation as a force-multiplier for the compliance program she's spinning up before the first enterprise deal in Q3."
+
+Follow the GOOD pattern for every account.`;
 
     const schema = {
       type: Type.ARRAY,
@@ -1799,20 +1822,31 @@ FEW-SHOT EXAMPLE — the SHAPE and DEPTH of a great persona:
 
 Competitive landscape for ${domain} (seller: ${JSON.stringify(businessContext)}).
 
+CRITICAL DEFINITION — a "competitor" here is:
+  ✅ A vendor or tool that ${domain} CURRENTLY USES which the seller (${businessContext?.businessName ?? "seller"}) would DISPLACE if adopted
+  ❌ NOT a company that competes WITH ${domain} in ${domain}'s own market
+  ❌ NOT general cloud/infrastructure (AWS, GCP, Azure) — that's ${domain}'s host, not a workflow substitute
+  ❌ NOT search/CDN/analytics infrastructure (Algolia, Cloudflare, Segment) unless the seller specifically replaces that layer
+
+Concretely: find the tools ${domain}'s teams use TODAY in the same functional category as the seller's product. If the seller sells engineering analytics, find engineering analytics vendors ${domain} currently uses (Datadog, LinearB, Jellyfish, Code Climate, homegrown dashboards). If the seller sells CRM, find CRM vendors ${domain} uses today.
+
 GROUNDING PLAN (spend ~3-4 searches):
-  1. "${domain} technology stack" or BuiltWith-style scans
-  2. "${domain} case study" or "${domain} partners" — surfaces named vendors
-  3. Review sites (G2, TrustRadius) — mentions of tools they use
+  1. "${domain} uses <seller's functional category>" — e.g. "${domain} monitoring stack" or "${domain} CRM"
+  2. "${domain} case study" or "${domain} engineering blog" — teams often name the tools they use
+  3. Job postings mentioning specific vendor names in the seller's category
+  4. Review sites (G2, TrustRadius) — mentions of tools ${domain} employees use
 
 Produce 2-4 competitors. For each:
-  - name: Real vendor name (verified via web_search)
-  - category: The functional category (e.g. "CRM", "Analytics Platform")
-  - inferredSource: What signal told you they use it (e.g. "Job posting mentions Salesforce administration")
+  - name: Real vendor name in the seller's functional category, verified via web_search
+  - category: The functional category (must match or be adjacent to what the seller sells)
+  - inferredSource: What signal told you ${domain} uses this vendor (e.g. "Job posting for Datadog administrator, Mar 2026")
   - displacementPotential: exactly "Low", "Medium", or "High"
   - switchingLikelihood: exactly "Low", "Medium", or "High"
   - timingSensitivity: e.g. "Contract renewal window Q3 2026"
-  - competitivePositioningAngle: How the seller differentiates against this incumbent
+  - competitivePositioningAngle: How the seller differentiates against this specific incumbent (name the incumbent by name, don't say "the competition")
   - citation: See below
+
+If you cannot find a real vendor ${domain} uses in the seller's category, prefer returning 2 well-grounded competitors over 4 generic guesses.
 
 ${citationInstructions}
 Competitor citations are typically Secondary (BuiltWith scan, review site) or Tertiary (job posting inference), confidence 60-80%.`;
@@ -2046,8 +2080,28 @@ Analyze these target accounts:
     4. Provide the list of accountIds belonging to this cluster. Ensure you only include IDs that represent ACTUAL accounts from the list of target accounts above!
     5. Formulate collectiveAttractiveness: why makes this group collectively attractive and lucrative for the seller?
     6. Identify 2-3 specific sharedPainPoints they face in common.
-    7. Generate a unifiedValueMessage: a powerful single outreach pattern or value message likely to resonate across the entire cluster.
-    8. Suggest a coordinatedOutreachAngle or pattern of campaigns to run against them.
+    7. Generate a unifiedValueMessage — MUST follow this template:
+        "For [SPECIFIC SEGMENT with numeric criterion or named characteristic], [SPECIFIC OUTCOME with metric or timeframe]: [SPECIFIC MECHANISM that ties to the shared pain point]."
+
+        Every part in [BRACKETS] must be filled with something concrete drawn from the segment's actual characteristics — NOT filler like "growing companies" or "improve efficiency".
+
+        BAD (generic — reject):
+          "We help modern SaaS scale faster"
+          "Streamline your operations with our platform"
+          "Enable teams to reach their full potential"
+
+        GOOD examples across different industries (adapt the pattern to YOUR segment):
+          Dev-tools segment: "For dev-tools platforms scaling past 200 engineers: cut mean-time-to-detect deploy regressions by 60% using engineering-metrics dashboards tied to your existing GitHub/Linear graph."
+          Payments segment: "For fintechs processing $500M+ annually: reduce fraud losses 40% in Q1 by wiring our anomaly-detection layer directly into your existing Stripe/Adyen event stream."
+          E-commerce segment: "For DTC brands past $50M GMV: recover 12% abandoned checkout revenue by A/B testing our conversion-recovery flows against your current post-cart drop-off treatment."
+
+        The value message MUST work as a real cold-outbound opening line for the specific segment — if it could be sent to any company in any industry, rewrite it.
+    8. Suggest a coordinatedOutreachAngle — MUST name a SPECIFIC CAMPAIGN TYPE with a concrete hook, e.g.:
+        * "CTO-focused webinar series: 'The consolidation playbook for post-Series C dev tools' — Q3 2026 launch"
+        * "Roundtable dinner tour in SF, NYC, Austin featuring VP Platform Eng at Ramp + Vercel talking about integration debt"
+        * "Case-study drip campaign — 3 sequential emails referencing 3 named companies in this cluster who solved the problem"
+        BAD: "Targeted outreach" or "personalized campaigns"
+        GOOD: any specific campaign format above with a named hook
 
     Output the clusters in a structured format matching this schema. Ensure you return valid JSON.`;
 
