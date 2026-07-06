@@ -980,8 +980,21 @@ app.post("/api/analyze-account", async (req, res) => {
   }
 
   try {
-    const prompt = `Deep dive analysis of ${domain} for the seller: ${JSON.stringify(businessContext)}.
-    Analyze their current state, operational needs, technology stack, and competitive landscape.
+    const prompt = `You have access to a web_search tool. Use it to GROUND every material claim in real, verifiable information from the live web. Do NOT rely on training-data recall alone — companies change, funding rounds happen, execs move.
+
+Deep dive analysis of ${domain} for the seller: ${JSON.stringify(businessContext)}.
+
+GROUNDING PLAN — before calling submit_result, run web_search across at least these dimensions (as needed, up to 8 searches):
+  1. "${domain} recent news 2026" — find current business events, funding, product launches
+  2. "${domain} job postings" — infer growth areas, tech stack, hiring pain
+  3. "${domain} technology stack" — identify current vendors and infra
+  4. "${domain} competitors" — surface the real incumbent solutions they use
+  5. "${domain} leadership team" — get real names and titles of decision makers
+  6. Anything else needed to complete the analysis with cited evidence
+
+Only after grounding, call submit_result with the fully populated payload.
+
+Analyze their current state, operational needs, technology stack, and competitive landscape.
     Identify competing vendors or service providers they are likely working with or evaluating.
     Inferred this from technology stack data, job postings mentioning vendor names, case studies, partnership announcements, and review site activity.
     Assess displacement potential (Low, Medium, or High), switching likelihood (Low, Medium, or High), and timing sensitivity.
@@ -1008,11 +1021,11 @@ app.post("/api/analyze-account", async (req, res) => {
     - Tertiary sources: social signals, community mentions (e.g. reddit, github), and inferred GTM mapping data.
     Every piece of intelligence must be tagged with a source citation containing:
     - sourceTier: "Primary", "Secondary", or "Tertiary"
-    - sourceName: Specific name of the source (e.g. "Stantec SEC Form 10-K", "Jacobs Q1 Earnings Call", "LinkedIn Job Boards", "BuiltWith Web Scanner")
-    - dateRetrieved: Retrieval date configured around May 2026, e.g. "May 20, 2026"
-    - url: Direct URL to the source where available (or realistic mock-like valid URL)
+    - sourceName: Specific name of the actual source you found via web_search (e.g. "Stantec SEC Form 10-K", "Jacobs Q1 2026 Earnings Call", "LinkedIn Job Board — Senior BIM Manager, Jul 2026")
+    - dateRetrieved: Today's date in "Month DD, YYYY" format (this is when you retrieved the source)
+    - url: The REAL URL returned by web_search that backs this claim. Do not fabricate URLs.
     - isInferred: boolean (set to true if relying on Tertiary signals or indirect data)
-    - confidenceScore: number (1-100; MUST be marked low, e.g. 50-70, if isInferred is true, and high/90+ if verified from official files)
+    - confidenceScore: number (1-100; MUST be marked low, e.g. 50-70, if isInferred is true, and high/90+ if verified from official files retrieved via web_search)
 
     Provide robust citations inside the:
     - overall fit Rationale (which aggregates primary SEC data etc.)
@@ -1158,7 +1171,11 @@ app.post("/api/analyze-account", async (req, res) => {
       }
     };
 
-    const data = await generateStructuredData(prompt, schema);
+    const data = await generateStructuredData(prompt, schema, {
+      useWebSearch: true,
+      maxSearches: 8,
+      maxTokens: 16384,
+    });
     accountAnalysisCache.set(cacheKey, data);
     res.json(data);
   } catch (error: any) {
