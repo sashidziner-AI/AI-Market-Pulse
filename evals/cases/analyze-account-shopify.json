@@ -1,0 +1,27 @@
+{
+  "name": "analyze-account-shopify",
+  "endpoint": "/api/analyze-account",
+  "description": "Deep-dive analysis on a well-known account should return non-empty personas, competitors, multi-threading strategy, and cite at least one source.",
+  "input": {
+    "domain": "shopify.com",
+    "businessContext": {
+      "businessName": "PayPipe",
+      "overview": "Payment orchestration platform for high-growth SaaS and e-commerce companies.",
+      "targetIndustries": ["SaaS", "E-commerce", "Retail"]
+    }
+  },
+  "expectations": [
+    { "type": "hasField", "path": "score" },
+    { "type": "hasField", "path": "rationale" },
+    { "type": "arrayLengthAtLeast", "path": "signals", "min": 2 },
+    { "type": "arrayLengthAtLeast", "path": "buyerPersonas", "min": 2 },
+    { "type": "hasField", "path": "buyerPersonas.0.role" },
+    { "type": "arrayLengthAtLeast", "path": "buyerPersonas.0.counterNarratives", "min": 1 },
+    { "type": "arrayLengthAtLeast", "path": "competitors", "min": 1 },
+    { "type": "hasField", "path": "competitors.0.competitivePositioningAngle" },
+    { "type": "hasField", "path": "multiThreadingStrategy.accessibleEntryPoint.role" },
+    { "type": "hasField", "path": "multiThreadingStrategy.internalChampion.role" },
+    { "type": "hasField", "path": "multiThreadingStrategy.economicBuyer.role" },
+    { "type": "hasField", "path": "multiThreadingStrategy.technicalGatekeeper.role" }
+  ]
+}
