@@ -62,11 +62,19 @@ const SYSTEM_PROMPT_TEXT =
 // Options for the generation call. useWebSearch enables Anthropic's native
 // web_search server tool — the model can search the live web before submitting,
 // grounding the response in real, current information (not just training data).
+// models is the ladder tried in order (primary → fallback → ...). When omitted,
+// defaults to Opus 4.7 → Haiku 4.5.
 interface GenerateOptions {
   useWebSearch?: boolean;
   maxSearches?: number; // cap on web_search invocations per call
   maxTokens?: number;   // per-call output ceiling (default 8192)
+  models?: string[];    // custom model ladder (defaults to Opus → Haiku)
 }
+
+// Model constants — makes per-endpoint routing self-documenting at the call sites.
+const MODEL_OPUS_4_7 = "claude-opus-4-7";
+const MODEL_SONNET_4_6 = "claude-sonnet-4-6";
+const MODEL_HAIKU_4_5 = "claude-haiku-4-5-20251001";
 
 // Helper for schema-based generation with automatic retries and fallback models.
 // Uses Anthropic Claude Opus 4.7 primary / Haiku 4.5 fallback, with strict-schema tool use
@@ -78,7 +86,7 @@ async function generateStructuredData(
   schema: any,
   options: GenerateOptions = {}
 ) {
-  const models = ["claude-opus-4-7", "claude-haiku-4-5-20251001"];
+  const models = options.models ?? [MODEL_OPUS_4_7, MODEL_HAIKU_4_5];
   const wantsArray = schema?.type === "array";
   // Anthropic tool input_schema must have a top-level object shape. If the caller
   // asked for an array, wrap it in { items: [...] } and unwrap after the call.
@@ -875,7 +883,11 @@ app.post("/api/analyze-business", async (req, res) => {
       required: ["businessName", "overview", "icp"]
     };
 
-    const data = await generateStructuredData(prompt, schema);
+    // ICP synthesis is a single-shot summarization — Haiku 4.5 handles it at
+    // ~10x lower cost than Opus with comparable quality on this scope.
+    const data = await generateStructuredData(prompt, schema, {
+      models: [MODEL_HAIKU_4_5, MODEL_OPUS_4_7],
+    });
     businessCache.set(cacheKey, data);
     res.json(data);
   } catch (error: any) {
@@ -954,7 +966,10 @@ If you cannot verify a company via web_search, DO NOT include it. It is better t
       }
     };
 
+    // Grounded discovery needs both breadth (many searches) and reasoning
+    // (score fit/timing across accounts). Opus 4.7 is the right tool here.
     const data = await generateStructuredData(prompt, schema, {
+      models: [MODEL_OPUS_4_7, MODEL_HAIKU_4_5],
       useWebSearch: true,
       maxSearches: 6,
       maxTokens: 16384,
@@ -1171,7 +1186,10 @@ Analyze their current state, operational needs, technology stack, and competitiv
       }
     };
 
+    // Deep account analysis — buyer personas, competitor mapping, multi-threading,
+    // and grounded citations across many web searches. Opus 4.7 shines here.
     const data = await generateStructuredData(prompt, schema, {
+      models: [MODEL_OPUS_4_7, MODEL_HAIKU_4_5],
       useWebSearch: true,
       maxSearches: 8,
       maxTokens: 16384,
@@ -1351,7 +1369,11 @@ app.post("/api/cluster-accounts", async (req, res) => {
       }
     };
 
-    const data = await generateStructuredData(prompt, schema);
+    // Segment synthesis is a mid-effort pattern-finding task. Sonnet 4.6 gives
+    // Opus-adjacent quality on grouping/summarization at a fraction of the cost.
+    const data = await generateStructuredData(prompt, schema, {
+      models: [MODEL_SONNET_4_6, MODEL_HAIKU_4_5],
+    });
     const formattedData = data.map((cluster: any, idx: number) => ({
       ...cluster,
       id: cluster.id || `cluster-${idx}-${Date.now()}`
