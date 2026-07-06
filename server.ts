@@ -1,4 +1,5 @@
 import express from "express";
+import fs from "fs";
 import path from "path";
 import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
@@ -69,6 +70,57 @@ interface GenerateOptions {
   maxSearches?: number; // cap on web_search invocations per call
   maxTokens?: number;   // per-call output ceiling (default 8192)
   models?: string[];    // custom model ladder (defaults to Opus → Haiku)
+  endpoint?: string;    // route tag for observability (e.g. "/api/discover-accounts")
+  subCall?: string;     // sub-call label when one endpoint fans out (e.g. "personas")
+}
+
+// Observability — every AI call appends a JSONL line to logs/ai-calls.jsonl
+// so we can audit per-endpoint token spend, latency, web_search usage, and
+// fallback rate. The evals/inspect.ts tool aggregates these into a summary.
+const AI_LOG_DIR = path.join(process.cwd(), "logs");
+const AI_LOG_FILE = path.join(AI_LOG_DIR, "ai-calls.jsonl");
+
+interface AiCallLog {
+  ts: string;
+  endpoint?: string;
+  subCall?: string;
+  model: string;
+  attempt: number;
+  status: "ok" | "error";
+  durationMs: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+  webSearchCount?: number;
+  webSearchEnabled: boolean;
+  errorClass?: string;
+  errorSnippet?: string;
+}
+
+function logAiCall(entry: AiCallLog) {
+  // Concise console line so devs can see it live without opening the JSONL.
+  const parts = [
+    `[AI]`,
+    entry.endpoint ? `route=${entry.endpoint}` : null,
+    entry.subCall ? `sub=${entry.subCall}` : null,
+    `model=${entry.model}`,
+    `status=${entry.status}`,
+    `dur=${entry.durationMs}ms`,
+    entry.inputTokens !== undefined ? `in=${entry.inputTokens}` : null,
+    entry.outputTokens !== undefined ? `out=${entry.outputTokens}` : null,
+    entry.cacheReadTokens ? `cache_read=${entry.cacheReadTokens}` : null,
+    entry.webSearchCount ? `web_search=${entry.webSearchCount}` : null,
+    entry.errorClass ? `err=${entry.errorClass}` : null,
+  ].filter(Boolean);
+  console.log(parts.join(" "));
+
+  try {
+    if (!fs.existsSync(AI_LOG_DIR)) fs.mkdirSync(AI_LOG_DIR, { recursive: true });
+    fs.appendFileSync(AI_LOG_FILE, JSON.stringify(entry) + "\n");
+  } catch {
+    // Never let observability break the actual response path.
+  }
 }
 
 // Model constants — makes per-endpoint routing self-documenting at the call sites.
@@ -123,11 +175,12 @@ async function generateStructuredData(
     let delay = 1000; // start with 1 second delay
 
     for (let attempt = 1; attempt <= attempts; attempt++) {
+      const callStartedAt = Date.now();
       try {
         const ai = getAnthropic();
 
         console.log(
-          `[Anthropic Request] Model: ${model}, Attempt: ${attempt}/${attempts}${options.useWebSearch ? " (web_search enabled)" : ""}`
+          `[Anthropic Request] Model: ${model}, Attempt: ${attempt}/${attempts}${options.useWebSearch ? " (web_search enabled)" : ""}${options.endpoint ? " route=" + options.endpoint : ""}${options.subCall ? " sub=" + options.subCall : ""}`
         );
         const response = await ai.messages.create({
           model,
@@ -164,14 +217,28 @@ async function generateStructuredData(
           throw new Error("Model did not use the submit_result tool.");
         }
 
-        if (options.useWebSearch) {
-          const searchCount = response.content.filter(
-            (c: any) => c.type === "web_search_tool_use" || c.type === "server_tool_use"
-          ).length;
-          if (searchCount > 0) {
-            console.log(`[Anthropic Info] Model ${model} used web_search ${searchCount} time(s)`);
-          }
-        }
+        const webSearchCount = options.useWebSearch
+          ? response.content.filter(
+              (c: any) => c.type === "web_search_tool_use" || c.type === "server_tool_use"
+            ).length
+          : 0;
+
+        const usage: any = (response as any).usage ?? {};
+        logAiCall({
+          ts: new Date().toISOString(),
+          endpoint: options.endpoint,
+          subCall: options.subCall,
+          model,
+          attempt,
+          status: "ok",
+          durationMs: Date.now() - callStartedAt,
+          inputTokens: usage.input_tokens,
+          outputTokens: usage.output_tokens,
+          cacheReadTokens: usage.cache_read_input_tokens,
+          cacheCreationTokens: usage.cache_creation_input_tokens,
+          webSearchCount,
+          webSearchEnabled: !!options.useWebSearch,
+        });
 
         let parsed: any = (toolUse as any).input;
         if (wantsArray && parsed && typeof parsed === "object" && Array.isArray(parsed.items)) {
@@ -199,6 +266,30 @@ async function generateStructuredData(
           errorStr.includes("authentication_error") ||
           errorStr.includes("permission_error") ||
           errorStr.includes("not set");
+
+        const errorClass = isPermission
+          ? "permission"
+          : isQuota
+            ? "quota"
+            : status && status >= 500
+              ? "server"
+              : errorStr.includes("timeout") || errorStr.includes("ECONNRESET")
+                ? "network"
+                : "other";
+
+        logAiCall({
+          ts: new Date().toISOString(),
+          endpoint: options.endpoint,
+          subCall: options.subCall,
+          model,
+          attempt,
+          status: "error",
+          durationMs: Date.now() - callStartedAt,
+          webSearchCount: 0,
+          webSearchEnabled: !!options.useWebSearch,
+          errorClass,
+          errorSnippet: shortError,
+        });
 
         if (isQuota || isPermission) {
           // Immediately exit loops and throw to trigger the route handler fallback instantly
@@ -886,6 +977,7 @@ app.post("/api/analyze-business", async (req, res) => {
     // ICP synthesis is a single-shot summarization — Haiku 4.5 handles it at
     // ~10x lower cost than Opus with comparable quality on this scope.
     const data = await generateStructuredData(prompt, schema, {
+      endpoint: "/api/analyze-business",
       models: [MODEL_HAIKU_4_5, MODEL_OPUS_4_7],
     });
     businessCache.set(cacheKey, data);
@@ -969,6 +1061,7 @@ If you cannot verify a company via web_search, DO NOT include it. It is better t
     // Grounded discovery needs both breadth (many searches) and reasoning
     // (score fit/timing across accounts). Opus 4.7 is the right tool here.
     const data = await generateStructuredData(prompt, schema, {
+      endpoint: "/api/discover-accounts",
       models: [MODEL_OPUS_4_7, MODEL_HAIKU_4_5],
       useWebSearch: true,
       maxSearches: 6,
@@ -995,68 +1088,7 @@ app.post("/api/analyze-account", async (req, res) => {
   }
 
   try {
-    const prompt = `You have access to a web_search tool. Use it to GROUND every material claim in real, verifiable information from the live web. Do NOT rely on training-data recall alone — companies change, funding rounds happen, execs move.
-
-Deep dive analysis of ${domain} for the seller: ${JSON.stringify(businessContext)}.
-
-GROUNDING PLAN — before calling submit_result, run web_search across at least these dimensions (as needed, up to 8 searches):
-  1. "${domain} recent news 2026" — find current business events, funding, product launches
-  2. "${domain} job postings" — infer growth areas, tech stack, hiring pain
-  3. "${domain} technology stack" — identify current vendors and infra
-  4. "${domain} competitors" — surface the real incumbent solutions they use
-  5. "${domain} leadership team" — get real names and titles of decision makers
-  6. Anything else needed to complete the analysis with cited evidence
-
-Only after grounding, call submit_result with the fully populated payload.
-
-Analyze their current state, operational needs, technology stack, and competitive landscape.
-    Identify competing vendors or service providers they are likely working with or evaluating.
-    Inferred this from technology stack data, job postings mentioning vendor names, case studies, partnership announcements, and review site activity.
-    Assess displacement potential (Low, Medium, or High), switching likelihood (Low, Medium, or High), and timing sensitivity.
-    Generate competitive positioning angles that highlight differentiated value relative to the incumbent or competing solution.
-
-    For multiple buyer personas identified in this account, formulate a multi-threading stakeholder engagement map specifying:
-    1. Entry Point: Most accessible/lowest friction persona, what specific hook to approach them with.
-    2. Internal Champion: Key driver of internal workflows who will pull the deal through, how to enlist/equip them.
-    3. Economic Buyer: Persona with budget authority, ROI and pricing focus messaging.
-    4. Technical Gatekeeper: IT or Security contact, compliance issues to preempt.
-    Specify outreach orders (numbers 1-4), timing/sequence gaps, messaging focuses, and coordination rules to prevent conflicting sequence overlaps on rapid outreach.
-
-    IMPORTANT: For each identified buyer persona, you MUST analyze expected objections (such as budget constraints, incumbent vendor loyalty, internal bandwidth limitations, or skepticism about ROI) and generate pre-emptive, highly specific counter-narratives for each one. 
-    Each counter-narrative must include:
-    - objection: The expected objection type or statement.
-    - reframingMessage: A specific, persuasive reframing of this objection.
-    - proofPoint: A relevant proof point or analogies grounded exactly in the detected signals for this specific account and persona. No generic answers!
-    - suggestedMoment: A suggested optimal moment inside the sales conversation to introduce the objection handler.
-
-    INTELLIGENCE GATHERING CITATION REQUIREMENTS:
-    The system maintains a strict data source hierarchy:
-    - Primary sources: official corporate website, official press releases, SEC or regulatory filings, LinkedIn company pages, job boards, and verified funding databases (Crunchbase, PitchBook).
-    - Secondary sources: industry news publications, technology review platforms, and partner ecosystem listings.
-    - Tertiary sources: social signals, community mentions (e.g. reddit, github), and inferred GTM mapping data.
-    Every piece of intelligence must be tagged with a source citation containing:
-    - sourceTier: "Primary", "Secondary", or "Tertiary"
-    - sourceName: Specific name of the actual source you found via web_search (e.g. "Stantec SEC Form 10-K", "Jacobs Q1 2026 Earnings Call", "LinkedIn Job Board — Senior BIM Manager, Jul 2026")
-    - dateRetrieved: Today's date in "Month DD, YYYY" format (this is when you retrieved the source)
-    - url: The REAL URL returned by web_search that backs this claim. Do not fabricate URLs.
-    - isInferred: boolean (set to true if relying on Tertiary signals or indirect data)
-    - confidenceScore: number (1-100; MUST be marked low, e.g. 50-70, if isInferred is true, and high/90+ if verified from official files retrieved via web_search)
-
-    Provide robust citations inside the:
-    - overall fit Rationale (which aggregates primary SEC data etc.)
-    - each item in buyerPersonas (which relies on inferred GTM organization taxonomy, which makes it an inferred Tertiary claim with confidence around 70%)
-    - each item in competitors (where incumber vendor presence is inferred from tech stacks, employee feedback, or review comments, making them Secondary builtwith info or Tertiary inferred claims with confidence 60-80%)
-
-    Generate:
-    - Fit Score (score)
-    - Strategic Rationale (rationale)
-    - Signals (Array of recent raw signals)
-    - Key Decision Makers (buyerPersonas) with their respective anticipated objections, counter-narratives, and citations.
-    - Personalized Outreach Hook (outreachStrategy)
-    - Competitors (competitors) with their citation blocks in place.
-    - Overall citation block (citation) for the complete fit Rationale analysis model.
-    - multiThreadingStrategy matching the structured schema.`;
-
+    // Shared citation schema reused across the 3 parallel sub-calls.
     const citationSchema = {
       type: Type.OBJECT,
       properties: {
@@ -1070,13 +1102,83 @@ Analyze their current state, operational needs, technology stack, and competitiv
       required: ["sourceTier", "sourceName", "dateRetrieved"]
     };
 
-    const schema = {
+    // Shared citation instruction block — kept identical across sub-calls so the
+    // resulting citation objects look and feel consistent in the UI.
+    const citationInstructions = `INTELLIGENCE GATHERING CITATION REQUIREMENTS:
+- Primary sources: official corporate website, official press releases, SEC or regulatory filings, LinkedIn company pages, job boards, and verified funding databases (Crunchbase, PitchBook).
+- Secondary sources: industry news publications, technology review platforms, and partner ecosystem listings.
+- Tertiary sources: social signals, community mentions (e.g. reddit, github), and inferred GTM mapping data.
+
+Every citation object MUST contain:
+- sourceTier: "Primary", "Secondary", or "Tertiary"
+- sourceName: Specific name of the actual source you found via web_search
+- dateRetrieved: Today's date in "Month DD, YYYY" format
+- url: The REAL URL returned by web_search that backs this claim. Do NOT fabricate URLs.
+- isInferred: boolean (true if relying on Tertiary/indirect data)
+- confidenceScore: 1-100 (50-70 if isInferred, 90+ if verified from Primary sources)`;
+
+    // ──────────────────────────────────────────────────────────────────
+    // SUB-CALL A — Fit Brief
+    // Focus: overall fit score, strategic rationale, current signals, one
+    // aggregate citation. Searches recent news / funding / business events.
+    // ──────────────────────────────────────────────────────────────────
+    const briefPrompt = `You have access to web_search. Use it to ground every claim about ${domain}.
+
+Deep dive brief on ${domain} for the seller: ${JSON.stringify(businessContext)}.
+
+GROUNDING PLAN (spend ~3-4 searches):
+  1. "${domain} recent news 2026" — funding, product launches, business events
+  2. "${domain} press release" or "${domain} announcement" — recent official activity
+  3. "${domain} annual report" or investor page — scale, revenue, growth trajectory
+
+Produce:
+  - score (0-100): Overall ICP fit
+  - rationale (string): Strategic rationale grounded in specific recent signals you found
+  - signals (array of strings): 3-6 recent raw signals with source hints inline
+  - citation (object): One overall citation for the aggregate rationale
+
+${citationInstructions}`;
+
+    const briefSchema = {
       type: Type.OBJECT,
       properties: {
         score: { type: Type.NUMBER },
         rationale: { type: Type.STRING },
         signals: { type: Type.ARRAY, items: { type: Type.STRING } },
         citation: citationSchema,
+      },
+      required: ["score", "rationale", "signals", "citation"],
+    };
+
+    // ──────────────────────────────────────────────────────────────────
+    // SUB-CALL B — Human Side (personas + threading + outreach)
+    // Focus: 2-4 real decision-maker personas, the 4-role stakeholder map,
+    // and outreach hooks. Searches leadership / org structure / LinkedIn.
+    // ──────────────────────────────────────────────────────────────────
+    const humanPrompt = `You have access to web_search. Use it to ground personas in the account's REAL org.
+
+Persona + multi-threading map for ${domain} (seller: ${JSON.stringify(businessContext)}).
+
+GROUNDING PLAN (spend ~3-4 searches):
+  1. "${domain} leadership team" or "${domain} executives" — real names + titles
+  2. "${domain} VP OR CTO OR head" — recent hires that indicate priorities
+  3. LinkedIn/press mentions of buying-committee-adjacent roles at ${domain}
+
+Produce:
+
+buyerPersonas (2-4 items, at least one for each of: technical, operational, and executive):
+  For each: role, painPoints (3), valueAngle, counterNarratives (2 objections, each with reframingMessage, proofPoint tied to a real signal, suggestedMoment), citation.
+  ${citationInstructions.split("\n").slice(-6).join("\n")}
+  Each persona MUST include a citation. Personas are typically Tertiary (inferred org taxonomy) with confidence ~70%.
+
+multiThreadingStrategy: exactly these 4 keys (accessibleEntryPoint, internalChampion, economicBuyer, technicalGatekeeper) — each an object with role, order (1-4, unique), timing (e.g. "Week 1 Day 2"), messagingFocus, strategicRole, tacticalTactic.
+Plus: sequencedMapDescription (string), coordinationRules (2-3 strings on how to avoid conflicting sequences).
+
+outreachStrategy: an object with emailHook (specific 2-3 sentence opener grounded in a real signal you found) and linkedinMessage (100-160 char message).`;
+
+    const humanSchema = {
+      type: Type.OBJECT,
+      properties: {
         buyerPersonas: {
           type: Type.ARRAY,
           items: {
@@ -1093,39 +1195,22 @@ Analyze their current state, operational needs, technology stack, and competitiv
                     objection: { type: Type.STRING },
                     reframingMessage: { type: Type.STRING },
                     proofPoint: { type: Type.STRING },
-                    suggestedMoment: { type: Type.STRING }
+                    suggestedMoment: { type: Type.STRING },
                   },
-                  required: ["objection", "reframingMessage", "proofPoint", "suggestedMoment"]
-                }
+                  required: ["objection", "reframingMessage", "proofPoint", "suggestedMoment"],
+                },
               },
-              citation: citationSchema
+              citation: citationSchema,
             },
-            required: ["role", "painPoints", "valueAngle", "counterNarratives", "citation"]
-          }
+            required: ["role", "painPoints", "valueAngle", "counterNarratives", "citation"],
+          },
         },
         outreachStrategy: {
           type: Type.OBJECT,
           properties: {
             emailHook: { type: Type.STRING },
-            linkedinMessage: { type: Type.STRING }
-          }
-        },
-        competitors: {
-          type: Type.ARRAY,
-          items: {
-            type: Type.OBJECT,
-            properties: {
-              name: { type: Type.STRING },
-              category: { type: Type.STRING },
-              inferredSource: { type: Type.STRING },
-              displacementPotential: { type: Type.STRING }, // Low | Medium | High
-              switchingLikelihood: { type: Type.STRING }, // Low | Medium | High
-              timingSensitivity: { type: Type.STRING },
-              competitivePositioningAngle: { type: Type.STRING },
-              citation: citationSchema
-            },
-            required: ["name", "category", "inferredSource", "displacementPotential", "switchingLikelihood", "timingSensitivity", "competitivePositioningAngle", "citation"]
-          }
+            linkedinMessage: { type: Type.STRING },
+          },
         },
         multiThreadingStrategy: {
           type: Type.OBJECT,
@@ -1138,9 +1223,9 @@ Analyze their current state, operational needs, technology stack, and competitiv
                 timing: { type: Type.STRING },
                 messagingFocus: { type: Type.STRING },
                 strategicRole: { type: Type.STRING },
-                tacticalTactic: { type: Type.STRING }
+                tacticalTactic: { type: Type.STRING },
               },
-              required: ["role", "order", "timing", "messagingFocus", "strategicRole", "tacticalTactic"]
+              required: ["role", "order", "timing", "messagingFocus", "strategicRole", "tacticalTactic"],
             },
             internalChampion: {
               type: Type.OBJECT,
@@ -1150,9 +1235,9 @@ Analyze their current state, operational needs, technology stack, and competitiv
                 timing: { type: Type.STRING },
                 messagingFocus: { type: Type.STRING },
                 strategicRole: { type: Type.STRING },
-                tacticalTactic: { type: Type.STRING }
+                tacticalTactic: { type: Type.STRING },
               },
-              required: ["role", "order", "timing", "messagingFocus", "strategicRole", "tacticalTactic"]
+              required: ["role", "order", "timing", "messagingFocus", "strategicRole", "tacticalTactic"],
             },
             economicBuyer: {
               type: Type.OBJECT,
@@ -1162,9 +1247,9 @@ Analyze their current state, operational needs, technology stack, and competitiv
                 timing: { type: Type.STRING },
                 messagingFocus: { type: Type.STRING },
                 strategicRole: { type: Type.STRING },
-                tacticalTactic: { type: Type.STRING }
+                tacticalTactic: { type: Type.STRING },
               },
-              required: ["role", "order", "timing", "messagingFocus", "strategicRole", "tacticalTactic"]
+              required: ["role", "order", "timing", "messagingFocus", "strategicRole", "tacticalTactic"],
             },
             technicalGatekeeper: {
               type: Type.OBJECT,
@@ -1174,26 +1259,123 @@ Analyze their current state, operational needs, technology stack, and competitiv
                 timing: { type: Type.STRING },
                 messagingFocus: { type: Type.STRING },
                 strategicRole: { type: Type.STRING },
-                tacticalTactic: { type: Type.STRING }
+                tacticalTactic: { type: Type.STRING },
               },
-              required: ["role", "order", "timing", "messagingFocus", "strategicRole", "tacticalTactic"]
+              required: ["role", "order", "timing", "messagingFocus", "strategicRole", "tacticalTactic"],
             },
             sequencedMapDescription: { type: Type.STRING },
-            coordinationRules: { type: Type.ARRAY, items: { type: Type.STRING } }
+            coordinationRules: { type: Type.ARRAY, items: { type: Type.STRING } },
           },
-          required: ["accessibleEntryPoint", "internalChampion", "economicBuyer", "technicalGatekeeper", "sequencedMapDescription", "coordinationRules"]
-        }
-      }
+          required: [
+            "accessibleEntryPoint",
+            "internalChampion",
+            "economicBuyer",
+            "technicalGatekeeper",
+            "sequencedMapDescription",
+            "coordinationRules",
+          ],
+        },
+      },
+      required: ["buyerPersonas", "outreachStrategy", "multiThreadingStrategy"],
     };
 
-    // Deep account analysis — buyer personas, competitor mapping, multi-threading,
-    // and grounded citations across many web searches. Opus 4.7 shines here.
-    const data = await generateStructuredData(prompt, schema, {
-      models: [MODEL_OPUS_4_7, MODEL_HAIKU_4_5],
-      useWebSearch: true,
-      maxSearches: 8,
-      maxTokens: 16384,
-    });
+    // ──────────────────────────────────────────────────────────────────
+    // SUB-CALL C — Competitors
+    // Focus: 2-4 real incumbent vendors/services this account uses.
+    // Searches technology stack / partnership announcements / review sites.
+    // ──────────────────────────────────────────────────────────────────
+    const competitorPrompt = `You have access to web_search. Use it to identify REAL incumbent vendors ${domain} currently uses.
+
+Competitive landscape for ${domain} (seller: ${JSON.stringify(businessContext)}).
+
+GROUNDING PLAN (spend ~3-4 searches):
+  1. "${domain} technology stack" or BuiltWith-style scans
+  2. "${domain} case study" or "${domain} partners" — surfaces named vendors
+  3. Review sites (G2, TrustRadius) — mentions of tools they use
+
+Produce 2-4 competitors. For each:
+  - name: Real vendor name (verified via web_search)
+  - category: The functional category (e.g. "CRM", "Analytics Platform")
+  - inferredSource: What signal told you they use it (e.g. "Job posting mentions Salesforce administration")
+  - displacementPotential: exactly "Low", "Medium", or "High"
+  - switchingLikelihood: exactly "Low", "Medium", or "High"
+  - timingSensitivity: e.g. "Contract renewal window Q3 2026"
+  - competitivePositioningAngle: How the seller differentiates against this incumbent
+  - citation: See below
+
+${citationInstructions}
+Competitor citations are typically Secondary (BuiltWith scan, review site) or Tertiary (job posting inference), confidence 60-80%.`;
+
+    const competitorSchema = {
+      type: Type.OBJECT,
+      properties: {
+        competitors: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              name: { type: Type.STRING },
+              category: { type: Type.STRING },
+              inferredSource: { type: Type.STRING },
+              displacementPotential: { type: Type.STRING },
+              switchingLikelihood: { type: Type.STRING },
+              timingSensitivity: { type: Type.STRING },
+              competitivePositioningAngle: { type: Type.STRING },
+              citation: citationSchema,
+            },
+            required: [
+              "name",
+              "category",
+              "inferredSource",
+              "displacementPotential",
+              "switchingLikelihood",
+              "timingSensitivity",
+              "competitivePositioningAngle",
+              "citation",
+            ],
+          },
+        },
+      },
+      required: ["competitors"],
+    };
+
+    // Fire all 3 sub-calls in parallel. Each is a focused ~4-search Opus 4.7
+    // pass — faster wall-clock (~10-20s vs ~30-45s monolithic) and each prompt
+    // is small enough to iterate on individually.
+    const [brief, human, comp] = await Promise.all([
+      generateStructuredData(briefPrompt, briefSchema, {
+        endpoint: "/api/analyze-account",
+        subCall: "brief",
+        models: [MODEL_OPUS_4_7, MODEL_HAIKU_4_5],
+        useWebSearch: true,
+        maxSearches: 4,
+        maxTokens: 6144,
+      }),
+      generateStructuredData(humanPrompt, humanSchema, {
+        endpoint: "/api/analyze-account",
+        subCall: "human",
+        models: [MODEL_OPUS_4_7, MODEL_HAIKU_4_5],
+        useWebSearch: true,
+        maxSearches: 4,
+        maxTokens: 10240,
+      }),
+      generateStructuredData(competitorPrompt, competitorSchema, {
+        endpoint: "/api/analyze-account",
+        subCall: "competitors",
+        models: [MODEL_OPUS_4_7, MODEL_HAIKU_4_5],
+        useWebSearch: true,
+        maxSearches: 4,
+        maxTokens: 6144,
+      }),
+    ]);
+
+    const data = {
+      ...brief,
+      buyerPersonas: human.buyerPersonas,
+      outreachStrategy: human.outreachStrategy,
+      multiThreadingStrategy: human.multiThreadingStrategy,
+      competitors: comp.competitors,
+    };
     accountAnalysisCache.set(cacheKey, data);
     res.json(data);
   } catch (error: any) {
@@ -1382,6 +1564,7 @@ Analyze these target accounts:
     // Web search adds a small grounding pass (up to 4 searches) to pull current
     // industry-report language into the unifiedValueMessage / outreach angle.
     const data = await generateStructuredData(prompt, schema, {
+      endpoint: "/api/cluster-accounts",
       models: [MODEL_SONNET_4_6, MODEL_HAIKU_4_5],
       useWebSearch: true,
       maxSearches: 4,
