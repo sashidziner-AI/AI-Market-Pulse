@@ -27,7 +27,7 @@
     {
       "type": "llmJudge",
       "path": "",
-      "rubric": "The returned accounts must be plausibly real fintech / payments / neobank companies (e.g. Chime, Wise, Nubank, Revolut, Mercury, Ramp, Brex etc.). Score high if 4+ recognizable real names appear. Score low if the list is dominated by generic SaaS companies (Salesforce, HubSpot) or clearly invented names.",
+      "rubric": "The returned accounts must be REAL fintech / payments / neobank / trust-and-safety-focused financial companies — verifiable via a quick search. Well-known names (Chime, Wise, Nubank, Revolut, Mercury, Ramp, Brex, Airwallex, Klarna) are a plus but not required. Less-famous companies (Zero Hash, Alloy, Persona, Sardine, Unit, Column, Rain, Rho) also score high AS LONG AS they are real fintech companies plausibly in the ICP. Score low if the list is dominated by generic SaaS companies (Salesforce, HubSpot) or clearly invented names that don't come up in a search.",
       "passingScore": 6
     }
   ]

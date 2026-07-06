@@ -1406,7 +1406,67 @@ Requirements:
     * GOOD: "PSD2 or open-banking compliance deadline approaching in next 12 months"
     * GOOD: "Public commitment to reducing vendor sprawl in last earnings call"
 
-Reject generic filler. If a signal could apply to any B2B SaaS company, it's not specific enough.`;
+Reject generic filler. If a signal could apply to any B2B SaaS company, it's not specific enough.
+
+FEW-SHOT EXAMPLES — showing the SHAPE and DEPTH expected across industries:
+
+=== EXAMPLE 1: FINTECH (financial-data / payments / KYC / compliance) ===
+For a fintech infrastructure company like a payments / open-banking / KYC vendor:
+{
+  "businessName": "OpenFuse (fictional example)",
+  "overview": "OpenFuse provides open-banking API infrastructure — bank account aggregation, payment initiation, and identity verification — for European fintechs and neobanks.",
+  "services": [
+    "Account aggregation API across 3,500+ European banks",
+    "PSD2-compliant payment initiation with SCA fallback",
+    "KYC/AML data enrichment layer with Sanctions + PEP screening",
+    "Consent management dashboard with GDPR audit logs"
+  ],
+  "valueProp": "One API to replace 5+ bank integrations; PSD2-native from day one.",
+  "targetIndustries": ["Neobanks", "Consumer FinTech", "Wealth & Crypto Platforms", "SMB Lending"],
+  "icp": {
+    "title": "Head of Trust & Safety / VP Product at Series B-D European fintechs handling >€100M/yr in transactions",
+    "description": "Growth-stage European fintechs (Series B-D) processing €100M-€2B annually, currently maintaining multiple direct bank integrations or dependent on a legacy aggregator (Tink/TrueLayer/Yapily). Founders typically from banking or payments backgrounds. Consumer-facing products with regulatory exposure.",
+    "targetRoles": ["Head of Trust & Safety", "VP Product", "Chief Compliance Officer", "Head of Platform Engineering"],
+    "buyingSignals": [
+      "PSD2 SCA (Strong Customer Authentication) exemption renewal window approaching (typically Q4)",
+      "New market expansion announced — from UK to EU or Nordic countries triggers requirement for new bank connections",
+      "Recent fraud incident or regulatory consent decree published in official press release",
+      "Migration off Tink/TrueLayer/Yapily mentioned in engineering blog or CTO tweet",
+      "Hiring first Head of Compliance or Chief Risk Officer indicating regulatory maturity push",
+      "Embedded finance rollout announcement — signals need for extended KYC/AML coverage"
+    ]
+  }
+}
+
+=== EXAMPLE 2: DEV-TOOLS SaaS (developer productivity / DevOps / observability) ===
+For a modern developer-tools SaaS company:
+{
+  "businessName": "PulseMetrics (fictional example)",
+  "overview": "PulseMetrics gives engineering leaders real-time visibility into deployment health, incident patterns, and platform reliability across microservices architectures.",
+  "services": [
+    "Deployment tracking dashboard with mean-time-to-detect regressions",
+    "Incident correlation across services with SLO-aware alerting",
+    "Team-level DORA metrics (deploy frequency, MTTR, change failure rate)",
+    "Slack/GitHub-integrated post-mortem workflow"
+  ],
+  "valueProp": "See engineering velocity + reliability trade-offs in one dashboard — no more debating which team is 'faster'.",
+  "targetIndustries": ["B2B SaaS", "FinTech engineering teams", "E-commerce platforms", "Developer tools"],
+  "icp": {
+    "title": "VP Platform Engineering / Head of Reliability at post-Series C SaaS with 100-500 engineers",
+    "description": "Engineering leaders at post-PMF SaaS companies (Series C+) with 100-500 engineers organized into 5-15 product teams. Deploying to production 20+ times/week. Feeling on-call fatigue and pressure to prove ROI of platform investments to the CFO.",
+    "targetRoles": ["VP Platform Engineering", "Head of SRE", "Director of Developer Experience", "Chief Architect"],
+    "buyingSignals": [
+      "First-ever hire of a VP Platform Engineering or Head of Reliability in the last 6 months",
+      "Public commitment to DORA metrics in company all-hands or CEO tweet",
+      "Migration off Datadog/PagerDuty or announcement of cost optimization on engineering tooling",
+      "Post-incident retrospective published on engineering blog naming observability gaps",
+      "Hiring surge for platform engineers (5+ open roles) — signals scaling pain",
+      "SOC2 Type II audit finding mentioning inadequate deployment change controls"
+    ]
+  }
+}
+
+Follow the depth and specificity of these examples for whatever industry the URL turns out to be in. Each signal must be an event that would be OBSERVABLE from outside the company (press, LinkedIn, blog, careers page, filings) with enough detail that if you saw the exact phrasing in a news feed, you would flag it.`;
 
     const schema = {
       type: Type.OBJECT,
