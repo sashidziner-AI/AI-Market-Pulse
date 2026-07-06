@@ -13,6 +13,7 @@
  *
  * Exit code: 0 if all pass, 1 if any fail. Suitable for CI gating.
  */
+import "dotenv/config";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -21,7 +22,13 @@ type Expectation =
   | { type: "matchField"; path: string; regex: string; flags?: string }
   | { type: "arrayLengthAtLeast"; path: string; min: number }
   | { type: "equals"; path: string; value: unknown }
-  | { type: "notFallback" };
+  | { type: "notFallback" }
+  | {
+      type: "llmJudge";
+      path?: string;        // subtree to judge (defaults to whole response)
+      rubric: string;       // what makes a good answer
+      passingScore: number; // 1-10
+    };
 
 interface EvalCase {
   name: string;
@@ -66,7 +73,56 @@ function resolvePath(obj: unknown, dotPath: string): unknown {
   return cur;
 }
 
-function evaluate(expectation: Expectation, response: unknown): ExpectationResult {
+// Lazy-loaded judge client — only imported when an llmJudge expectation is used.
+let judgeClient: any = null;
+async function getJudgeClient() {
+  if (judgeClient) return judgeClient;
+  // Dynamic import so users without an OpenAI key can still run shape-only evals.
+  const { default: OpenAI } = await import("openai");
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error("llmJudge requires OPENAI_API_KEY to be set.");
+  }
+  judgeClient = new OpenAI({ apiKey });
+  return judgeClient;
+}
+
+async function llmJudgeScore(rubric: string, subject: unknown): Promise<{ score: number; reason: string }> {
+  const ai = await getJudgeClient();
+  const subjectText = typeof subject === "string" ? subject : JSON.stringify(subject, null, 2);
+  const prompt = `You are a rigorous evaluator. Score the SUBJECT against the RUBRIC on a 1-10 scale.
+1-3 = fails or misses the point. 4-6 = acceptable but generic. 7-8 = good and specific. 9-10 = excellent.
+
+RUBRIC:
+${rubric}
+
+SUBJECT:
+${subjectText.slice(0, 8000)}
+
+Respond with a single JSON object of shape { "score": <1-10>, "reason": "<one-sentence justification>" } and NOTHING ELSE.`;
+
+  const res = await ai.chat.completions.create({
+    model: "gpt-4o-mini",
+    max_tokens: 200,
+    messages: [
+      { role: "system", content: "You return only valid JSON. No prose." },
+      { role: "user", content: prompt },
+    ],
+    response_format: { type: "json_object" },
+  });
+  const text = res.choices?.[0]?.message?.content ?? "{}";
+  try {
+    const parsed = JSON.parse(text);
+    return {
+      score: typeof parsed.score === "number" ? parsed.score : 0,
+      reason: typeof parsed.reason === "string" ? parsed.reason : "no reason returned",
+    };
+  } catch {
+    return { score: 0, reason: "judge returned non-JSON" };
+  }
+}
+
+async function evaluate(expectation: Expectation, response: unknown): Promise<ExpectationResult> {
   switch (expectation.type) {
     case "hasField": {
       const value = resolvePath(response, expectation.path);
@@ -125,6 +181,24 @@ function evaluate(expectation: Expectation, response: unknown): ExpectationResul
           : `notFallback — response came from hand-authored fallback data`,
       };
     }
+    case "llmJudge": {
+      const subject = expectation.path ? resolvePath(response, expectation.path) : response;
+      if (subject === undefined || subject === null) {
+        return { ok: false, detail: `llmJudge "${expectation.path ?? "*"}" — target is missing` };
+      }
+      try {
+        const { score, reason } = await llmJudgeScore(expectation.rubric, subject);
+        const ok = score >= expectation.passingScore;
+        return {
+          ok,
+          detail: ok
+            ? `llmJudge "${expectation.path ?? "*"}" score=${score}/10 ≥ ${expectation.passingScore} ✓ (${reason})`
+            : `llmJudge "${expectation.path ?? "*"}" score=${score}/10 < ${expectation.passingScore} — ${reason}`,
+        };
+      } catch (err: any) {
+        return { ok: false, detail: `llmJudge "${expectation.path ?? "*"}" — judge unavailable: ${err?.message ?? err}` };
+      }
+    }
   }
 }
 
@@ -164,7 +238,7 @@ async function runCase(c: EvalCase): Promise<CaseResult> {
     };
   }
 
-  const results = c.expectations.map((e) => evaluate(e, json));
+  const results = await Promise.all(c.expectations.map((e) => evaluate(e, json)));
   const failures = results.filter((r) => !r.ok);
   const passed = results.length - failures.length;
 

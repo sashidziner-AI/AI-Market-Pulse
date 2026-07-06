@@ -1,0 +1,19 @@
+{
+  "name": "analyze-business-icp-quality",
+  "endpoint": "/api/analyze-business",
+  "description": "ICP produced for a niche B2B SaaS should be specific and non-generic.",
+  "input": {
+    "url": "https://mercury.com"
+  },
+  "expectations": [
+    { "type": "hasField", "path": "businessName" },
+    { "type": "hasField", "path": "icp.title" },
+    { "type": "arrayLengthAtLeast", "path": "icp.targetRoles", "min": 2 },
+    {
+      "type": "llmJudge",
+      "path": "icp",
+      "rubric": "A great ICP for a fintech targeting startups should call out specific attributes: founder profile (technical, VC-backed), scale band (seed to Series B), buying signals tied to their moment (raised recently, switching from Brex/SVB alternative, need FDIC coverage). Score low if the ICP is generic 'small businesses' or reads like a boilerplate SaaS description.",
+      "passingScore": 6
+    }
+  ]
+}

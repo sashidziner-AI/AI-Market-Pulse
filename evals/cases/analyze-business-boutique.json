@@ -1,0 +1,20 @@
+{
+  "name": "analyze-business-boutique",
+  "endpoint": "/api/analyze-business",
+  "description": "Small consulting boutique URL should still yield a coherent ICP without hallucinating enterprise-scale services.",
+  "input": {
+    "url": "https://basecamp.com"
+  },
+  "expectations": [
+    { "type": "hasField", "path": "businessName" },
+    { "type": "matchField", "path": "businessName", "regex": "basecamp|37signals" },
+    { "type": "arrayLengthAtLeast", "path": "services", "min": 2 },
+    { "type": "arrayLengthAtLeast", "path": "icp.buyingSignals", "min": 2 },
+    {
+      "type": "llmJudge",
+      "path": "icp",
+      "rubric": "The ICP should target real customer segments plausible for a small SaaS project management tool. It should NOT hallucinate Fortune 500 buyer patterns, government procurement, or enterprise-only signals unless clearly justified.",
+      "passingScore": 6
+    }
+  ]
+}

@@ -60,6 +60,18 @@ Dot-separated. Numeric segments address array indices.
 | `arrayLengthAtLeast` | Path is an array with `.length >= min` |
 | `equals` | Deep-equals `value` (JSON stringified compare) |
 | `notFallback` | `response.isFallback !== true`. Fails when the AI short-circuited to canned data — useful for verifying live API is working. |
+| `llmJudge` | Sends the target subtree to `gpt-4o-mini` with a rubric, receives a 1-10 score, passes if `score >= passingScore`. Useful for subjective quality checks (e.g. "is this outreach angle actually good?"). Requires `OPENAI_API_KEY` for the judge; each judge call costs a few tenths of a cent. |
+
+### `llmJudge` example
+
+```json
+{
+  "type": "llmJudge",
+  "path": "buyerPersonas.0.counterNarratives.0",
+  "rubric": "A great counter-narrative names a concrete objection, offers a specific reframe, grounds proofPoint in a real analog example, and specifies a moment in the sales conversation. Vague or LLM-boilerplate answers score low.",
+  "passingScore": 6
+}
+```
 
 ## What passes / fails today
 
@@ -70,6 +82,23 @@ against fallback data (the fallback is realistic on purpose). Any case with
 
 Add `notFallback` to critical cases once your key is set, so you know when the
 live path silently breaks.
+
+## Green vs red — what to expect
+
+Shape-based expectations (`hasField`, `arrayLengthAtLeast`, etc.) should be **100% green**. A red one means either the AI response shape broke or the schema drifted from what the frontend expects.
+
+**Judge-based expectations (`llmJudge`) intentionally have red cases.** They're set to a passing bar (usually 6/10) that's slightly above what a first-pass AI response reliably produces — that's what makes them useful for regression detection. If they were all trivially green, they'd carry no signal.
+
+Interpret judge output as a **prompt-improvement backlog**:
+
+| Judge score | Meaning | Action |
+|---|---|---|
+| 8-10 | Genuinely good | No action |
+| 6-7 | Acceptable | Nice to have; iterate if you have cycles |
+| 4-5 | Needs work | Concrete prompt-improvement target |
+| 1-3 | Broken | Blocker — the prompt fundamentally isn't delivering |
+
+When a prompt change moves a judge score from 5→8, that's a real quality win. When it moves 8→5, that's a regression you'd have shipped without the harness.
 
 ## Interpreting the output
 

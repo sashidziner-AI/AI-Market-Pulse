@@ -1,0 +1,31 @@
+{
+  "name": "discover-accounts-outreach-quality",
+  "endpoint": "/api/discover-accounts",
+  "description": "Quality gate on outreach angles produced during discovery — should be specific to the found signals, not generic.",
+  "input": {
+    "businessContext": {
+      "businessName": "InfraShield",
+      "overview": "SOC2 compliance automation for scaling SaaS.",
+      "targetIndustries": ["SaaS", "FinTech"]
+    },
+    "icp": {
+      "title": "Head of Engineering at Series B-D SaaS",
+      "description": "Post-PMF SaaS companies preparing for enterprise sales.",
+      "targetRoles": ["Head of Engineering", "CTO", "VP Security"],
+      "buyingSignals": [
+        "Hiring first Head of Security",
+        "First enterprise deal in pipeline",
+        "SOC2 in progress"
+      ]
+    }
+  },
+  "expectations": [
+    { "type": "arrayLengthAtLeast", "path": "", "min": 3 },
+    {
+      "type": "llmJudge",
+      "path": "0.outreachAngle",
+      "rubric": "A great outreach angle references the specific signals detected for THIS account (e.g. 'referenced their first Head of Security hire mentioned in the Feb blog post'). Generic value-prop restatements ('we help SaaS achieve SOC2 faster') score low.",
+      "passingScore": 6
+    }
+  ]
+}

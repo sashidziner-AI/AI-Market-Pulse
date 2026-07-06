@@ -396,27 +396,28 @@ async function runAnthropic(prompt: string, schema: any, options: GenerateOption
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// OpenAI path — Chat Completions API with response_format json_schema strict
-// mode. Automatic prompt caching kicks in for prompts >1024 tokens with no
-// extra flags. useWebSearch degrades to a no-op with a log warning — restoring
-// grounding on OpenAI would require moving to the Responses API + the
-// web_search_preview tool (documented future work).
+// OpenAI dispatcher — sends useWebSearch calls to the Responses API path
+// (which supports web_search_preview + json_schema together), and the rest
+// to the Chat Completions path.
 // ──────────────────────────────────────────────────────────────────────────
 async function runOpenAI(prompt: string, schema: any, options: GenerateOptions) {
+  if (options.useWebSearch) {
+    return runOpenAIResponses(prompt, schema, options);
+  }
+  return runOpenAIChat(prompt, schema, options);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// OpenAI Chat Completions path — for non-search endpoints.
+// Uses response_format: json_schema. Automatic prompt caching on >1024 tokens.
+// ──────────────────────────────────────────────────────────────────────────
+async function runOpenAIChat(prompt: string, schema: any, options: GenerateOptions) {
   const models = options.models?.openai ?? [MODEL_GPT_4O, MODEL_GPT_4O_MINI];
   const wantsArray = schema?.type === "array";
   // OpenAI strict json_schema requires a top-level object shape. Wrap arrays.
   const outSchema = wantsArray
     ? { type: "object", properties: { items: schema }, required: ["items"], additionalProperties: false }
     : schema;
-
-  if (options.useWebSearch) {
-    // Chat Completions doesn't expose web search. Note the request but degrade
-    // gracefully so the endpoint still returns a valid structured response.
-    console.log(
-      `[OpenAI Info] useWebSearch requested for ${options.endpoint ?? "call"} but not supported on Chat Completions path. Response will be ungrounded.`
-    );
-  }
 
   const maxTokens = options.maxTokens ?? 8192;
   let lastError: any = null;
@@ -584,6 +585,208 @@ async function runOpenAI(prompt: string, schema: any, options: GenerateOptions) 
     const sanitizedMsg = sanitizeString(errorStr.substring(0, 150));
     console.log(`[OpenAI Info] API issue after fallback strategy: ${sanitizedMsg}`);
     throw lastError || new Error("Failed to communicate with OpenAI API.");
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// OpenAI Responses API path — used when useWebSearch is true.
+// The Responses API supports the web_search_preview server tool AND
+// json_schema output format in the same call, so we get grounded structured
+// outputs on OpenAI (feature parity with Anthropic's Claude + web_search).
+// ──────────────────────────────────────────────────────────────────────────
+async function runOpenAIResponses(prompt: string, schema: any, options: GenerateOptions) {
+  const models = options.models?.openai ?? [MODEL_GPT_4O, MODEL_GPT_4O_MINI];
+  const wantsArray = schema?.type === "array";
+  const outSchema = wantsArray
+    ? { type: "object", properties: { items: schema }, required: ["items"], additionalProperties: false }
+    : schema;
+
+  const maxTokens = options.maxTokens ?? 8192;
+  let lastError: any = null;
+
+  for (const model of models) {
+    const attempts = 3;
+    let delay = 1000;
+
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      const callStartedAt = Date.now();
+      try {
+        const ai = getOpenAI();
+
+        console.log(
+          `[OpenAI Responses Request] Model: ${model}, Attempt: ${attempt}/${attempts} (web_search enabled)${options.endpoint ? " route=" + options.endpoint : ""}${options.subCall ? " sub=" + options.subCall : ""}`
+        );
+        const response: any = await (ai as any).responses.create({
+          model,
+          max_output_tokens: maxTokens,
+          instructions: SYSTEM_PROMPT_TEXT,
+          input: prompt,
+          tools: [
+            {
+              type: "web_search_preview",
+              // search_context_size can be low/medium/high; medium is default
+              search_context_size: "medium",
+            },
+          ],
+          text: {
+            format: {
+              type: "json_schema",
+              name: "submit_result",
+              schema: outSchema,
+              strict: false,
+            },
+          },
+        });
+
+        // Responses API returns output as an array of items. Look for the
+        // final message content (the model's structured answer).
+        const outputText: string | undefined =
+          response.output_text ??
+          (Array.isArray(response.output)
+            ? response.output
+                .filter((item: any) => item.type === "message")
+                .flatMap((item: any) => item.content || [])
+                .filter((c: any) => c.type === "output_text")
+                .map((c: any) => c.text)
+                .join("")
+            : undefined);
+
+        if (!outputText) {
+          console.log(`[OpenAI Responses Info] Empty output_text from model ${model} (status: ${response.status})`);
+          throw new Error("OpenAI Responses returned an empty response.");
+        }
+
+        let parsed: any;
+        try {
+          parsed = JSON.parse(outputText);
+        } catch {
+          console.log(`[OpenAI Responses Info] JSON parse failure from model ${model}`);
+          throw new Error("Model generated invalid JSON output.");
+        }
+
+        if (wantsArray && parsed && typeof parsed === "object" && Array.isArray(parsed.items)) {
+          parsed = parsed.items;
+        }
+
+        // Count web_search_call items to attribute grounding usage
+        const webSearchCount = Array.isArray(response.output)
+          ? response.output.filter((item: any) => item.type === "web_search_call").length
+          : 0;
+
+        const usage: any = response.usage ?? {};
+        const cachedTokens = usage.input_tokens_details?.cached_tokens;
+        logAiCall({
+          ts: new Date().toISOString(),
+          endpoint: options.endpoint,
+          subCall: options.subCall,
+          model,
+          attempt,
+          status: "ok",
+          durationMs: Date.now() - callStartedAt,
+          inputTokens: usage.input_tokens,
+          outputTokens: usage.output_tokens,
+          cacheReadTokens: cachedTokens,
+          webSearchCount,
+          webSearchEnabled: true,
+        });
+
+        if (webSearchCount > 0) {
+          console.log(`[OpenAI Responses Info] Model ${model} used web_search ${webSearchCount} time(s)`);
+        }
+
+        return parsed;
+      } catch (error: any) {
+        lastError = error;
+        const status = error?.status;
+        const errorStr = String(error?.message || error || "");
+
+        const shortError = sanitizeString(errorStr.substring(0, 150));
+        console.log(`[OpenAI Responses Info] Model ${model} attempt ${attempt} handled issue: ${shortError}`);
+
+        const isQuota =
+          status === 429 ||
+          errorStr.includes("quota") ||
+          errorStr.includes("insufficient_quota") ||
+          errorStr.includes("rate_limit");
+        const isPermission =
+          status === 401 ||
+          status === 403 ||
+          errorStr.includes("invalid_api_key") ||
+          errorStr.includes("Incorrect API key") ||
+          errorStr.includes("not set");
+
+        const errorClass = isPermission
+          ? "permission"
+          : isQuota
+            ? "quota"
+            : status && status >= 500
+              ? "server"
+              : errorStr.includes("timeout") || errorStr.includes("ECONNRESET")
+                ? "network"
+                : "other";
+
+        logAiCall({
+          ts: new Date().toISOString(),
+          endpoint: options.endpoint,
+          subCall: options.subCall,
+          model,
+          attempt,
+          status: "error",
+          durationMs: Date.now() - callStartedAt,
+          webSearchCount: 0,
+          webSearchEnabled: true,
+          errorClass,
+          errorSnippet: shortError,
+        });
+
+        if (isQuota || isPermission) {
+          throw error;
+        }
+
+        const isTransient =
+          status === 500 ||
+          status === 502 ||
+          status === 503 ||
+          status === 504 ||
+          errorStr.includes("timeout") ||
+          errorStr.includes("ECONNRESET") ||
+          errorStr.includes("socket");
+
+        if (isTransient && attempt < attempts) {
+          console.log(`Retrying in ${delay}ms...`);
+          await new Promise((resolve) => setTimeout(resolve, delay));
+          delay *= 2;
+        } else {
+          break;
+        }
+      }
+    }
+  }
+
+  const status = lastError?.status;
+  const errorStr = String(lastError?.message || lastError || "");
+  const isQuota =
+    status === 429 ||
+    errorStr.includes("quota") ||
+    errorStr.includes("insufficient_quota") ||
+    errorStr.includes("rate_limit");
+  const isPermission =
+    status === 401 ||
+    status === 403 ||
+    errorStr.includes("invalid_api_key") ||
+    errorStr.includes("Incorrect API key") ||
+    errorStr.includes("not set");
+
+  if (isQuota) {
+    console.log("[OpenAI Responses Info] Quota or rate limits active. Scaling to fallback profiles.");
+    throw new Error("OpenAI API quota exceeded. Please wait a moment or upgrade your plan.");
+  } else if (isPermission) {
+    console.log("[OpenAI Responses Info] Access denied or key missing. Scaling to fallback profiles.");
+    throw new Error("OpenAI API access denied. Please ensure OPENAI_API_KEY is set to a valid key.");
+  } else {
+    const sanitizedMsg = sanitizeString(errorStr.substring(0, 150));
+    console.log(`[OpenAI Responses Info] API issue after fallback strategy: ${sanitizedMsg}`);
+    throw lastError || new Error("Failed to communicate with OpenAI Responses API.");
   }
 }
 
@@ -1247,33 +1450,44 @@ app.post("/api/discover-accounts", async (req, res) => {
   }
 
   try {
-    const prompt = `Discover 5–8 real companies that match this ICP and are currently likely showing buying signals. If you have access to a web_search tool, use it to verify every account against the live web. If web_search is not available, rely on your training-data knowledge of well-known companies in this space and mark signals conservatively.
+    const prompt = `You have access to a web_search tool. Use it to ground every discovered account in REAL, CURRENT data from the live web.
 
 Seller's business: ${JSON.stringify(businessContext)}
 Their ICP: ${JSON.stringify(icp)}
 
-Prioritize accounts whose likely signals from the last 90 days include:
-  • Recent funding announcements (Series A/B/C, growth rounds)
+STEP 1 — Search the web for 5-8 companies currently showing buying signals in the last 90 days:
+  • Recent funding (Series A/B/C, growth rounds)
   • Executive hiring for relevant roles
-  • Job postings matching the seller's service areas
+  • Job postings matching the seller's services
   • Product launches or platform migrations
-  • Press releases about digital transformation, expansion, or new initiatives
+  • Digital transformation / expansion press
 
-For each company, populate:
-  - name: Real company name
-  - domain: Real domain (verify via web_search if available)
-  - description: Brief real business description
-  - fitReason: Evidence-based explanation citing at least one detected signal
-  - signals: 2-4 specific signals with source hints inline (e.g. "Series B announcement per TechCrunch, Mar 2026")
-  - fitScore (0-100): How well the account matches the ICP
-  - timingScore (0-100): Recency, intensity, and velocity of signals
-  - timingStage: Exactly one of "Early Awareness", "Active Evaluation", or "Urgent Decision"
-  - outreachWindow: "Within 48 hours", "This week", or "This month"
-  - priorityIndex (0-100): Average of fitScore and timingScore
-  - priorityFlag: Exactly "Immediate Action Required" (fit >= 85 AND timing >= 80), "Warm Track" (fit >= 80 AND timing < 75), or "Standard Follow-up"
-  - outreachAngle: A specific outreach angle tied to the signals
+STEP 2 — For each shortlisted company, verify its real domain via web_search.
 
-Return at least 5 accounts. Prefer well-known real companies over invented names.`;
+STEP 3 — Return at least 5 verified accounts. If you cannot find enough via web_search, supplement with well-known companies from your training data (mark those signals conservatively).
+
+FEW-SHOT EXAMPLE — the SHAPE and DEPTH of a great entry:
+
+{
+  "name": "Ramp",
+  "domain": "ramp.com",
+  "description": "Corporate card and expense management platform for growing companies.",
+  "fitReason": "Series D closed Aug 2024 valuing them at $13B; explicitly hiring platform engineers to scale their integrations layer — aligned with the seller's payment orchestration ICP.",
+  "signals": [
+    "Series D announcement, TechCrunch, Aug 2024 ($150M at $13B valuation)",
+    "10+ senior platform engineer roles on their careers page (Q1 2026)",
+    "CTO shift to product-led growth stated on Ramp podcast Feb 2026"
+  ],
+  "fitScore": 92,
+  "timingScore": 84,
+  "timingStage": "Active Evaluation",
+  "outreachWindow": "Within 48 hours",
+  "priorityIndex": 88,
+  "priorityFlag": "Immediate Action Required",
+  "outreachAngle": "Lead with how our orchestration layer would reduce their integration surface area from 12 payment rails to 1 — echo their platform-consolidation stance from the Feb podcast."
+}
+
+Populate every field. Ground every signal in a real source. Do NOT fabricate URLs.`;
 
     const schema = {
       type: Type.ARRAY,
@@ -1379,7 +1593,28 @@ Produce:
   - signals (array of strings): 3-6 recent raw signals with source hints inline
   - citation (object): One overall citation for the aggregate rationale
 
-${citationInstructions}`;
+${citationInstructions}
+
+FEW-SHOT EXAMPLE — the SHAPE and DEPTH of a great brief:
+
+{
+  "score": 88,
+  "rationale": "Strong ICP match on scale and payments-heavy workflow. Recent $500M Series H announcement and public commitment to 'consolidating our payment surface area' signal active vendor evaluation. Their new CTO joined from Adyen in Q1 2026, historically friendly to orchestration platforms. Weak points: enterprise procurement cycle likely 4-6 months.",
+  "signals": [
+    "Series H announcement, TechCrunch, Feb 2026",
+    "CTO hire from Adyen, LinkedIn post, Jan 2026",
+    "Q1 earnings mention: 'consolidating our payment surface area'",
+    "Job postings: 5 senior payments engineers (careers page Q1 2026)"
+  ],
+  "citation": {
+    "sourceTier": "Primary",
+    "sourceName": "Company Q1 2026 Earnings Call Transcript",
+    "dateRetrieved": "Jul 7, 2026",
+    "url": "https://investor.company.com/q1-2026-transcript",
+    "isInferred": false,
+    "confidenceScore": 92
+  }
+}`;
 
     const briefSchema = {
       type: Type.OBJECT,
@@ -1416,7 +1651,41 @@ buyerPersonas (2-4 items, at least one for each of: technical, operational, and 
 multiThreadingStrategy: exactly these 4 keys (accessibleEntryPoint, internalChampion, economicBuyer, technicalGatekeeper) — each an object with role, order (1-4, unique), timing (e.g. "Week 1 Day 2"), messagingFocus, strategicRole, tacticalTactic.
 Plus: sequencedMapDescription (string), coordinationRules (2-3 strings on how to avoid conflicting sequences).
 
-outreachStrategy: an object with emailHook (specific 2-3 sentence opener grounded in a real signal you found) and linkedinMessage (100-160 char message).`;
+outreachStrategy: an object with emailHook (specific 2-3 sentence opener grounded in a real signal you found) and linkedinMessage (100-160 char message).
+
+FEW-SHOT EXAMPLE — the SHAPE and DEPTH of a great persona:
+
+{
+  "role": "VP of Platform Engineering",
+  "painPoints": [
+    "Integration surface area growing linearly with each new payment rail added",
+    "On-call fatigue from 5+ separate payment provider outages per quarter",
+    "Reconciliation cycle takes 3-4 days across scattered ledgers"
+  ],
+  "valueAngle": "Consolidate 5 payment integrations into 1 orchestration layer — cut on-call load by ~60% and reconciliation to sub-day.",
+  "counterNarratives": [
+    {
+      "objection": "We just spent 18 months building our own routing layer.",
+      "reframingMessage": "That's actually the perfect moment — you now have the interface contracts figured out and can swap the implementation without touching upstream code.",
+      "proofPoint": "Ramp did exactly this in Q3 2025 — kept their internal routing API, swapped the backend for an orchestrator, cut on-call incidents 71% (per their engineering blog Nov 2025).",
+      "suggestedMoment": "When they push back on rebuild fatigue after the demo of the routing dashboard."
+    },
+    {
+      "objection": "Our security team requires SOC2 Type II + PCI Level 1.",
+      "reframingMessage": "Both are in place and audited quarterly — I can send the SOC2 Type II bridge letter and PCI AoC before we go further so your infosec team has time to review.",
+      "proofPoint": "We're already the payment orchestration layer for 3 other Series H companies with equivalent compliance requirements — happy to make an intro.",
+      "suggestedMoment": "Preempt this at the end of the technical deep-dive, before it becomes a gate."
+    }
+  ],
+  "citation": {
+    "sourceTier": "Tertiary",
+    "sourceName": "LinkedIn — VP Platform Engineering @ Company, joined 2023",
+    "dateRetrieved": "Jul 7, 2026",
+    "url": "https://linkedin.com/in/example-vp-platform",
+    "isInferred": true,
+    "confidenceScore": 72
+  }
+}`;
 
     const humanSchema = {
       type: Type.OBJECT,

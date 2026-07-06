@@ -1,0 +1,31 @@
+{
+  "name": "analyze-account-linear",
+  "endpoint": "/api/analyze-account",
+  "description": "Deep dive on a modern developer tools company. Should surface plausible personas and real competitor names.",
+  "input": {
+    "domain": "linear.app",
+    "businessContext": {
+      "businessName": "GridPulse",
+      "overview": "Real-time performance analytics for engineering leadership.",
+      "targetIndustries": ["Developer Tools", "SaaS", "DevOps"]
+    }
+  },
+  "expectations": [
+    { "type": "hasField", "path": "score" },
+    { "type": "hasField", "path": "rationale" },
+    { "type": "arrayLengthAtLeast", "path": "buyerPersonas", "min": 2 },
+    { "type": "arrayLengthAtLeast", "path": "competitors", "min": 1 },
+    {
+      "type": "llmJudge",
+      "path": "competitors",
+      "rubric": "Competitors for a modern developer tools account should be recognizable dev-tools names — think Jira, Notion, Height, Shortcut, ClickUp, GitHub Projects, Coda, Airtable. Score high if 2+ real known competitor names appear. Score low if generic 'Enterprise CRM' names appear.",
+      "passingScore": 6
+    },
+    {
+      "type": "llmJudge",
+      "path": "buyerPersonas.0.counterNarratives.0",
+      "rubric": "A great counter-narrative names a concrete objection, offers a specific reframe (not generic reassurance), grounds proofPoint in a real analog example or data point, and specifies a moment in the sales conversation. Vague or LLM-boilerplate counter-narratives score low.",
+      "passingScore": 6
+    }
+  ]
+}

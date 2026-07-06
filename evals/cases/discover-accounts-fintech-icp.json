@@ -1,0 +1,34 @@
+{
+  "name": "discover-accounts-fintech-icp",
+  "endpoint": "/api/discover-accounts",
+  "description": "Fintech ICP should return real fintech/adjacent companies, not generic SaaS names.",
+  "input": {
+    "businessContext": {
+      "businessName": "TrustLedger",
+      "overview": "Real-time fraud + KYC infrastructure for fintechs.",
+      "targetIndustries": ["FinTech", "Payments", "Neobanks"]
+    },
+    "icp": {
+      "title": "Head of Trust & Safety at scaling fintechs",
+      "description": "Growth-stage fintechs handling >$500M/year in transactions who face rising fraud losses.",
+      "targetRoles": ["Head of Trust & Safety", "VP Risk", "Chief Compliance Officer"],
+      "buyingSignals": [
+        "Recent fraud incident or public breach",
+        "New market expansion (US to EU or LATAM)",
+        "Regulatory scrutiny or consent decree"
+      ]
+    }
+  },
+  "expectations": [
+    { "type": "arrayLengthAtLeast", "path": "", "min": 5 },
+    { "type": "hasField", "path": "0.name" },
+    { "type": "hasField", "path": "0.domain" },
+    { "type": "hasField", "path": "0.priorityFlag" },
+    {
+      "type": "llmJudge",
+      "path": "",
+      "rubric": "The returned accounts must be plausibly real fintech / payments / neobank companies (e.g. Chime, Wise, Nubank, Revolut, Mercury, Ramp, Brex etc.). Score high if 4+ recognizable real names appear. Score low if the list is dominated by generic SaaS companies (Salesforce, HubSpot) or clearly invented names.",
+      "passingScore": 6
+    }
+  ]
+}

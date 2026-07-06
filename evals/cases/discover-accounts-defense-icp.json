@@ -1,0 +1,27 @@
+{
+  "name": "discover-accounts-defense-icp",
+  "endpoint": "/api/discover-accounts",
+  "description": "Defense/government ICP should still surface accounts without hallucinating classified names.",
+  "input": {
+    "businessContext": {
+      "businessName": "SecureMesh",
+      "overview": "FedRAMP High-authorized secure mesh networking for defense contractors.",
+      "targetIndustries": ["Defense", "Aerospace", "Federal IT"]
+    },
+    "icp": {
+      "title": "CIO at cleared defense primes",
+      "description": "Prime defense contractors and second-tier suppliers holding US clearances.",
+      "targetRoles": ["CIO", "Chief Digital Officer", "VP Secure Operations"],
+      "buyingSignals": [
+        "Recent DoD contract award requiring CMMC compliance",
+        "Zero-trust modernization mandate",
+        "Consolidation of legacy Cisco/Palo networks"
+      ]
+    }
+  },
+  "expectations": [
+    { "type": "arrayLengthAtLeast", "path": "", "min": 3 },
+    { "type": "hasField", "path": "0.name" },
+    { "type": "hasField", "path": "0.domain" }
+  ]
+}
