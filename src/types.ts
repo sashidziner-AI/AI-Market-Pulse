@@ -61,7 +61,7 @@ export interface TargetAccount {
   timingStage?: 'Early Awareness' | 'Active Evaluation' | 'Urgent Decision';
   outreachWindow?: string;
   priorityIndex?: number;
-  priorityFlag?: 'Immediate Action Required' | 'Nurture Queue' | 'Standard Follow-up' | 'Do Not Pursue';
+  priorityFlag?: 'Immediate Action Required' | 'Warm Track' | 'Standard Follow-up' | 'Do Not Pursue';
   outreachAngle: string;
   status: 'new' | 'viewed' | 'contacted';
   outreachOutcome?: 'No Response' | 'Positive Reply' | 'Meeting Booked' | 'Deal Lost' | 'Deal Won';

@@ -779,19 +779,19 @@ export function getCalibratedAccountPriorityInfo(
   }
 
   // Flag indicators
-  let priorityFlag: 'Immediate Action Required' | 'Nurture Queue' | 'Standard Follow-up' | 'Do Not Pursue' = 'Standard Follow-up';
+  let priorityFlag: 'Immediate Action Required' | 'Warm Track' | 'Standard Follow-up' | 'Do Not Pursue' = 'Standard Follow-up';
 
   if (reResearchRecommended) {
     priorityFlag = 'Standard Follow-up';
   } else if (fitScore >= 85 && timingScore >= 80) {
     priorityFlag = 'Immediate Action Required';
   } else if (fitScore >= 80 && timingScore < 75) {
-    priorityFlag = 'Nurture Queue';
+    priorityFlag = 'Warm Track';
   }
 
   // Guard rule: Signals > 180 days (stale) must not drive high-urgency without recent corroborations
   if (priorityFlag === 'Immediate Action Required' && !hasRecentCorroboration) {
-    priorityFlag = 'Nurture Queue';
+    priorityFlag = 'Warm Track';
   }
 
   // Load custom partners if running in a client environment

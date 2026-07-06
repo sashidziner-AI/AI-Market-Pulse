@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { BusinessAnalysis, TargetAccount } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { AccountCard, getAccountPriorityInfo } from './AccountCard';
@@ -8,7 +8,7 @@ import {
   Search, Filter, Plus, FileUp, Download, Play, LayoutGrid, List,
   LayoutDashboard, ListTodo, Radar, Network,
   ChevronDown, ChevronRight, Bell, Database, RefreshCw, CheckCircle2, CloudLightning, ArrowRight, ArrowLeft,
-  Clock, TrendingUp, AlertTriangle, Lightbulb, Compass, Sparkles, FolderOpen, Sliders, Pencil, Trash2
+  Clock, TrendingUp, AlertTriangle, Lightbulb, Compass, Sparkles, FolderOpen, Sliders, Pencil, Trash2, X, BookOpen
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -20,6 +20,86 @@ import { toast } from 'sonner';
 import { computeWeightsRecalibration, SellerChannelPartner, DEFAULT_CHANNEL_PARTNERS, computePathwayAssessment } from '../utils/calibration';
 import { ThemeToggle } from './ThemeToggle';
 import { PieChart, Pie, Cell, BarChart, Bar, ResponsiveContainer, Tooltip } from 'recharts';
+
+// Country → states/provinces. Countries not in this map have no state-level picker.
+const COUNTRY_STATES: Record<string, string[]> = {
+  'United States': [
+    'Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado', 'Connecticut', 'Delaware',
+    'Florida', 'Georgia', 'Hawaii', 'Idaho', 'Illinois', 'Indiana', 'Iowa', 'Kansas', 'Kentucky',
+    'Louisiana', 'Maine', 'Maryland', 'Massachusetts', 'Michigan', 'Minnesota', 'Mississippi',
+    'Missouri', 'Montana', 'Nebraska', 'Nevada', 'New Hampshire', 'New Jersey', 'New Mexico',
+    'New York', 'North Carolina', 'North Dakota', 'Ohio', 'Oklahoma', 'Oregon', 'Pennsylvania',
+    'Rhode Island', 'South Carolina', 'South Dakota', 'Tennessee', 'Texas', 'Utah', 'Vermont',
+    'Virginia', 'Washington', 'West Virginia', 'Wisconsin', 'Wyoming',
+  ],
+  'Canada': [
+    'Alberta', 'British Columbia', 'Manitoba', 'New Brunswick', 'Newfoundland and Labrador',
+    'Nova Scotia', 'Ontario', 'Prince Edward Island', 'Quebec', 'Saskatchewan',
+    'Northwest Territories', 'Nunavut', 'Yukon',
+  ],
+  'India': [
+    'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat',
+    'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka', 'Kerala', 'Madhya Pradesh',
+    'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab', 'Rajasthan',
+    'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal',
+    'Delhi', 'Jammu and Kashmir', 'Ladakh', 'Puducherry',
+  ],
+  'United Kingdom': ['England', 'Scotland', 'Wales', 'Northern Ireland'],
+  'Australia': [
+    'New South Wales', 'Queensland', 'South Australia', 'Tasmania', 'Victoria', 'Western Australia',
+    'Australian Capital Territory', 'Northern Territory',
+  ],
+  'Germany': [
+    'Baden-Württemberg', 'Bavaria', 'Berlin', 'Brandenburg', 'Bremen', 'Hamburg', 'Hesse',
+    'Lower Saxony', 'Mecklenburg-Vorpommern', 'North Rhine-Westphalia', 'Rhineland-Palatinate',
+    'Saarland', 'Saxony', 'Saxony-Anhalt', 'Schleswig-Holstein', 'Thuringia',
+  ],
+  'Brazil': [
+    'Acre', 'Alagoas', 'Amapá', 'Amazonas', 'Bahia', 'Ceará', 'Distrito Federal',
+    'Espírito Santo', 'Goiás', 'Maranhão', 'Mato Grosso', 'Mato Grosso do Sul', 'Minas Gerais',
+    'Pará', 'Paraíba', 'Paraná', 'Pernambuco', 'Piauí', 'Rio de Janeiro',
+    'Rio Grande do Norte', 'Rio Grande do Sul', 'Rondônia', 'Roraima', 'Santa Catarina',
+    'São Paulo', 'Sergipe', 'Tocantins',
+  ],
+  'Mexico': [
+    'Aguascalientes', 'Baja California', 'Baja California Sur', 'Campeche', 'Chiapas', 'Chihuahua',
+    'Coahuila', 'Colima', 'Durango', 'Guanajuato', 'Guerrero', 'Hidalgo', 'Jalisco', 'México',
+    'Mexico City', 'Michoacán', 'Morelos', 'Nayarit', 'Nuevo León', 'Oaxaca', 'Puebla',
+    'Querétaro', 'Quintana Roo', 'San Luis Potosí', 'Sinaloa', 'Sonora', 'Tabasco', 'Tamaulipas',
+    'Tlaxcala', 'Veracruz', 'Yucatán', 'Zacatecas',
+  ],
+};
+
+// Full sovereign country list (~195) used by the ICP Exclusion geography multi-select.
+const COUNTRIES: string[] = [
+  'Afghanistan', 'Albania', 'Algeria', 'Andorra', 'Angola', 'Antigua and Barbuda', 'Argentina',
+  'Armenia', 'Australia', 'Austria', 'Azerbaijan', 'Bahamas', 'Bahrain', 'Bangladesh', 'Barbados',
+  'Belarus', 'Belgium', 'Belize', 'Benin', 'Bhutan', 'Bolivia', 'Bosnia and Herzegovina',
+  'Botswana', 'Brazil', 'Brunei', 'Bulgaria', 'Burkina Faso', 'Burundi', 'Cabo Verde', 'Cambodia',
+  'Cameroon', 'Canada', 'Central African Republic', 'Chad', 'Chile', 'China', 'Colombia',
+  'Comoros', 'Congo (Brazzaville)', 'Congo (Kinshasa)', 'Costa Rica', 'Croatia', 'Cuba', 'Cyprus',
+  'Czech Republic', 'Denmark', 'Djibouti', 'Dominica', 'Dominican Republic', 'Ecuador', 'Egypt',
+  'El Salvador', 'Equatorial Guinea', 'Eritrea', 'Estonia', 'Eswatini', 'Ethiopia', 'Fiji',
+  'Finland', 'France', 'Gabon', 'Gambia', 'Georgia', 'Germany', 'Ghana', 'Greece', 'Grenada',
+  'Guatemala', 'Guinea', 'Guinea-Bissau', 'Guyana', 'Haiti', 'Honduras', 'Hungary', 'Iceland',
+  'India', 'Indonesia', 'Iran', 'Iraq', 'Ireland', 'Israel', 'Italy', 'Ivory Coast', 'Jamaica',
+  'Japan', 'Jordan', 'Kazakhstan', 'Kenya', 'Kiribati', 'Kosovo', 'Kuwait', 'Kyrgyzstan', 'Laos',
+  'Latvia', 'Lebanon', 'Lesotho', 'Liberia', 'Libya', 'Liechtenstein', 'Lithuania', 'Luxembourg',
+  'Madagascar', 'Malawi', 'Malaysia', 'Maldives', 'Mali', 'Malta', 'Marshall Islands',
+  'Mauritania', 'Mauritius', 'Mexico', 'Micronesia', 'Moldova', 'Monaco', 'Mongolia', 'Montenegro',
+  'Morocco', 'Mozambique', 'Myanmar', 'Namibia', 'Nauru', 'Nepal', 'Netherlands', 'New Zealand',
+  'Nicaragua', 'Niger', 'Nigeria', 'North Korea', 'North Macedonia', 'Norway', 'Oman', 'Pakistan',
+  'Palau', 'Palestine', 'Panama', 'Papua New Guinea', 'Paraguay', 'Peru', 'Philippines', 'Poland',
+  'Portugal', 'Qatar', 'Romania', 'Russia', 'Rwanda', 'Saint Kitts and Nevis', 'Saint Lucia',
+  'Saint Vincent and the Grenadines', 'Samoa', 'San Marino', 'Sao Tome and Principe',
+  'Saudi Arabia', 'Senegal', 'Serbia', 'Seychelles', 'Sierra Leone', 'Singapore', 'Slovakia',
+  'Slovenia', 'Solomon Islands', 'Somalia', 'South Africa', 'South Korea', 'South Sudan', 'Spain',
+  'Sri Lanka', 'Sudan', 'Suriname', 'Sweden', 'Switzerland', 'Syria', 'Taiwan', 'Tajikistan',
+  'Tanzania', 'Thailand', 'Timor-Leste', 'Togo', 'Tonga', 'Trinidad and Tobago', 'Tunisia',
+  'Turkey', 'Turkmenistan', 'Tuvalu', 'Uganda', 'Ukraine', 'United Arab Emirates',
+  'United Kingdom', 'United States', 'Uruguay', 'Uzbekistan', 'Vanuatu', 'Vatican City',
+  'Venezuela', 'Vietnam', 'Yemen', 'Zambia', 'Zimbabwe',
+];
 
 interface DashboardProps {
   analysis: BusinessAnalysis;
@@ -416,8 +496,33 @@ export function Dashboard({
     'Bankruptcy',
     'Cash-Strap Strain'
   ]);
-  const [hideDisqualified, setHideDisqualified] = useState<boolean>(false);
-  const [isICPExclusionPanelExpanded, setIsICPExclusionPanelExpanded] = useState<boolean>(false);
+  const [isICPExclusionModalOpen, setIsICPExclusionModalOpen] = useState<boolean>(false);
+  const [countrySearchQuery, setCountrySearchQuery] = useState<string>('');
+  const [pendingCountrySelections, setPendingCountrySelections] = useState<string[]>([]);
+  const [pendingStateSelect, setPendingStateSelect] = useState<string>('');
+  const [industryInputValue, setIndustryInputValue] = useState<string>('');
+  const [financialInputValue, setFinancialInputValue] = useState<string>('');
+  const [isScoringGuideOpen, setIsScoringGuideOpen] = useState<boolean>(false);
+  const [isFilterMenuOpen, setIsFilterMenuOpen] = useState<boolean>(false);
+  const filterMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isFilterMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (filterMenuRef.current && !filterMenuRef.current.contains(e.target as Node)) {
+        setIsFilterMenuOpen(false);
+      }
+    };
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsFilterMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEsc);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEsc);
+    };
+  }, [isFilterMenuOpen]);
 
   // CRM Integration States
   const getCrmName = (type: string) => {
@@ -549,17 +654,12 @@ export function Dashboard({
   // Cohesive filter/search matching
   const filteredAccounts = React.useMemo(() => {
     return evaluatedAccounts.filter(account => {
-      // If hiding disqualified accounts, actively filter them out from scoring views
-      if (hideDisqualified && account.isDisqualified) {
-        return false;
-      }
-
       // Prioritization Queue Filter logic
       const info = getAccountPriorityInfo(account);
       if (priorityFilter === 'immediate' && info.priorityFlag !== 'Immediate Action Required') {
         return false;
       }
-      if (priorityFilter === 'nurture' && info.priorityFlag !== 'Nurture Queue') {
+      if (priorityFilter === 'nurture' && info.priorityFlag !== 'Warm Track') {
         return false;
       }
       if (priorityFilter === 'standard' && info.priorityFlag !== 'Standard Follow-up') {
@@ -606,13 +706,16 @@ export function Dashboard({
               account.signals?.some(s => s.toLowerCase().includes('funding') || s.toLowerCase().includes('series') || s.toLowerCase().includes('raised') || s.toLowerCase().includes('acquired') || s.toLowerCase().includes('expansion'));
             return hasFundingKeyword;
           }
+          if (filter === 'Excludes') {
+            return !account.isDisqualified;
+          }
           return true;
         });
       }
 
       return true;
     });
-  }, [evaluatedAccounts, hideDisqualified, searchQuery, selectedFilters, priorityFilter]);
+  }, [evaluatedAccounts, searchQuery, selectedFilters, priorityFilter]);
 
   // Sort: Put disqualified ones at the bottom of standard list so they don't block high-priority
   const sortedFilteredAccounts = React.useMemo(() => {
@@ -644,7 +747,7 @@ export function Dashboard({
         doNotPursue++;
       } else if (info.priorityFlag === 'Immediate Action Required') {
         immediate++;
-      } else if (info.priorityFlag === 'Nurture Queue') {
+      } else if (info.priorityFlag === 'Warm Track') {
         nurture++;
       } else {
         standard++;
@@ -733,8 +836,8 @@ export function Dashboard({
           </div>
 
           <nav className="space-y-1">
-            <SidebarItem icon={<LayoutDashboard />} label="Market Pulse" active={activeTab === 'recommendations'} onClick={() => setActiveTab('recommendations')} />
-            <SidebarItem icon={<Users />} label="Smart Clusters" active={activeTab === 'clusters'} onClick={() => setActiveTab('clusters')} />
+            <SidebarItem icon={<LayoutDashboard />} label="Analysis" active={activeTab === 'recommendations'} onClick={() => setActiveTab('recommendations')} />
+            <SidebarItem icon={<Users />} label="Target Segments" active={activeTab === 'clusters'} onClick={() => setActiveTab('clusters')} />
             <SidebarItem icon={<Network />} label="Partner Pathways" active={activeTab === 'partner-pathways'} onClick={() => setActiveTab('partner-pathways')} />
             <SidebarItem icon={<ListTodo />} label="GTM Pipeline" active={activeTab === 'pipeline'} onClick={() => setActiveTab('pipeline')} />
           </nav>
@@ -799,8 +902,8 @@ export function Dashboard({
                 </Button>
               )}
               <h2 className="font-semibold text-zinc-100 text-sm md:text-base lg:text-lg tracking-tight">
-                {activeTab === 'recommendations' ? 'Market Pulse' :
-                 activeTab === 'clusters' ? 'Strategic Account Clusters' :
+                {activeTab === 'recommendations' ? 'Analysis' :
+                 activeTab === 'clusters' ? 'Strategic Account Segments' :
                  activeTab === 'partner-pathways' ? 'Partner Referral & Warm Pathways' : 'Pipeline'}
               </h2>
               <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-mono font-bold text-[12px] px-2 py-0.5 rounded-full">
@@ -852,10 +955,21 @@ export function Dashboard({
                   </button>
                 </div>
               ) : (
-                <span className="text-[13px] bg-amber-500/10 border border-amber-500/25 text-amber-300 px-2.5 py-0.5 rounded-md font-bold font-sans flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 bg-amber-400 rounded-full shrink-0 animate-pulse" />
-                  <span>Interactive Outreach Draft</span>
-                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsICPExclusionModalOpen(true)}
+                  className="h-8 text-[13px] font-bold gap-1 px-3 rounded-lg border-white/[0.08] hover:bg-white/[0.06] text-zinc-300 hover:text-zinc-100 cursor-pointer bg-transparent shrink-0"
+                  title="Open ICP Exclusion & Automated Disqualification Engine"
+                >
+                  <Filter className="w-3.5 h-3.5 text-zinc-400" />
+                  <span>ICP Exclusion Criteria</span>
+                  {priorityOverview.doNotPursue > 0 && (
+                    <span className="ml-1 inline-flex items-center px-1.5 py-0 rounded text-[10px] font-bold text-red-300 bg-red-500/15 border border-red-500/25">
+                      {priorityOverview.doNotPursue}
+                    </span>
+                  )}
+                </Button>
               )}
             </div>
 
@@ -1075,7 +1189,7 @@ export function Dashboard({
                   if (acc.isDisqualified || info.priorityFlag === 'Do Not Pursue') return;
                   const idx = Math.min(4, Math.floor((acc.fitScore ?? 0) / 20));
                   if (info.priorityFlag === 'Immediate Action Required') immBins[idx].count++;
-                  else if (info.priorityFlag === 'Nurture Queue') nurBins[idx].count++;
+                  else if (info.priorityFlag === 'Warm Track') nurBins[idx].count++;
                   else stdBins[idx].count++;
                 });
 
@@ -1092,14 +1206,14 @@ export function Dashboard({
 
                 return (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* Card 1: All Candidates — HERO DONUT with vertical legend list */}
+                {/* Card 1: Total Pipeline — HERO DONUT with vertical legend list */}
                 <div
                   onClick={() => setPriorityFilter('all')}
                   className="relative overflow-hidden p-4 rounded-2xl border transition-all cursor-pointer text-left border-[#1d8ecd] bg-gradient-to-br from-[#1d8ecd]/15 to-[#1d8ecd]/[0.05] dark:from-[#1d8ecd]/30 dark:to-[#1d8ecd]/15 ring-1 ring-[#1d8ecd]/30"
                 >
                   <div className="flex items-center gap-1.5 mb-1">
                     <Compass className="w-4 h-4 text-[#1d8ecd]" />
-                    <span className="text-[18px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">All Candidates</span>
+                    <span className="text-[18px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Total Pipeline</span>
                   </div>
                   <p className="text-[11px] text-slate-600 dark:text-zinc-400 mb-3 leading-snug">
                     Full pipeline coverage across every priority tier
@@ -1159,7 +1273,7 @@ export function Dashboard({
                   {/* Pulsing accent bar at top */}
                   <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-rose-400 via-rose-500 to-orange-500 animate-pulse" />
 
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-1.5">
                       <TrendingUp className="w-4 h-4 text-rose-500 dark:text-rose-400" />
                       <span className="text-[18px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Immediate Action</span>
@@ -1174,6 +1288,9 @@ export function Dashboard({
                       </span>
                     )}
                   </div>
+                  <p className="text-[11px] text-slate-600 dark:text-zinc-400 mb-3 leading-snug">
+                    Hot buyers ready now — reach out within 48 hours
+                  </p>
 
                   {/* Huge dominant count */}
                   <div className="text-5xl font-semibold font-mono text-rose-600 dark:text-rose-300 leading-none mb-1" style={{ letterSpacing: '-0.04em' }}>
@@ -1184,26 +1301,44 @@ export function Dashboard({
                   </div>
 
                   {/* Slim bar chart at the bottom */}
-                  <div className="h-8 -mx-1" onClick={(e) => e.stopPropagation()}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={immBins} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                        <Bar dataKey="count" fill="#f43f5e" radius={[2, 2, 0, 0]} />
-                        <Tooltip cursor={{ fill: 'rgba(244,63,94,0.12)' }} contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
+                  {(() => {
+                    const immTotal = immBins.reduce((s, b) => s + b.count, 0);
+                    const chartData = immTotal > 0
+                      ? immBins
+                      : immBins.map(b => ({ ...b, count: 1, _empty: true }));
+                    return (
+                      <div className="h-10 -mx-1" onClick={(e) => e.stopPropagation()}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={chartData} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
+                            <Bar
+                              dataKey="count"
+                              fill={immTotal > 0 ? '#f43f5e' : '#fecdd3'}
+                              radius={[2, 2, 0, 0]}
+                              minPointSize={2}
+                            />
+                            {immTotal > 0 && (
+                              <Tooltip cursor={{ fill: 'rgba(244,63,94,0.12)' }} contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
+                            )}
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    );
+                  })()}
                   <div className="mt-1 text-[9px] font-mono uppercase tracking-wider text-rose-500/70 dark:text-rose-300/70">Fit-score distribution</div>
                 </div>
 
-                {/* Card 3: Nurture Queue — CENTERED RADIAL GAUGE dominating the card */}
+                {/* Card 3: Warm Track — CENTERED RADIAL GAUGE dominating the card */}
                 <div
                   onClick={() => setPriorityFilter('nurture')}
                   className="relative overflow-hidden p-4 rounded-2xl border transition-all cursor-pointer text-left flex flex-col items-center border-teal-500 bg-gradient-to-br from-teal-100 to-teal-50 dark:from-teal-900/40 dark:to-teal-950/20 ring-1 ring-teal-300"
                 >
-                  <div className="w-full flex items-center gap-1.5 mb-2">
+                  <div className="w-full flex items-center gap-1.5 mb-1">
                     <Clock className="w-4 h-4 text-teal-600 dark:text-teal-300" />
-                    <span className="text-[18px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Nurture Queue</span>
+                    <span className="text-[18px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Warm Track</span>
                   </div>
+                  <p className="w-full text-[11px] text-slate-600 dark:text-zinc-400 mb-3 leading-snug">
+                    Right customer, wrong time — stay in touch until they're ready to buy
+                  </p>
 
                   {/* Big centered radial gauge */}
                   <div className="relative w-28 h-28 my-1" onClick={(e) => e.stopPropagation()}>
@@ -1248,10 +1383,13 @@ export function Dashboard({
                   onClick={() => setPriorityFilter('standard')}
                   className="p-4 rounded-2xl border transition-all cursor-pointer text-left border-amber-500 bg-gradient-to-br from-amber-100 to-amber-50 dark:from-amber-900/40 dark:to-amber-950/20 ring-1 ring-amber-300"
                 >
-                  <div className="flex items-center gap-1.5 mb-2">
+                  <div className="flex items-center gap-1.5 mb-1">
                     <Lightbulb className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
                     <span className="text-[18px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Standard follow-up</span>
                   </div>
+                  <p className="text-[11px] text-slate-600 dark:text-zinc-400 mb-3 leading-snug">
+                    Lower priority — check back with a light touch every few months
+                  </p>
 
                   {/* Big monospace number, no chart */}
                   <div className="text-4xl font-semibold font-mono text-slate-700 dark:text-zinc-100 leading-none mb-3" style={{ letterSpacing: '-0.03em' }}>
@@ -1282,48 +1420,35 @@ export function Dashboard({
             </div>
             )}
 
-            {/* ICP Exclusion & Disqualification Signal Controls */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-xs hover:shadow-sm transition-all text-left">
-              <div 
-                onClick={() => setIsICPExclusionPanelExpanded(!isICPExclusionPanelExpanded)}
-                className="p-5 flex items-center justify-between cursor-pointer bg-slate-50/50 dark:bg-slate-800/50 hover:bg-slate-50/80 transition-colors border-b border-slate-100 dark:border-slate-800 select-none pb-4"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-red-50 dark:bg-red-950/40 rounded-xl text-red-600 dark:text-red-300 border border-red-100 dark:border-red-800/50 shrink-0">
-                    <AlertTriangle className="w-4 h-4" />
+            {/* ICP Exclusion & Disqualification Signal Controls — Modal */}
+            <Dialog open={isICPExclusionModalOpen} onOpenChange={setIsICPExclusionModalOpen}>
+              <DialogContent className="w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] sm:w-full sm:max-w-2xl md:max-w-3xl lg:max-w-4xl bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-700 rounded-2xl font-sans shadow-sm max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+                <DialogHeader className="space-y-1.5 text-left border-b border-slate-100 dark:border-slate-800 pb-4">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-red-50 dark:bg-red-950/40 rounded-xl text-red-600 dark:text-red-300 border border-red-100 dark:border-red-800/50 shrink-0">
+                      <AlertTriangle className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <DialogTitle className="text-sm font-semibold text-slate-800 dark:text-slate-200 font-sans leading-snug break-words">
+                        ICP Exclusion & Automated Disqualification Engine
+                      </DialogTitle>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold text-red-700 dark:text-red-300 bg-red-100/80 dark:bg-red-900/40 border border-red-200 dark:border-red-800/60">
+                          {priorityOverview.doNotPursue} Account{priorityOverview.doNotPursue === 1 ? '' : 's'} Excluded
+                        </span>
+                        <span className="text-[10px] sm:text-[11px] font-bold font-mono uppercase bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-200 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/60">Live: Active</span>
+                      </div>
+                      <DialogDescription className="text-[12px] sm:text-[13px] text-slate-500 dark:text-slate-300 font-medium font-sans mt-1.5">
+                        Configure thresholds and signal exclusions to isolate poor-fit, low-priority candidates.
+                      </DialogDescription>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex flex-wrap items-center gap-2">
-                      ICP Exclusion & Automated Disqualification Engine
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-bold text-red-700 dark:text-red-300 bg-red-100/80 dark:bg-red-900/40 border border-red-200 dark:border-red-800/60">
-                        {priorityOverview.doNotPursue} Account{priorityOverview.doNotPursue === 1 ? '' : 's'} Excluded
-                      </span>
-                    </h3>
-                    <p className="text-[13px] text-slate-500 dark:text-slate-300 font-medium">Configure thresholds and signal exclusions to isolate poor-fit, low-priority candidates.</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <div className="text-right hidden sm:block">
-                    <span className="text-[12px] font-bold font-mono uppercase bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-200 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/60">Live Scoring Exclusion: Active</span>
-                  </div>
-                  <ChevronDown className={`w-4 h-4 text-slate-405 transition-transform duration-300 ${isICPExclusionPanelExpanded ? 'rotate-180' : ''}`} />
-                </div>
-              </div>
+                </DialogHeader>
 
-              <AnimatePresence initial={false}>
-                {isICPExclusionPanelExpanded && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.25, ease: 'easeInOut' }}
-                    className="overflow-hidden border-t border-slate-100 dark:border-slate-800"
-                  >
-                    <div className="p-6 space-y-6">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-left">
-                        {/* Header / Config controls */}
-                        <div className="space-y-4">
-                          <div>
+                <div className="pt-4 space-y-6">
+                  <div className="space-y-5 text-left">
+                        {/* All 4 exclusion sections stack one per row */}
+                        <div>
                             <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-normal mb-2">1. Company Headcount Exclusions</h4>
                             <div className="p-4 bg-slate-50/70 dark:bg-slate-800/50 rounded-xl border border-slate-150 dark:border-slate-700 space-y-3">
                               <div className="flex justify-between items-center">
@@ -1345,129 +1470,409 @@ export function Dashboard({
 
                           <div>
                             <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-normal mb-2">2. Geographic Boundaries Exclusions</h4>
-                            <div className="p-4 bg-slate-50/70 dark:bg-slate-800/50 rounded-xl border border-slate-150 dark:border-slate-700 space-y-2">
-                              <p className="text-[12px] text-slate-450 mb-2">Exclude campaigns from regions with trade blocks, complex timezone issues, or structural barriers:</p>
-                              <div className="flex flex-wrap gap-1.5">
-                                {['Restricted Eurasia', 'LATAM', 'APAC', 'Eastern Europe', 'Western Europe'].map((geo) => {
-                                  const active = excludedGeographies.includes(geo);
-                                  return (
-                                    <button
-                                      key={geo}
-                                      onClick={() => {
-                                        setExcludedGeographies(prev => 
-                                          prev.includes(geo) ? prev.filter(g => g !== geo) : [...prev, geo]
+                            <div className="p-4 bg-slate-50/70 dark:bg-slate-800/50 rounded-xl border border-slate-150 dark:border-slate-700 space-y-3">
+                              <p className="text-[12px] text-slate-450">Exclude campaigns by country + state, or use quick-add regions for broader blocks:</p>
+
+                              {/* Searchable multi-select country picker */}
+                              {(() => {
+                                const q = countrySearchQuery.trim().toLowerCase();
+                                const filteredCountries = q
+                                  ? COUNTRIES.filter(c => c.toLowerCase().includes(q))
+                                  : COUNTRIES;
+                                const togglePending = (country: string) => {
+                                  setPendingCountrySelections(prev => {
+                                    const next = prev.includes(country) ? prev.filter(c => c !== country) : [...prev, country];
+                                    // state pick is only meaningful when exactly one country is queued — reset otherwise
+                                    if (next.length !== 1) setPendingStateSelect('');
+                                    return next;
+                                  });
+                                };
+                                const stateEligibleCountry =
+                                  pendingCountrySelections.length === 1 && COUNTRY_STATES[pendingCountrySelections[0]]
+                                    ? pendingCountrySelections[0]
+                                    : '';
+                                const commitPending = () => {
+                                  // If exactly 1 country + state selected → save as "State, Country" precision entry.
+                                  if (stateEligibleCountry && pendingStateSelect) {
+                                    const entry = `${pendingStateSelect}, ${stateEligibleCountry}`;
+                                    if (excludedGeographies.includes(entry)) {
+                                      toast.error(`"${entry}" is already excluded.`);
+                                      return;
+                                    }
+                                    setExcludedGeographies(prev => [...prev, entry]);
+                                    setPendingCountrySelections([]);
+                                    setPendingStateSelect('');
+                                    setCountrySearchQuery('');
+                                    toast.success(`Excluded "${entry}". Fit scores updated in real time.`);
+                                    return;
+                                  }
+                                  // Otherwise: bulk country-level exclusion for all pending picks.
+                                  const fresh = pendingCountrySelections.filter(c => !excludedGeographies.includes(c));
+                                  if (fresh.length === 0) {
+                                    toast.error('All selected countries are already excluded.');
+                                    return;
+                                  }
+                                  setExcludedGeographies(prev => [...prev, ...fresh]);
+                                  setPendingCountrySelections([]);
+                                  setPendingStateSelect('');
+                                  setCountrySearchQuery('');
+                                  toast.success(`Excluded ${fresh.length} countr${fresh.length === 1 ? 'y' : 'ies'}. Fit scores updated in real time.`);
+                                };
+                                return (
+                                  <div className="space-y-2">
+                                    {/* Search */}
+                                    <div className="relative">
+                                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                                      <input
+                                        type="text"
+                                        value={countrySearchQuery}
+                                        onChange={(e) => setCountrySearchQuery(e.target.value)}
+                                        placeholder={`Search ${COUNTRIES.length} countries…`}
+                                        className={`w-full h-9 pl-8 ${countrySearchQuery ? 'pr-8' : 'pr-2.5'} rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[13px] text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500`}
+                                      />
+                                      {countrySearchQuery && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setCountrySearchQuery('')}
+                                          title="Clear search"
+                                          className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                        >
+                                          <X className="w-3 h-3" />
+                                        </button>
+                                      )}
+                                    </div>
+
+                                    {/* Scrollable checkbox list */}
+                                    <div className="max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-1.5">
+                                      {filteredCountries.length === 0 ? (
+                                        <div className="text-center text-[12px] text-slate-400 py-4">No countries match "{countrySearchQuery}"</div>
+                                      ) : (
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-2 gap-y-0.5">
+                                          {filteredCountries.map(country => {
+                                            const isChecked = pendingCountrySelections.includes(country);
+                                            const isAlreadyExcluded = excludedGeographies.includes(country);
+                                            return (
+                                              <label
+                                                key={country}
+                                                className={`flex items-center gap-1.5 px-1.5 py-1 rounded text-[12px] font-medium transition-colors cursor-pointer select-none ${
+                                                  isAlreadyExcluded
+                                                    ? 'text-red-500 dark:text-red-400 cursor-not-allowed opacity-70'
+                                                    : isChecked
+                                                    ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
+                                                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                                }`}
+                                                title={isAlreadyExcluded ? 'Already excluded' : ''}
+                                              >
+                                                <input
+                                                  type="checkbox"
+                                                  checked={isChecked || isAlreadyExcluded}
+                                                  disabled={isAlreadyExcluded}
+                                                  onChange={() => togglePending(country)}
+                                                  className="w-3.5 h-3.5 accent-indigo-600 cursor-pointer disabled:cursor-not-allowed"
+                                                />
+                                                <span className="truncate">{country}</span>
+                                              </label>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* State/region dropdown — activates only when exactly 1 pending country with states */}
+                                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                                      <label className="text-[11px] font-mono uppercase tracking-wider text-slate-400 dark:text-slate-500 sm:shrink-0">
+                                        State / region (optional)
+                                      </label>
+                                      <select
+                                        value={pendingStateSelect}
+                                        onChange={(e) => setPendingStateSelect(e.target.value)}
+                                        disabled={!stateEligibleCountry}
+                                        title={
+                                          pendingCountrySelections.length === 0
+                                            ? 'Pick one country first'
+                                            : pendingCountrySelections.length > 1
+                                            ? 'State picker only works with a single country selected'
+                                            : !stateEligibleCountry
+                                            ? `${pendingCountrySelections[0]} has no state data`
+                                            : ''
+                                        }
+                                        className="flex-1 min-w-0 h-9 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[13px] text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed truncate"
+                                      >
+                                        <option value="">
+                                          {stateEligibleCountry
+                                            ? `— Select state / region in ${stateEligibleCountry} —`
+                                            : pendingCountrySelections.length === 0
+                                            ? '— Pick 1 country to unlock —'
+                                            : pendingCountrySelections.length > 1
+                                            ? '— Reduce to 1 country to enable —'
+                                            : `— ${pendingCountrySelections[0]} has no state data —`}
+                                        </option>
+                                        {stateEligibleCountry &&
+                                          (COUNTRY_STATES[stateEligibleCountry] || []).map(s => (
+                                            <option key={s} value={s}>{s}</option>
+                                          ))}
+                                      </select>
+                                    </div>
+
+                                    {/* Action row */}
+                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                                      <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                                        {pendingCountrySelections.length === 0
+                                          ? `Showing ${filteredCountries.length} of ${COUNTRIES.length}`
+                                          : pendingStateSelect
+                                          ? <><span className="font-semibold text-indigo-600 dark:text-indigo-300">{pendingStateSelect}, {stateEligibleCountry}</span> ready</>
+                                          : <><span className="font-semibold text-indigo-600 dark:text-indigo-300">{pendingCountrySelections.length}</span> selected</>}
+                                      </div>
+                                      <div className="flex gap-2">
+                                        {(pendingCountrySelections.length > 0 || pendingStateSelect) && (
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() => { setPendingCountrySelections([]); setPendingStateSelect(''); }}
+                                            className="h-8 px-3 text-[12px] font-semibold text-slate-500 hover:text-slate-800 cursor-pointer"
+                                          >
+                                            Clear selection
+                                          </Button>
+                                        )}
+                                        <Button
+                                          size="sm"
+                                          variant="default"
+                                          disabled={pendingCountrySelections.length === 0}
+                                          onClick={commitPending}
+                                          className="h-8 px-3 gap-1 bg-indigo-600 hover:bg-indigo-500 text-white text-[12px] font-bold rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                          <Plus className="w-3.5 h-3.5" />
+                                          {stateEligibleCountry && pendingStateSelect
+                                            ? `Add state exclusion`
+                                            : `Add ${pendingCountrySelections.length > 0 ? `${pendingCountrySelections.length} ` : ''}exclusion${pendingCountrySelections.length === 1 ? '' : 's'}`}
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+
+                              {/* Unified chip list — active exclusions (custom country/state + preset region) first, then remaining presets */}
+                              {(() => {
+                                const PRESET_REGIONS = [
+                                  'Restricted Eurasia', 'LATAM', 'APAC', 'Eastern Europe',
+                                  'Western Europe', 'EMEA', 'Sub-Saharan Africa',
+                                ];
+                                const customActive = excludedGeographies.filter(g => !PRESET_REGIONS.includes(g));
+                                const presetActive = PRESET_REGIONS.filter(g => excludedGeographies.includes(g));
+                                const presetInactive = PRESET_REGIONS.filter(g => !excludedGeographies.includes(g));
+                                const orderedChips = [...customActive, ...presetActive, ...presetInactive];
+                                return (
+                                  <div className="pt-1">
+                                    <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1.5">
+                                      Regions — {excludedGeographies.length} excluded
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {orderedChips.map((geo) => {
+                                        const active = excludedGeographies.includes(geo);
+                                        const isCustom = !PRESET_REGIONS.includes(geo);
+                                        return (
+                                          <button
+                                            key={geo}
+                                            onClick={() => {
+                                              setExcludedGeographies(prev =>
+                                                prev.includes(geo) ? prev.filter(g => g !== geo) : [...prev, geo]
+                                              );
+                                            }}
+                                            title={active ? 'Click to remove from exclusions' : 'Click to add to exclusions'}
+                                            className={`px-2 py-1 rounded text-[12px] font-bold border transition-colors cursor-pointer ${
+                                              active
+                                                ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-950/60'
+                                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:text-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                            }`}
+                                          >
+                                            {active ? '❌ ' : '+ '}{geo}
+                                            {isCustom && <span className="ml-1 text-[9px] font-mono uppercase opacity-70">custom</span>}
+                                          </button>
                                         );
-                                      }}
-                                      className={`px-2 py-1 rounded text-[12px] font-bold border transition-colors cursor-pointer ${
-                                        active 
-                                          ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300' 
-                                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:text-slate-800 hover:bg-slate-105'
-                                      }`}
-                                    >
-                                      {active ? '❌ ' : ''}{geo}
-                                    </button>
-                                  );
-                                })}
-                              </div>
+                                      })}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </div>
-                        </div>
 
-                        <div className="space-y-4">
-                          <div>
+                        <div>
                             <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-normal mb-2">3. Prohibited/Restricted Sectors Exclusions</h4>
-                            <div className="p-4 bg-slate-50/70 dark:bg-slate-800/50 rounded-xl border border-slate-150 dark:border-slate-700 space-y-2">
-                              <p className="text-[12px] text-slate-450 mb-2">Exclude fields experiencing public sovereignty blocks, intense ITAR security, or high general volatility:</p>
-                              <div className="flex flex-wrap gap-1.5">
-                                {['Military / Combat Systems', 'Cryptocurrency / Web3', 'Gambling', 'Local Boutique Design', 'Healthcare Tech', 'Enterprise Software'].map((ind) => {
-                                  const active = excludedIndustries.includes(ind);
-                                  return (
-                                    <button
-                                      key={ind}
-                                      onClick={() => {
-                                        setExcludedIndustries(prev => 
-                                          prev.includes(ind) ? prev.filter(i => i !== ind) : [...prev, ind]
-                                        );
-                                      }}
-                                      className={`px-2 py-1 rounded text-[12px] font-bold border transition-colors cursor-pointer ${
-                                        active 
-                                          ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300' 
-                                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:text-slate-800 hover:bg-slate-105'
-                                      }`}
+                            <div className="p-4 bg-slate-50/70 dark:bg-slate-800/50 rounded-xl border border-slate-150 dark:border-slate-700 space-y-3">
+                              <p className="text-[12px] text-slate-450">Type any industry/sector to exclude (e.g. "Adult Entertainment", "Fossil Fuel Extraction"), or use the quick-add presets:</p>
+
+                              {/* Custom industry input + Add button */}
+                              {(() => {
+                                const commitIndustry = () => {
+                                  const entry = industryInputValue.trim();
+                                  if (!entry) return;
+                                  if (excludedIndustries.some(i => i.toLowerCase() === entry.toLowerCase())) {
+                                    toast.error(`"${entry}" is already excluded.`);
+                                    return;
+                                  }
+                                  setExcludedIndustries(prev => [...prev, entry]);
+                                  setIndustryInputValue('');
+                                  toast.success(`Excluded "${entry}". All account fit scores updated in real time.`);
+                                };
+                                return (
+                                  <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto] gap-2">
+                                    <input
+                                      type="text"
+                                      value={industryInputValue}
+                                      onChange={(e) => setIndustryInputValue(e.target.value)}
+                                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitIndustry(); } }}
+                                      placeholder="e.g. Adult Entertainment, Payday Lending, Firearms"
+                                      className="min-w-0 w-full h-9 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[13px] text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                                    />
+                                    <Button
+                                      size="sm"
+                                      variant="default"
+                                      disabled={!industryInputValue.trim()}
+                                      onClick={commitIndustry}
+                                      className="h-9 px-4 gap-1 bg-indigo-600 hover:bg-indigo-500 text-white text-[13px] font-bold rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed w-full lg:w-auto"
                                     >
-                                      {active ? '❌ ' : ''}{ind}
-                                    </button>
-                                  );
-                                })}
-                              </div>
+                                      <Plus className="w-3.5 h-3.5" />
+                                      Add exclusion
+                                    </Button>
+                                  </div>
+                                );
+                              })()}
+
+                              {/* Unified chip list — active exclusions (custom + preset) first, then remaining presets */}
+                              {(() => {
+                                const PRESET_INDUSTRIES = [
+                                  'Military / Combat Systems', 'Cryptocurrency / Web3', 'Gambling',
+                                  'Adult Entertainment', 'Payday Lending', 'Firearms', 'Tobacco',
+                                  'Fossil Fuel Extraction', 'Local Boutique Design', 'Healthcare Tech', 'Enterprise Software',
+                                ];
+                                const customActive = excludedIndustries.filter(i => !PRESET_INDUSTRIES.includes(i));
+                                const presetActive = PRESET_INDUSTRIES.filter(i => excludedIndustries.includes(i));
+                                const presetInactive = PRESET_INDUSTRIES.filter(i => !excludedIndustries.includes(i));
+                                const orderedChips = [...customActive, ...presetActive, ...presetInactive];
+                                return (
+                                  <div className="pt-1">
+                                    <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1.5">
+                                      Sectors — {excludedIndustries.length} excluded
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {orderedChips.map((ind) => {
+                                        const active = excludedIndustries.includes(ind);
+                                        const isCustom = !PRESET_INDUSTRIES.includes(ind);
+                                        return (
+                                          <button
+                                            key={ind}
+                                            onClick={() => {
+                                              setExcludedIndustries(prev =>
+                                                prev.includes(ind) ? prev.filter(i => i !== ind) : [...prev, ind]
+                                              );
+                                            }}
+                                            title={active ? 'Click to remove from exclusions' : 'Click to add to exclusions'}
+                                            className={`px-2 py-1 rounded text-[12px] font-bold border transition-colors cursor-pointer ${
+                                              active
+                                                ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-950/60'
+                                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:text-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                            }`}
+                                          >
+                                            {active ? '❌ ' : '+ '}{ind}
+                                            {isCustom && <span className="ml-1 text-[9px] font-mono uppercase opacity-70">custom</span>}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </div>
 
                           <div>
-                            <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-normal mb-2">4. Technology Incompatibilities & Financial Strains</h4>
-                            <div className="grid grid-cols-2 gap-3 text-left">
-                              <div className="p-3 bg-slate-50/70 dark:bg-slate-800/50 rounded-xl border border-slate-150 dark:border-slate-700">
-                                <span className="text-[12px] font-bold text-slate-500 dark:text-slate-300 block mb-1.5">Legacy Core Tech:</span>
-                                <div className="flex flex-wrap gap-1">
-                                  {['COBOL Mainframe', 'Revit', 'MicroStation'].map(tech => {
-                                    const active = excludedTechStacks.includes(tech);
-                                    return (
+                            <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-normal mb-2">4. Financial Strains Exclusions</h4>
+                            <div className="p-4 bg-slate-50/70 dark:bg-slate-800/50 rounded-xl border border-slate-150 dark:border-slate-700 space-y-3">
+                              <p className="text-[12px] text-slate-450">Type any financial-distress signal to exclude (e.g. "Missed Debt Payments", "Credit Downgrade"), or use the quick-add presets:</p>
+
+                              {/* Custom financial-stress input + Add button */}
+                              {(() => {
+                                const commitFinancial = () => {
+                                  const entry = financialInputValue.trim();
+                                  if (!entry) return;
+                                  if (excludedFinancialStatuses.some(f => f.toLowerCase() === entry.toLowerCase())) {
+                                    toast.error(`"${entry}" is already excluded.`);
+                                    return;
+                                  }
+                                  setExcludedFinancialStatuses(prev => [...prev, entry]);
+                                  setFinancialInputValue('');
+                                  toast.success(`Excluded "${entry}". All account fit scores updated in real time.`);
+                                };
+                                return (
+                                  <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto] gap-2">
+                                    <input
+                                      type="text"
+                                      value={financialInputValue}
+                                      onChange={(e) => setFinancialInputValue(e.target.value)}
+                                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitFinancial(); } }}
+                                      placeholder="e.g. Missed Debt Payments, Credit Downgrade, Restructuring"
+                                      className="min-w-0 w-full h-9 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[13px] text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                                    />
+                                    <Button
+                                      size="sm"
+                                      variant="default"
+                                      disabled={!financialInputValue.trim()}
+                                      onClick={commitFinancial}
+                                      className="h-9 px-4 gap-1 bg-indigo-600 hover:bg-indigo-500 text-white text-[13px] font-bold rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed w-full lg:w-auto"
+                                    >
+                                      <Plus className="w-3.5 h-3.5" />
+                                      Add exclusion
+                                    </Button>
+                                  </div>
+                                );
+                              })()}
+
+                              {/* Unified chip list — active exclusions (custom + preset) first, then remaining presets */}
+                              {(() => {
+                                const PRESET_FINANCIAL = [
+                                  'Layoffs', 'Bankruptcy', 'Cash-Strap Strain',
+                                  'Restructuring', 'Credit Downgrade', 'Chapter 11',
+                                  'Missed Debt Payments', 'Cost Cuts', 'Hiring Freeze',
+                                ];
+                                const customActive = excludedFinancialStatuses.filter(f => !PRESET_FINANCIAL.includes(f));
+                                const presetActive = PRESET_FINANCIAL.filter(f => excludedFinancialStatuses.includes(f));
+                                const presetInactive = PRESET_FINANCIAL.filter(f => !excludedFinancialStatuses.includes(f));
+                                const ordered: { label: string; active: boolean; custom: boolean }[] = [
+                                  ...customActive.map(l => ({ label: l, active: true, custom: true })),
+                                  ...presetActive.map(l => ({ label: l, active: true, custom: false })),
+                                  ...presetInactive.map(l => ({ label: l, active: false, custom: false })),
+                                ];
+                                return (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {ordered.map(({ label, active, custom }) => (
                                       <button
-                                        key={tech}
+                                        key={label}
                                         onClick={() => {
-                                          setExcludedTechStacks(prev => 
-                                            prev.includes(tech) ? prev.filter(t => t !== tech) : [...prev, tech]
+                                          setExcludedFinancialStatuses(prev =>
+                                            prev.includes(label) ? prev.filter(f => f !== label) : [...prev, label]
                                           );
                                         }}
-                                        className={`px-1.5 py-0.5 rounded text-[11px] font-bold border transition-colors cursor-pointer ${
-                                          active ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300 font-semibold shadow-xxs' : 'bg-white dark:bg-slate-900 border-slate-150 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:bg-slate-105'
+                                        className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-colors cursor-pointer ${
+                                          active
+                                            ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300 shadow-xxs'
+                                            : 'bg-white dark:bg-slate-900 border-slate-150 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:bg-slate-105'
                                         }`}
                                       >
-                                        {tech}
+                                        {label}
+                                        {custom && <span className="ml-1 text-[9px] font-semibold uppercase tracking-wide opacity-70">custom</span>}
                                       </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                              
-                              <div className="p-3 bg-slate-50/70 dark:bg-slate-800/50 rounded-xl border border-slate-150 dark:border-slate-700">
-                                <span className="text-[12px] font-bold text-slate-500 dark:text-slate-300 block mb-1.5">Financial Stress:</span>
-                                <div className="flex flex-wrap gap-1">
-                                  {['Layoffs', 'Bankruptcy', 'Cash-Strap Strain'].map(stress => {
-                                    const active = excludedFinancialStatuses.includes(stress);
-                                    return (
-                                      <button
-                                        key={stress}
-                                        onClick={() => {
-                                          setExcludedFinancialStatuses(prev => 
-                                            prev.includes(stress) ? prev.filter(s => s !== stress) : [...prev, stress]
-                                          );
-                                        }}
-                                        className={`px-1.5 py-0.5 rounded text-[11px] font-bold border transition-colors cursor-pointer ${
-                                          active ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300 font-semibold shadow-xxs' : 'bg-white dark:bg-slate-900 border-slate-150 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:bg-slate-105'
-                                        }`}
-                                      >
-                                        {stress}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
+                                    ))}
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="border-t border-slate-100 dark:border-slate-800 pt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                      <div className="border-t border-slate-100 dark:border-slate-800 pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div className="flex items-center gap-3 flex-wrap">
-                          <Button
-                            variant={hideDisqualified ? 'destructive' : 'outline'}
-                            size="sm"
-                            onClick={() => setHideDisqualified(!hideDisqualified)}
-                            className="gap-2 text-[13px] font-semibold h-9 cursor-pointer"
-                          >
-                            {hideDisqualified ? '👁️ Show Excluded Accounts' : '🙈 Hide Disqualified From Grid'}
-                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
@@ -1485,15 +1890,193 @@ export function Dashboard({
                             Clear Exclusions
                           </Button>
                         </div>
-                        <div className="text-right text-[13px] text-slate-500 dark:text-slate-300 font-medium">
+                        <div className="text-left sm:text-right text-[12px] sm:text-[13px] text-slate-500 dark:text-slate-300 font-medium leading-snug">
                           💡 Exclusions automatically override indices: Forced to <span className="font-bold text-red-650 dark:text-red-300 font-mono">0% fit</span> with priority flagged as <span className="font-semibold text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/60 px-1 rounded">Do Not Pursue</span>.
                         </div>
                       </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            {/* Scoring & Interpretation Guide — Modal */}
+            <Dialog open={isScoringGuideOpen} onOpenChange={setIsScoringGuideOpen}>
+              <DialogContent className="w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] sm:w-full sm:max-w-2xl md:max-w-3xl lg:max-w-4xl bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-700 rounded-2xl font-sans shadow-sm max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+                <DialogHeader className="space-y-1.5 text-left border-b border-slate-100 dark:border-slate-800 pb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shrink-0 shadow-sm">
+                      <BookOpen className="w-4 h-4 text-white" />
                     </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
+                    <div className="min-w-0">
+                      <DialogTitle className="text-sm font-semibold text-slate-800 dark:text-slate-200 font-sans leading-snug">
+                        Scoring & Interpretation Guide
+                      </DialogTitle>
+                      <DialogDescription className="text-[12px] sm:text-[13px] text-slate-500 dark:text-slate-300 font-medium font-sans mt-0.5">
+                        How the AI scores each account and what to do with the tiers.
+                      </DialogDescription>
+                    </div>
+                  </div>
+                </DialogHeader>
+
+                <div className="space-y-6 pt-4 text-left">
+                  {/* 1. The two core scores */}
+                  <section className="space-y-2.5">
+                    <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">1. The Two Core Scores</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="p-3 rounded-xl border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50/50 dark:bg-indigo-500/10">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                          <span className="text-[12px] font-bold text-indigo-700 dark:text-indigo-300 uppercase tracking-wider">Fit Score</span>
+                        </div>
+                        <p className="text-[13px] text-slate-700 dark:text-slate-300 leading-relaxed">
+                          <strong>Are they the right kind of customer?</strong> Measures how well the account matches your ICP — industry, size, tech stack, budget shape. Static — doesn't change day-to-day.
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-xl border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-500/10">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          <span className="text-[12px] font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider">Timing Score</span>
+                        </div>
+                        <p className="text-[13px] text-slate-700 dark:text-slate-300 leading-relaxed">
+                          <strong>Are they ready to buy right now?</strong> Reads recent intent signals — funding rounds, leadership changes, job posts, tech migrations. Dynamic — decays as signals age.
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-[12px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                      Signals older than <strong>90 days</strong> start losing weight; anything past <strong>180 days</strong> counts as zero and triggers a "re-research" flag.
+                    </p>
+                  </section>
+
+                  {/* 2. Priority tier ladder */}
+                  <section className="space-y-2.5">
+                    <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">2. Priority Tier Classification</h4>
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                      <table className="w-full text-[13px]">
+                        <thead className="bg-slate-50 dark:bg-slate-800/70">
+                          <tr>
+                            <th className="text-left px-3 py-2 font-semibold text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">Tier</th>
+                            <th className="text-left px-3 py-2 font-semibold text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">Rule</th>
+                            <th className="text-left px-3 py-2 font-semibold text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">What to do</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white dark:bg-slate-900">
+                          <tr className="border-b border-slate-100 dark:border-slate-800">
+                            <td className="px-3 py-2.5 align-top">
+                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-500/30">🔴 Immediate</span>
+                            </td>
+                            <td className="px-3 py-2.5 align-top text-slate-700 dark:text-slate-300"><code className="font-mono text-[11px]">fit ≥ 85</code> AND <code className="font-mono text-[11px]">timing ≥ 80</code> AND recent signal</td>
+                            <td className="px-3 py-2.5 align-top text-slate-700 dark:text-slate-300">Reach out within <strong>48 hours</strong></td>
+                          </tr>
+                          <tr className="border-b border-slate-100 dark:border-slate-800">
+                            <td className="px-3 py-2.5 align-top">
+                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-500/30">🟢 Warm Track</span>
+                            </td>
+                            <td className="px-3 py-2.5 align-top text-slate-700 dark:text-slate-300"><code className="font-mono text-[11px]">fit ≥ 80</code> AND <code className="font-mono text-[11px]">timing &lt; 75</code></td>
+                            <td className="px-3 py-2.5 align-top text-slate-700 dark:text-slate-300">Stay in touch, warm them up over weeks</td>
+                          </tr>
+                          <tr className="border-b border-slate-100 dark:border-slate-800">
+                            <td className="px-3 py-2.5 align-top">
+                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30">🟠 Standard</span>
+                            </td>
+                            <td className="px-3 py-2.5 align-top text-slate-700 dark:text-slate-300">Everything else</td>
+                            <td className="px-3 py-2.5 align-top text-slate-700 dark:text-slate-300">Light-touch check-in every few months</td>
+                          </tr>
+                          <tr>
+                            <td className="px-3 py-2.5 align-top">
+                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-500/30">⛔ Do Not Pursue</span>
+                            </td>
+                            <td className="px-3 py-2.5 align-top text-slate-700 dark:text-slate-300">Hits any ICP exclusion rule</td>
+                            <td className="px-3 py-2.5 align-top text-slate-700 dark:text-slate-300">Skip — not a fit for your business</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="flex gap-2 text-[12px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 p-2.5 rounded-lg">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span><strong>Guard rule:</strong> An account that qualifies as Immediate but has no signals in the last 90 days gets demoted to Warm Track — we don't fire urgent outreach off stale intel.</span>
+                    </div>
+                  </section>
+
+                  {/* 3. Timing stage & outreach window */}
+                  <section className="space-y-2.5">
+                    <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">3. What the Timing Score Means in Practice</h4>
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                      <table className="w-full text-[13px]">
+                        <thead className="bg-slate-50 dark:bg-slate-800/70">
+                          <tr>
+                            <th className="text-left px-3 py-2 font-semibold text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">Timing Score</th>
+                            <th className="text-left px-3 py-2 font-semibold text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">Buying stage</th>
+                            <th className="text-left px-3 py-2 font-semibold text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">Recommended window</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white dark:bg-slate-900">
+                          <tr className="border-b border-slate-100 dark:border-slate-800">
+                            <td className="px-3 py-2.5 font-mono text-slate-700 dark:text-slate-300">≥ 80</td>
+                            <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">Urgent Decision</td>
+                            <td className="px-3 py-2.5 font-semibold text-rose-600 dark:text-rose-300">Within 48 hours</td>
+                          </tr>
+                          <tr className="border-b border-slate-100 dark:border-slate-800">
+                            <td className="px-3 py-2.5 font-mono text-slate-700 dark:text-slate-300">65 – 79</td>
+                            <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">Active Evaluation</td>
+                            <td className="px-3 py-2.5 font-semibold text-amber-600 dark:text-amber-300">This week</td>
+                          </tr>
+                          <tr className="border-b border-slate-100 dark:border-slate-800">
+                            <td className="px-3 py-2.5 font-mono text-slate-700 dark:text-slate-300">&lt; 65</td>
+                            <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">Early Awareness</td>
+                            <td className="px-3 py-2.5 font-semibold text-teal-600 dark:text-teal-300">This month</td>
+                          </tr>
+                          <tr>
+                            <td className="px-3 py-2.5 font-mono text-slate-700 dark:text-slate-300">All stale</td>
+                            <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">Re-Research Required</td>
+                            <td className="px-3 py-2.5 font-semibold text-slate-500 dark:text-slate-400">Hold outreach</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+
+                  {/* 4. Priority Index */}
+                  <section className="space-y-2">
+                    <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">4. Priority Index</h4>
+                    <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                      <div className="text-[13px] font-mono text-indigo-700 dark:text-indigo-300 mb-1">
+                        Priority Index = (Fit Score + Timing Score) ÷ 2
+                      </div>
+                      <p className="text-[13px] text-slate-700 dark:text-slate-300 leading-relaxed">
+                        The single 0–100 number the dashboard uses to sort accounts. Combines "right customer" and "right time" into one line — top of the list means both are strong.
+                      </p>
+                    </div>
+                  </section>
+
+                  {/* 5. Reading the cards */}
+                  <section className="space-y-2.5">
+                    <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">5. Reading Each Card at a Glance</h4>
+                    <ul className="text-[13px] text-slate-700 dark:text-slate-300 space-y-1.5 pl-1">
+                      <li className="flex gap-2"><Compass className="w-4 h-4 text-[#1d8ecd] shrink-0 mt-0.5" /><span><strong>Total Pipeline</strong> — donut of tier composition across all active accounts.</span></li>
+                      <li className="flex gap-2"><TrendingUp className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" /><span><strong>Immediate Action</strong> — count + fit-score distribution of urgent accounts.</span></li>
+                      <li className="flex gap-2"><Clock className="w-4 h-4 text-teal-500 shrink-0 mt-0.5" /><span><strong>Warm Track</strong> — % of pipeline waiting for timing to catch up.</span></li>
+                      <li className="flex gap-2"><Lightbulb className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" /><span><strong>Standard Follow-up</strong> — tabular fit-score bins for the long-tail set.</span></li>
+                    </ul>
+                  </section>
+
+                  {/* Footer note */}
+                  <div className="flex gap-2 text-[12px] text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 p-2.5 rounded-lg">
+                    <Sparkles className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <span>Scores are recalibrated live whenever you update ICP exclusions, partner mappings, or outreach outcomes — nothing is hard-coded.</span>
+                  </div>
+                </div>
+
+                <DialogFooter className="border-t border-slate-100 dark:border-slate-800 pt-4 mt-2">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => setIsScoringGuideOpen(false)}
+                    className="h-9 px-4 bg-indigo-600 hover:bg-indigo-500 text-white text-[13px] font-bold rounded-lg cursor-pointer"
+                  >
+                    Got it
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
 
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               {/* Search Bar */}
@@ -1509,37 +2092,100 @@ export function Dashboard({
               </div>
               {/* Intelligent Filter Badges & View Switches & Export */}
               <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2 overflow-x-auto">
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={() => setSelectedFilters([])}
-                    className={`gap-2 h-8 text-xs text-slate-500 dark:text-slate-300 border rounded-lg ${selectedFilters.length === 0 ? 'bg-slate-105 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200' : 'border-transparent hover:border-slate-200'}`}
-                  >
-                    <Filter className="w-3.5 h-3.5" /> All
-                  </Button>
-                  <Badge 
-                    variant={selectedFilters.includes('70') ? 'default' : 'outline'} 
-                    onClick={() => handleToggleFilter('70')}
-                    className="h-8 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors border-slate-200 dark:border-slate-700 select-none px-3 font-medium text-xs text-slate-700 dark:text-slate-300"
-                  >
-                    Score 70+
-                  </Badge>
-                  <Badge 
-                    variant={selectedFilters.includes('Enterprise') ? 'default' : 'outline'} 
-                    onClick={() => handleToggleFilter('Enterprise')}
-                    className="h-8 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors border-slate-200 dark:border-slate-700 select-none px-3 font-medium text-xs text-slate-700 dark:text-slate-300"
-                  >
-                    Enterprise
-                  </Badge>
-                  <Badge 
-                    variant={selectedFilters.includes('Funding') ? 'default' : 'outline'} 
-                    onClick={() => handleToggleFilter('Funding')}
-                    className="h-8 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors border-slate-200 dark:border-slate-700 select-none px-3 font-medium text-xs text-slate-700 dark:text-slate-300"
-                  >
-                    Recent Funding
-                  </Badge>
-                </div>
+                {/* Grouped filter dropdown — replaces the old chip row */}
+                {(() => {
+                  const FILTER_OPTIONS: { key: string; label: string; tone?: 'red' }[] = [
+                    { key: '70', label: 'Score 70+' },
+                    { key: 'Enterprise', label: 'Enterprise' },
+                    { key: 'Funding', label: 'Recent Funding' },
+                    { key: 'Excludes', label: 'Excludes ✗', tone: 'red' },
+                  ];
+                  const activeCount = selectedFilters.length;
+                  const summary =
+                    activeCount === 0
+                      ? 'All accounts'
+                      : activeCount === 1
+                        ? FILTER_OPTIONS.find(o => o.key === selectedFilters[0])?.label ?? 'Filter'
+                        : `${activeCount} filters`;
+                  return (
+                    <div ref={filterMenuRef} className="relative">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setIsFilterMenuOpen(o => !o)}
+                        className={`gap-2 h-8 text-xs border rounded-lg px-3 ${activeCount > 0 ? 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300' : 'text-slate-500 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-300'}`}
+                      >
+                        <Filter className="w-3.5 h-3.5" />
+                        <span className="font-semibold">{summary}</span>
+                        {activeCount > 0 && (
+                          <span className="inline-flex items-center justify-center min-w-[1.25rem] h-4 px-1 rounded-full bg-indigo-600 text-white text-[10px] font-mono font-bold">
+                            {activeCount}
+                          </span>
+                        )}
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isFilterMenuOpen ? 'rotate-180' : ''}`} />
+                      </Button>
+                      {isFilterMenuOpen && (
+                        <div className="absolute left-0 top-full mt-1.5 z-30 w-64 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg overflow-hidden">
+                          <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Filter accounts</span>
+                            {activeCount > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedFilters([])}
+                                className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                              >
+                                Clear all
+                              </button>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => { setSelectedFilters([]); setIsFilterMenuOpen(false); }}
+                            className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-[13px] text-left transition-colors ${activeCount === 0 ? 'bg-slate-50 dark:bg-slate-800/60 text-slate-900 dark:text-slate-100 font-semibold' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/40'}`}
+                          >
+                            <span className="flex items-center gap-2">
+                              <Filter className="w-3.5 h-3.5 text-slate-400" />
+                              All accounts
+                            </span>
+                            {activeCount === 0 && <CheckCircle2 className="w-4 h-4 text-indigo-600" />}
+                          </button>
+                          <div className="border-t border-slate-100 dark:border-slate-800" />
+                          {FILTER_OPTIONS.map(opt => {
+                            const active = selectedFilters.includes(opt.key);
+                            const isRed = opt.tone === 'red';
+                            return (
+                              <button
+                                key={opt.key}
+                                type="button"
+                                onClick={() => handleToggleFilter(opt.key)}
+                                className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-[13px] text-left transition-colors ${
+                                  active
+                                    ? isRed
+                                      ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 font-semibold'
+                                      : 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 font-semibold'
+                                    : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                                }`}
+                              >
+                                <span className="flex items-center gap-2">
+                                  <span className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                                    active
+                                      ? isRed
+                                        ? 'bg-red-600 border-red-600'
+                                        : 'bg-indigo-600 border-indigo-600'
+                                      : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600'
+                                  }`}>
+                                    {active && <CheckCircle2 className="w-3 h-3 text-white" />}
+                                  </span>
+                                  {opt.label}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {(activeTab === 'recommendations' || activeTab === 'pipeline') && (
                   <>
@@ -1591,6 +2237,17 @@ export function Dashboard({
                     >
                       <Plus className="w-3.5 h-3.5" />
                       <span>Add Target Account</span>
+                    </Button>
+
+                    {/* Scoring & Interpretation Guide */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsScoringGuideOpen(true)}
+                      className="h-8 text-xs font-semibold gap-1.5 px-3 rounded-lg border-slate-250 dark:border-slate-700 hover:bg-indigo-50/50 hover:text-indigo-650 hover:border-indigo-200 cursor-pointer"
+                    >
+                      <BookOpen className="w-3.5 h-3.5 text-indigo-550" />
+                      <span>Guide</span>
                     </Button>
                   </>
                 )}
@@ -1800,7 +2457,7 @@ export function Dashboard({
                    <div className="relative space-y-2 max-w-2xl text-left">
                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-[12px] font-bold uppercase tracking-normal border border-indigo-500/30">
                        <Users className="w-3" />
-                       <span>Cluster Campaign Automation</span>
+                       <span>Segment Campaign Automation</span>
                      </div>
                      <h3 className="text-xl font-semibold tracking-tight text-white font-sans">Coordinated Pattern Targeting</h3>
                      <p className="text-xs text-slate-300 leading-relaxed font-sans font-normal">
@@ -1817,7 +2474,7 @@ export function Dashboard({
                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold h-10 px-4 rounded-xl shadow-xs transition-colors flex items-center gap-2 text-xs border-0"
                      >
                        <RefreshCw className={`w-4 h-4 ${isClustering ? 'animate-spin' : ''}`} />
-                       {isClustering ? 'Analyzing Clusters...' : 'Recalculate Clusters'}
+                       {isClustering ? 'Analyzing Segments...' : 'Recalculate Segments'}
                      </Button>
                    </div>
                 </div>
@@ -1845,9 +2502,9 @@ export function Dashboard({
                 ) : clusters.length === 0 ? (
                   <div className="text-center py-24 bg-white dark:bg-slate-900 border border-dashed border-slate-205 rounded-3xl p-6">
                     <Users className="w-12 h-12 text-slate-400 mx-auto mb-4" />
-                    <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 font-sans">No Target Clusters Formed</h3>
+                    <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 font-sans">No Target Segments Formed</h3>
                     <p className="text-xs text-slate-500 dark:text-slate-300 max-w-sm mx-auto mt-1 leading-relaxed font-sans font-normal">
-                      Clusters require active discovered or imported accounts to formulate similarities of scale. Use the "Discovery" tab or upload custom accounts first.
+                      Segments require active discovered or imported accounts to formulate similarities of scale. Use the "Discovery" tab or upload custom accounts first.
                     </p>
                   </div>
                 ) : (
@@ -1948,27 +2605,29 @@ export function Dashboard({
                               <div className="space-y-2 text-left">
                                 <h4 className="text-[13px] font-semibold uppercase tracking-normal text-slate-400 font-sans flex items-center gap-1.5">
                                   <Users className="w-4 h-4 text-slate-400" />
-                                  <span>Mapped Accounts in Cluster ({matchedAccounts.length})</span>
+                                  <span>Mapped Accounts in Segment ({matchedAccounts.length})</span>
                                 </h4>
                                 {matchedAccounts.length === 0 ? (
                                   <p className="text-[13px] text-slate-400 italic py-2 font-normal">No active accounts matched with exclusion rules applied.</p>
                                 ) : (
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                                     {matchedAccounts.map((acc) => (
-                                      <div 
+                                      <div
                                         key={acc.id}
                                         onClick={() => {
                                           onAnalyzeAccount(acc.id);
                                           setSelectedAccountId(acc.id);
                                         }}
-                                        className="flex items-center justify-between p-3 rounded-xl border border-slate-150 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 hover:bg-indigo-50/30 hover:border-indigo-200 transition-colors cursor-pointer text-left group"
+                                        className="relative flex items-center justify-between p-3 pl-4 rounded-xl border border-indigo-200/70 dark:border-indigo-500/30 bg-gradient-to-br from-white to-indigo-50/40 dark:from-slate-800/70 dark:to-indigo-950/30 shadow-xs hover:shadow-md hover:border-indigo-400 dark:hover:border-indigo-400 hover:-translate-y-0.5 transition-all cursor-pointer text-left group overflow-hidden"
                                       >
+                                        <span aria-hidden className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-indigo-500 to-indigo-600 dark:from-indigo-400 dark:to-indigo-500" />
                                         <div className="space-y-0.5 min-w-0 pr-2">
-                                          <div className="font-bold text-xs text-slate-800 dark:text-slate-200 group-hover:text-indigo-950 truncate">{acc.name}</div>
-                                          <div className="text-[12px] font-mono text-slate-450 truncate">{acc.domain}</div>
+                                          <div className="font-bold text-[13px] text-slate-900 dark:text-slate-100 group-hover:text-indigo-700 dark:group-hover:text-indigo-300 truncate transition-colors">{acc.name}</div>
+                                          <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate">{acc.domain}</div>
                                         </div>
-                                        <span className="text-[12px] font-semibold font-mono text-indigo-650 dark:text-indigo-300 shrink-0">
-                                          {acc.fitScore}% →
+                                        <span className="inline-flex items-center gap-1 shrink-0 px-2 py-0.5 rounded-full bg-indigo-600 text-white text-[11px] font-mono font-bold shadow-xxs group-hover:bg-indigo-500 transition-colors">
+                                          {acc.fitScore}%
+                                          <ChevronRight className="w-3 h-3 -mr-0.5 transition-transform group-hover:translate-x-0.5" />
                                         </span>
                                       </div>
                                     ))}
@@ -2453,7 +3112,7 @@ export function Dashboard({
                     scoreText = 'text-rose-700 dark:text-rose-300';
                     chipLabel = 'Immediate';
                     showDot = true;
-                  } else if (info.priorityFlag === 'Nurture Queue') {
+                  } else if (info.priorityFlag === 'Warm Track') {
                     tierBorder = 'border-teal-300/70 dark:border-teal-800/50 hover:border-teal-400 dark:hover:border-teal-700/60';
                     railBg = 'bg-teal-50/40 dark:bg-teal-500/5';
                     chipClass = 'bg-teal-100/70 dark:bg-teal-500/15 border-teal-200 dark:border-teal-500/25 text-teal-700 dark:text-teal-300';

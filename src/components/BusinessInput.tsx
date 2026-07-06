@@ -18,13 +18,68 @@ export function BusinessInput({
 
   return (
     <div className="relative min-h-[85vh] w-full overflow-hidden bg-stone-50 dark:bg-[#1F1F20]">
-      {/* Subtle radial glow behind hero */}
+      {/* Aurora gradient mesh — 3 slow-drifting blurred color blobs */}
+      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+        <motion.div
+          className="absolute rounded-full mix-blend-multiply dark:mix-blend-screen"
+          style={{
+            width: 620,
+            height: 620,
+            top: '-10%',
+            left: '5%',
+            background: 'radial-gradient(circle, rgba(245, 130, 32, 0.55) 0%, rgba(245, 130, 32, 0) 65%)',
+            filter: 'blur(60px)',
+          }}
+          animate={{
+            x: [0, 90, -40, 0],
+            y: [0, 40, -30, 0],
+            scale: [1, 1.12, 0.95, 1],
+          }}
+          transition={{ duration: 22, ease: 'easeInOut', repeat: Infinity }}
+        />
+        <motion.div
+          className="absolute rounded-full mix-blend-multiply dark:mix-blend-screen"
+          style={{
+            width: 560,
+            height: 560,
+            top: '5%',
+            right: '2%',
+            background: 'radial-gradient(circle, rgba(251, 191, 36, 0.5) 0%, rgba(251, 191, 36, 0) 65%)',
+            filter: 'blur(70px)',
+          }}
+          animate={{
+            x: [0, -80, 50, 0],
+            y: [0, 60, -20, 0],
+            scale: [1, 0.9, 1.15, 1],
+          }}
+          transition={{ duration: 26, ease: 'easeInOut', repeat: Infinity }}
+        />
+        <motion.div
+          className="absolute rounded-full mix-blend-multiply dark:mix-blend-screen"
+          style={{
+            width: 500,
+            height: 500,
+            bottom: '-8%',
+            left: '30%',
+            background: 'radial-gradient(circle, rgba(244, 63, 94, 0.35) 0%, rgba(244, 63, 94, 0) 65%)',
+            filter: 'blur(80px)',
+          }}
+          animate={{
+            x: [0, 70, -60, 0],
+            y: [0, -50, 30, 0],
+            scale: [1, 1.08, 0.92, 1],
+          }}
+          transition={{ duration: 30, ease: 'easeInOut', repeat: Infinity }}
+        />
+      </div>
+
+      {/* Subtle static radial glow (overlaid on top of the aurora) */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            'radial-gradient(ellipse 80% 50% at 50% 20%, rgba(245, 130, 32, 0.14), transparent 60%)',
+            'radial-gradient(ellipse 80% 50% at 50% 20%, rgba(245, 130, 32, 0.10), transparent 60%)',
         }}
       />
       {/* Grid backdrop */}

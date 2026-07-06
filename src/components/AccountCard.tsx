@@ -69,7 +69,7 @@ function getTierTheme(account: TargetAccount, info: ReturnType<typeof getAccount
       dotColor: 'bg-rose-500',
     };
   }
-  if (info.priorityFlag === 'Nurture Queue') {
+  if (info.priorityFlag === 'Warm Track') {
     return {
       tier: 'nurture',
       border: 'border-teal-300/70 dark:border-teal-800/50 hover:border-teal-400 dark:hover:border-teal-700/60',
@@ -244,11 +244,11 @@ export function AccountCard({ account, onClick, targetRoles, onStatusChange, onD
         {/* Stat strip */}
         <div className="grid grid-cols-3 gap-2 mb-3">
           <div className="rounded-lg bg-slate-50 dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.05] px-2 py-1.5">
-            <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500">Fit</div>
+            <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500">Fit Score</div>
             <div className={`text-sm font-semibold font-mono mt-0.5 ${fitTone}`}>{info.fitScore}%</div>
           </div>
           <div className="rounded-lg bg-slate-50 dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.05] px-2 py-1.5">
-            <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500">Timing</div>
+            <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500">Timing Score</div>
             <div className={`text-sm font-semibold font-mono mt-0.5 ${timingTone}`}>{info.timingScore}%</div>
           </div>
           <div

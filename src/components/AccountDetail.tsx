@@ -903,11 +903,11 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
             {(() => {
               const info = getAccountPriorityInfo(account);
               const priorityBg = info.priorityFlag === 'Immediate Action Required' ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/60' :
-                                 info.priorityFlag === 'Nurture Queue' ? 'bg-teal-50/50 dark:bg-teal-950/40 border-teal-150 dark:border-teal-800/50' : 
+                                 info.priorityFlag === 'Warm Track' ? 'bg-teal-50/50 dark:bg-teal-950/40 border-teal-150 dark:border-teal-800/50' : 
                                  'bg-slate-50 dark:bg-slate-800/50 border-slate-150 dark:border-slate-700';
                                  
               const flagTextClass = info.priorityFlag === 'Immediate Action Required' ? 'text-rose-700 dark:text-rose-300' :
-                                   info.priorityFlag === 'Nurture Queue' ? 'text-teal-700 dark:text-teal-300' : 'text-slate-650 dark:text-slate-400';
+                                   info.priorityFlag === 'Warm Track' ? 'text-teal-700 dark:text-teal-300' : 'text-slate-650 dark:text-slate-400';
 
               return (
                 <div className="space-y-3">
@@ -916,7 +916,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                       <span className="text-[12px] uppercase font-bold text-slate-400 tracking-normal">Outreach Target Status</span>
                       <div className={`text-xs font-bold uppercase mt-0.5 tracking-wide ${flagTextClass}`}>
                         {info.priorityFlag === 'Immediate Action Required' ? '🚨 Immediate Action Required' : 
-                         info.priorityFlag === 'Nurture Queue' ? '⏳ Nurture Queue - Build Demand' : 
+                         info.priorityFlag === 'Warm Track' ? '⏳ Warm Track - Build Demand' : 
                          '🎯 Standard Follow-up Opportunity'}
                       </div>
                     </div>
@@ -950,7 +950,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                       Priority score of <strong>{info.priorityIndex}/100</strong> indicates an <strong>{info.timingStage}</strong> stage. 
                       {info.priorityFlag === 'Immediate Action Required' 
                         ? " This high intensity signals immediate operational gaps. Trigger direct personalized cold sequence immediately."
-                        : info.priorityFlag === 'Nurture Queue'
+                        : info.priorityFlag === 'Warm Track'
                         ? " High fit combined with low immediate signal intensity advises soft nurture touchpoints to map technical champions."
                         : " Keep steady outbound engagement focused on competitive incumbents."}
                     </span>
