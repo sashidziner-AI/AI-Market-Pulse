@@ -106,7 +106,16 @@ interface GenerateOptions {
   };
   endpoint?: string;    // route tag for observability (e.g. "/api/discover-accounts")
   subCall?: string;     // sub-call label when one endpoint fans out (e.g. "personas")
+  // Optional streaming progress sink — when set, intermediate events (search
+  // queries, status updates) are forwarded to it while the call runs. Result
+  // is still returned normally from the promise.
+  progressSink?: (event: ProgressEvent) => void;
 }
+
+type ProgressEvent =
+  | { type: "status"; subCall?: string; message: string }
+  | { type: "search"; subCall?: string; query: string }
+  | { type: "sub_done"; subCall?: string; durationMs: number };
 
 // Observability — every AI call appends a JSONL line to logs/ai-calls.jsonl
 // so we can audit per-endpoint token spend, latency, web_search usage, and
@@ -228,27 +237,72 @@ async function runAnthropic(prompt: string, schema: any, options: GenerateOption
         const ai = getAnthropic();
 
         console.log(
-          `[Anthropic Request] Model: ${model}, Attempt: ${attempt}/${attempts}${options.useWebSearch ? " (web_search enabled)" : ""}${options.endpoint ? " route=" + options.endpoint : ""}${options.subCall ? " sub=" + options.subCall : ""}`
+          `[Anthropic Request] Model: ${model}, Attempt: ${attempt}/${attempts}${options.useWebSearch ? " (web_search enabled)" : ""}${options.endpoint ? " route=" + options.endpoint : ""}${options.subCall ? " sub=" + options.subCall : ""}${options.progressSink ? " streaming" : ""}`
         );
-        const response = await ai.messages.create({
+
+        const requestParams = {
           model,
           max_tokens: maxTokens,
           system: [
             {
-              type: "text",
+              type: "text" as const,
               text: SYSTEM_PROMPT_TEXT,
-              cache_control: { type: "ephemeral" },
+              cache_control: { type: "ephemeral" as const },
             },
           ],
           tools,
           tool_choice,
           messages: [
             {
-              role: "user",
+              role: "user" as const,
               content: prompt,
             },
           ],
-        });
+        };
+
+        let response: any;
+        if (options.progressSink) {
+          // Streaming mode — hook web_search events into the progress sink as
+          // they happen, so the client sees "Searching for X..." in real time.
+          // Track partial JSON built up for each content block index so we can
+          // extract the search query once the block completes.
+          const partialJsonByIndex = new Map<number, string>();
+          const blockTypeByIndex = new Map<number, string>();
+
+          const stream = ai.messages.stream(requestParams);
+          stream.on("streamEvent", (event: any) => {
+            try {
+              if (event.type === "content_block_start" && event.content_block) {
+                blockTypeByIndex.set(event.index, event.content_block.type);
+              } else if (event.type === "content_block_delta" && event.delta?.type === "input_json_delta") {
+                const prev = partialJsonByIndex.get(event.index) ?? "";
+                partialJsonByIndex.set(event.index, prev + (event.delta.partial_json ?? ""));
+              } else if (event.type === "content_block_stop") {
+                const blockType = blockTypeByIndex.get(event.index);
+                if (blockType === "server_tool_use") {
+                  const json = partialJsonByIndex.get(event.index);
+                  if (json) {
+                    try {
+                      const parsed = JSON.parse(json);
+                      if (parsed?.query) {
+                        options.progressSink!({ type: "search", subCall: options.subCall, query: String(parsed.query) });
+                      }
+                    } catch {
+                      // Partial JSON couldn't be parsed — skip
+                    }
+                  }
+                }
+                partialJsonByIndex.delete(event.index);
+                blockTypeByIndex.delete(event.index);
+              }
+            } catch {
+              // Never let progress hook errors break the underlying call
+            }
+          });
+          response = await stream.finalMessage();
+        } else {
+          response = await ai.messages.create(requestParams);
+        }
 
         // Skip web_search_tool_use / web_search_tool_result blocks — we only want the
         // final submit_result payload the model settled on after grounding.
@@ -1618,12 +1672,44 @@ Follow the GOOD pattern for every account.`;
 // 3. Analyze specific account
 app.post("/api/analyze-account", async (req, res) => {
   const { domain, businessContext } = req.body;
+  // Streaming mode: NDJSON events instead of a single JSON response.
+  // Client opts in via ?stream=1. Preserves backward compatibility with evals + sync consumers.
+  const streaming = req.query.stream === "1";
 
   const cacheKey = `${domain.trim().toLowerCase()}--${businessContext?.businessName ? businessContext.businessName.trim().toLowerCase() : 'generic'}`;
-  
+
+  // Cache-hit fast path — even under streaming, just emit the cached result immediately.
   if (accountAnalysisCache.has(cacheKey)) {
     console.log(`[Cache Hit] Serving cached detailed account analysis for domain: ${domain}`);
+    if (streaming) {
+      res.setHeader("Content-Type", "application/x-ndjson");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("X-Accel-Buffering", "no");
+      res.write(JSON.stringify({ type: "status", message: "Loaded from cache" }) + "\n");
+      res.write(JSON.stringify({ type: "result", payload: accountAnalysisCache.get(cacheKey) }) + "\n");
+      res.write(JSON.stringify({ type: "done" }) + "\n");
+      return res.end();
+    }
     return res.json(accountAnalysisCache.get(cacheKey));
+  }
+
+  // Streaming setup — headers up front, send() helper, and a progressSink to
+  // forward Anthropic web_search events into the wire.
+  let send: ((event: any) => void) | null = null;
+  if (streaming) {
+    res.setHeader("Content-Type", "application/x-ndjson");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("X-Accel-Buffering", "no");
+    // Flush headers early so the client can start reading immediately.
+    res.flushHeaders?.();
+    send = (event: any) => {
+      try {
+        res.write(JSON.stringify(event) + "\n");
+      } catch {
+        // Client may have disconnected — just silently drop.
+      }
+    };
+    send({ type: "status", message: `Starting deep-dive analysis of ${domain}...` });
   }
 
   try {
@@ -1947,8 +2033,18 @@ Competitor citations are typically Secondary (BuiltWith scan, review site) or Te
     // Fire all 3 sub-calls in parallel. Each is a focused ~4-search Opus 4.7
     // pass — faster wall-clock (~10-20s vs ~30-45s monolithic) and each prompt
     // is small enough to iterate on individually.
+    // Wrap each sub-call so the streaming client sees start / done milestones
+    // for each of the three parallel branches — dramatically improves UX perception.
+    async function runSub<T>(label: string, fn: () => Promise<T>): Promise<T> {
+      const started = Date.now();
+      send?.({ type: "status", subCall: label, message: `Starting ${label} analysis...` });
+      const result = await fn();
+      send?.({ type: "sub_done", subCall: label, durationMs: Date.now() - started });
+      return result;
+    }
+
     const [brief, human, comp] = await Promise.all([
-      generateStructuredData(briefPrompt, briefSchema, {
+      runSub("brief", () => generateStructuredData(briefPrompt, briefSchema, {
         endpoint: "/api/analyze-account",
         subCall: "brief",
         models: {
@@ -1958,8 +2054,9 @@ Competitor citations are typically Secondary (BuiltWith scan, review site) or Te
         useWebSearch: true,
         maxSearches: 4,
         maxTokens: 6144,
-      }),
-      generateStructuredData(humanPrompt, humanSchema, {
+        progressSink: send ? (event) => send!(event) : undefined,
+      })),
+      runSub("human", () => generateStructuredData(humanPrompt, humanSchema, {
         endpoint: "/api/analyze-account",
         subCall: "human",
         models: {
@@ -1969,8 +2066,9 @@ Competitor citations are typically Secondary (BuiltWith scan, review site) or Te
         useWebSearch: true,
         maxSearches: 4,
         maxTokens: 10240,
-      }),
-      generateStructuredData(competitorPrompt, competitorSchema, {
+        progressSink: send ? (event) => send!(event) : undefined,
+      })),
+      runSub("competitors", () => generateStructuredData(competitorPrompt, competitorSchema, {
         endpoint: "/api/analyze-account",
         subCall: "competitors",
         models: {
@@ -1980,7 +2078,8 @@ Competitor citations are typically Secondary (BuiltWith scan, review site) or Te
         useWebSearch: true,
         maxSearches: 4,
         maxTokens: 6144,
-      }),
+        progressSink: send ? (event) => send!(event) : undefined,
+      })),
     ]);
 
     const data = {
@@ -1991,10 +2090,22 @@ Competitor citations are typically Secondary (BuiltWith scan, review site) or Te
       competitors: comp.competitors,
     };
     accountAnalysisCache.set(cacheKey, data);
+
+    if (streaming && send) {
+      send({ type: "result", payload: data });
+      send({ type: "done" });
+      return res.end();
+    }
     res.json(data);
   } catch (error: any) {
     console.log(`[GTM Sandbox Advisory] Account detailed analysis for ${domain} redirected to localized simulation templates.`);
     const fallbackData = getAnalyzeAccountFallback(domain, businessContext);
+    if (streaming && send) {
+      send({ type: "status", message: "AI unavailable — serving simulated data" });
+      send({ type: "result", payload: fallbackData });
+      send({ type: "done" });
+      return res.end();
+    }
     res.json(fallbackData);
   }
 });

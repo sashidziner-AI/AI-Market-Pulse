@@ -223,29 +223,105 @@ export default function App() {
     const account = accounts.find(a => a.id === id);
     if (!account || account.analysis) return;
 
+    // Attach a transient progress object so AccountDetail can render a live
+    // "AI is thinking..." banner while the 3 parallel sub-calls stream events.
+    const startProgress = () => {
+      setAccounts(prev => prev.map(a =>
+        a.id === id
+          ? { ...a, analysisProgress: { messages: ['Starting deep-dive analysis...'], searches: [] } }
+          : a
+      ));
+    };
+    const pushProgress = (patch: { message?: string; search?: string }) => {
+      setAccounts(prev => prev.map(a => {
+        if (a.id !== id) return a;
+        const prevProgress = a.analysisProgress ?? { messages: [], searches: [] };
+        return {
+          ...a,
+          analysisProgress: {
+            messages: patch.message ? [...prevProgress.messages, patch.message] : prevProgress.messages,
+            searches: patch.search ? [...prevProgress.searches, patch.search] : prevProgress.searches,
+          },
+        };
+      }));
+    };
+    const clearProgress = () => {
+      setAccounts(prev => prev.map(a =>
+        a.id === id ? { ...a, analysisProgress: undefined } : a
+      ));
+    };
+
     try {
-      const response = await fetch('/api/analyze-account', {
+      startProgress();
+
+      const response = await fetch('/api/analyze-account?stream=1', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          domain: account.domain, 
-          businessContext: analysis 
+        body: JSON.stringify({
+          domain: account.domain,
+          businessContext: analysis,
         }),
       });
-      
-      const data = await response.json();
-      if (data.error) throw new Error(data.error);
 
-      if (data.isFallback) {
-        toast.warning('API limits reached. Loaded optimized competitor displacement profiles for this account.', {
-          duration: 6000
-        });
+      if (!response.body) {
+        // Streaming not supported by the runtime — fall back to a single JSON body.
+        const data = await response.json();
+        clearProgress();
+        if (data.error) throw new Error(data.error);
+        setAccounts(prev => prev.map(a => a.id === id ? { ...a, analysis: data as DetailedAnalysis } : a));
+        return;
       }
 
-      setAccounts(prev => prev.map(a => 
-        a.id === id ? { ...a, analysis: data as DetailedAnalysis } : a
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finalPayload: DetailedAnalysis | null = null;
+
+      // Read NDJSON events line-by-line. Each line is a JSON object.
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        let newlineIdx: number;
+        while ((newlineIdx = buffer.indexOf('\n')) !== -1) {
+          const line = buffer.slice(0, newlineIdx).trim();
+          buffer = buffer.slice(newlineIdx + 1);
+          if (!line) continue;
+          try {
+            const event = JSON.parse(line);
+            if (event.type === 'status' && event.message) {
+              pushProgress({ message: event.message });
+            } else if (event.type === 'search' && event.query) {
+              pushProgress({ search: event.query });
+            } else if (event.type === 'sub_done' && event.subCall) {
+              pushProgress({ message: `Finished ${event.subCall} (${Math.round(event.durationMs / 1000)}s)` });
+            } else if (event.type === 'result' && event.payload) {
+              finalPayload = event.payload as DetailedAnalysis;
+            } else if (event.type === 'error' && event.message) {
+              throw new Error(event.message);
+            }
+          } catch (parseErr) {
+            // Malformed event line — skip; better than crashing the stream.
+            console.warn('Stream parse failed:', line);
+          }
+        }
+      }
+
+      clearProgress();
+      if (!finalPayload) {
+        throw new Error('Stream ended without a result event');
+      }
+      if ((finalPayload as any).isFallback) {
+        toast.warning('API limits reached. Loaded optimized competitor displacement profiles for this account.', {
+          duration: 6000,
+        });
+      }
+      setAccounts(prev => prev.map(a =>
+        a.id === id ? { ...a, analysis: finalPayload as DetailedAnalysis } : a
       ));
     } catch (error: any) {
+      clearProgress();
       toast.error('Deep analysis failed: ' + error.message);
     }
   };

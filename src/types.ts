@@ -67,6 +67,12 @@ export interface TargetAccount {
   outreachOutcome?: 'No Response' | 'Positive Reply' | 'Meeting Booked' | 'Deal Lost' | 'Deal Won';
   analysis?: DetailedAnalysis;
   isFallback?: boolean;
+  // Transient progress state while a streaming analyze-account call is in flight.
+  // Cleared once the final result event arrives (analysis populates).
+  analysisProgress?: {
+    messages: string[];
+    searches: string[];
+  };
   
   // Firmographic fields for Disqualification / ICP Exclusion Engine
   employeeCount?: number;

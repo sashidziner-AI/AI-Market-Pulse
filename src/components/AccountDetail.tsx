@@ -566,6 +566,59 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
 
       <div className="flex-1 overflow-y-auto min-h-0 scrollbar-thin scrollbar-thumb-slate-200">
         <div className="p-6 space-y-8">
+          {/* Live streaming progress — visible while /api/analyze-account is running */}
+          {account.analysisProgress && !analysis && (
+            <section className="rounded-2xl border border-indigo-200 dark:border-indigo-500/40 bg-gradient-to-br from-indigo-50 via-white to-white dark:from-indigo-950/40 dark:via-slate-900 dark:to-slate-900 p-4 space-y-3 shadow-sm">
+              <div className="flex items-center gap-2.5">
+                <div className="relative flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-400 opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-indigo-500" />
+                </div>
+                <h4 className="text-[13px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-200">
+                  AI is analyzing this account
+                </h4>
+                <span className="ml-auto text-[11px] font-mono text-indigo-500 dark:text-indigo-400">
+                  Live • Claude Opus 4.7 + web_search
+                </span>
+              </div>
+
+              {account.analysisProgress.messages.length > 0 && (
+                <div className="space-y-1">
+                  {account.analysisProgress.messages.slice(-5).map((msg, idx) => (
+                    <div
+                      key={`msg-${idx}`}
+                      className={`flex items-start gap-1.5 text-[12.5px] leading-snug ${
+                        idx === account.analysisProgress!.messages.slice(-5).length - 1
+                          ? 'text-slate-800 dark:text-slate-100 font-semibold'
+                          : 'text-slate-500 dark:text-slate-400'
+                      }`}
+                    >
+                      <span className="text-indigo-500 mt-0.5">›</span>
+                      <span>{msg}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {account.analysisProgress.searches.length > 0 && (
+                <div className="border-t border-indigo-100 dark:border-indigo-500/20 pt-2.5 space-y-1">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-500 dark:text-indigo-300">
+                    Web searches performed
+                  </div>
+                  {account.analysisProgress.searches.slice(-4).map((query, idx) => (
+                    <div
+                      key={`search-${idx}`}
+                      className="flex items-start gap-1.5 text-[12px] font-mono text-slate-700 dark:text-slate-300 bg-white/60 dark:bg-slate-900/60 border border-slate-150 dark:border-slate-700/70 rounded-lg px-2 py-1"
+                    >
+                      <span className="text-indigo-500 shrink-0">🔎</span>
+                      <span className="truncate">{query}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
+
           {/* Executive Summary */}
           <section className="space-y-4">
             <div className="flex items-center justify-between">
