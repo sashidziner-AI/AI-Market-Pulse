@@ -283,35 +283,35 @@ export function AccountCard({ account, onClick, targetRoles, onStatusChange, onD
         {/* Stat strip */}
         <div className="grid grid-cols-3 gap-2 mb-3">
           {/* Fit Score */}
-          <div className={`rounded-xl px-2.5 py-2 border ${
-            account.isDisqualified ? 'bg-red-50 dark:bg-red-500/15 border-red-200 dark:border-red-500/30'
-            : info.fitScore >= 80 ? 'bg-emerald-50 dark:bg-emerald-500/20 border-emerald-200 dark:border-emerald-500/35'
-            : info.fitScore >= 60 ? 'bg-amber-50 dark:bg-amber-500/20 border-amber-200 dark:border-amber-500/35'
-            : 'bg-slate-100 dark:bg-white/[0.07] border-slate-200 dark:border-white/[0.12]'
+          <div className={`rounded-lg px-2.5 py-2 bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.07] border-l-[3px] ${
+            account.isDisqualified ? 'border-l-red-400'
+            : info.fitScore >= 80 ? 'border-l-emerald-400'
+            : info.fitScore >= 60 ? 'border-l-amber-400'
+            : 'border-l-slate-300 dark:border-l-zinc-600'
           }`}>
-            <div className="text-[9px] font-mono uppercase tracking-wider text-slate-500 dark:text-zinc-400">Fit</div>
-            <div className={`text-[15px] font-bold font-mono leading-tight mt-0.5 ${fitTone}`}>{info.fitScore}%</div>
+            <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500">Fit</div>
+            <div className={`text-[15px] font-semibold font-mono leading-tight mt-0.5 ${fitTone}`}>{info.fitScore}%</div>
           </div>
           {/* Timing Score */}
-          <div className={`rounded-xl px-2.5 py-2 border ${
-            account.isDisqualified ? 'bg-red-50 dark:bg-red-500/15 border-red-200 dark:border-red-500/30'
-            : info.timingScore >= 80 ? 'bg-rose-50 dark:bg-rose-500/20 border-rose-200 dark:border-rose-500/35'
-            : info.timingScore >= 60 ? 'bg-amber-50 dark:bg-amber-500/20 border-amber-200 dark:border-amber-500/35'
-            : 'bg-purple-50 dark:bg-purple-500/15 border-purple-200 dark:border-purple-500/30'
+          <div className={`rounded-lg px-2.5 py-2 bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.07] border-l-[3px] ${
+            account.isDisqualified ? 'border-l-red-400'
+            : info.timingScore >= 80 ? 'border-l-rose-400'
+            : info.timingScore >= 60 ? 'border-l-amber-400'
+            : 'border-l-purple-400'
           }`}>
-            <div className="text-[9px] font-mono uppercase tracking-wider text-slate-500 dark:text-zinc-400">Timing</div>
-            <div className={`text-[15px] font-bold font-mono leading-tight mt-0.5 ${timingTone}`}>{info.timingScore}%</div>
+            <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500">Timing</div>
+            <div className={`text-[15px] font-semibold font-mono leading-tight mt-0.5 ${timingTone}`}>{info.timingScore}%</div>
           </div>
           {/* Sector multiplier */}
-          <div className={`rounded-xl px-2.5 py-2 border ${
-            info.weightedSectorMultiplier > 1.0 ? 'bg-emerald-50 dark:bg-emerald-500/20 border-emerald-200 dark:border-emerald-500/35'
-            : info.weightedSectorMultiplier < 1.0 ? 'bg-amber-50 dark:bg-amber-500/20 border-amber-200 dark:border-amber-500/35'
-            : 'bg-slate-100 dark:bg-white/[0.07] border-slate-200 dark:border-white/[0.12]'
+          <div className={`rounded-lg px-2.5 py-2 bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.07] border-l-[3px] ${
+            info.weightedSectorMultiplier > 1.0 ? 'border-l-emerald-400'
+            : info.weightedSectorMultiplier < 1.0 ? 'border-l-amber-400'
+            : 'border-l-slate-300 dark:border-l-zinc-600'
           }`} title={`Sector model: ${info.appliedSectorModel}`}>
-            <div className="text-[9px] font-mono uppercase tracking-wider text-slate-500 dark:text-zinc-400 flex items-center gap-1">
+            <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500 flex items-center gap-1">
               <Sliders className="w-2.5 h-2.5" />Sector
             </div>
-            <div className={`text-[15px] font-bold font-mono leading-tight mt-0.5 ${
+            <div className={`text-[15px] font-semibold font-mono leading-tight mt-0.5 ${
               info.weightedSectorMultiplier > 1.0 ? 'text-emerald-600 dark:text-emerald-300'
               : info.weightedSectorMultiplier < 1.0 ? 'text-amber-600 dark:text-amber-300'
               : 'text-slate-600 dark:text-zinc-300'
