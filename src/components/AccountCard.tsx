@@ -1,7 +1,10 @@
 import React from 'react';
 import { TargetAccount, AccountSignal } from '../types';
 import { motion } from 'motion/react';
-import { ExternalLink, ChevronRight, Eye, Send, Clock, AlertTriangle, Sliders, Trash2 } from 'lucide-react';
+import { ExternalLink, Eye, Send, Clock, AlertTriangle, Sliders, Trash2, UserCircle2 } from 'lucide-react';
+
+const dicebearUrl = (seed: string) =>
+  `https://api.dicebear.com/9.x/lorelei/svg?seed=${encodeURIComponent(seed)}&backgroundColor=b6e3f4,ffdfbf,c0aede,d1d4f9&backgroundType=gradientLinear`;
 import { Button } from '@/components/ui/button';
 import { getCalibratedAccountPriorityInfo, getOrInitializeSignals, SectorModel } from '../utils/calibration';
 
@@ -77,7 +80,7 @@ function getTierTheme(account: TargetAccount, info: ReturnType<typeof getAccount
       chipBg: 'bg-teal-100/70 dark:bg-teal-500/15 border-teal-200 dark:border-teal-500/25',
       chipText: 'text-teal-700 dark:text-teal-300',
       scoreText: 'text-teal-700 dark:text-teal-300',
-      chipLabel: 'Nurture',
+      chipLabel: 'Warm Track',
     };
   }
   return {
@@ -133,7 +136,7 @@ export function AccountCard({ account, onClick, targetRoles, onStatusChange, onD
       onClick={() => onClick(account)}
     >
       {/* LEFT RAIL: Priority tier + big score + pipeline action + outreach window */}
-      <div className={`w-32 shrink-0 flex flex-col items-center px-3 py-4 border-r border-slate-100 dark:border-white/[0.05] ${theme.railBg}`}>
+      <div className={`w-40 shrink-0 flex flex-col items-center px-3 py-4 border-r border-slate-100 dark:border-white/[0.05] ${theme.railBg}`}>
         {/* Priority chip */}
         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-semibold tracking-normal border uppercase ${theme.chipBg} ${theme.chipText}`}>
           {theme.dotColor && (
@@ -145,15 +148,44 @@ export function AccountCard({ account, onClick, targetRoles, onStatusChange, onD
           {theme.chipLabel}
         </span>
 
+        {/* Outreach window — below chip */}
+        <div className="flex items-center gap-1 text-[10px] text-slate-500 dark:text-zinc-400 font-mono mt-1.5 mb-1">
+          <Clock className="w-2.5 h-2.5" />
+          <span>{info.outreachWindow}</span>
+        </div>
+
         {/* Big priority number */}
         <div className="flex flex-col items-center gap-0.5 my-3 flex-1 justify-center">
-          <div className={`text-4xl font-semibold font-mono leading-none ${theme.scoreText}`} style={{ letterSpacing: '-0.03em' }}>
+          <div className={`text-5xl font-bold font-mono leading-none ${theme.scoreText}`} style={{ letterSpacing: '-0.03em' }}>
             {account.isDisqualified ? '—' : info.priorityIndex}
           </div>
           <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500">Priority</div>
         </div>
 
-        {/* Pipeline transitions (moved from bottom-right footer) */}
+        {/* Target role avatars — above action button */}
+        <div className="flex justify-center -space-x-2 mb-2">
+          {rolesToRender.map((role, i) => (
+            <div
+              key={i}
+              className="w-8 h-8 rounded-full border-2 border-white dark:border-[#2A2A2B] overflow-hidden bg-slate-100 dark:bg-slate-700 cursor-help shrink-0"
+              title={role.fullName}
+            >
+              <img
+                src={dicebearUrl(role.fullName)}
+                alt={role.fullName}
+                className="w-full h-full object-cover"
+                onError={(e) => {
+                  const t = e.currentTarget;
+                  t.style.display = 'none';
+                  (t.nextElementSibling as HTMLElement)?.classList.remove('hidden');
+                }}
+              />
+              <UserCircle2 className="w-8 h-8 text-slate-400 hidden" strokeWidth={1.2} />
+            </div>
+          ))}
+        </div>
+
+        {/* Pipeline transitions */}
         {onStatusChange && (
           <div className="w-full mb-2">
             {account.status === 'new' && (
@@ -217,17 +249,24 @@ export function AccountCard({ account, onClick, targetRoles, onStatusChange, onD
           </div>
         )}
 
-        {/* Bottom: outreach window */}
-        <div className="flex items-center gap-1 text-[10px] text-slate-500 dark:text-zinc-400 font-mono">
-          <Clock className="w-2.5 h-2.5" />
-          <span>{info.outreachWindow}</span>
-        </div>
       </div>
 
       {/* RIGHT BODY */}
-      <div className="flex-1 min-w-0 flex flex-col p-4">
+      <div className="relative flex-1 min-w-0 flex flex-col p-4">
+        {/* Delete button — top-right corner */}
+        {onDelete && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={(e) => onDelete(account.id, e)}
+            className="absolute top-2 right-2 text-slate-300 hover:text-red-500 dark:text-zinc-600 dark:hover:text-red-400 hover:bg-red-50/60 dark:hover:bg-red-500/10 w-7 h-7 p-0 rounded-md cursor-pointer z-10"
+            title="Remove this account suggestion"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </Button>
+        )}
         {/* Identity */}
-        <div className="mb-3">
+        <div className="mb-3 pr-8">
           <h3
             className="text-[17px] font-semibold leading-tight text-slate-900 dark:text-zinc-50 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate"
             style={{ letterSpacing: '-0.015em' }}
@@ -243,29 +282,40 @@ export function AccountCard({ account, onClick, targetRoles, onStatusChange, onD
 
         {/* Stat strip */}
         <div className="grid grid-cols-3 gap-2 mb-3">
-          <div className="rounded-lg bg-slate-50 dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.05] px-2 py-1.5">
-            <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500">Fit Score</div>
-            <div className={`text-sm font-semibold font-mono mt-0.5 ${fitTone}`}>{info.fitScore}%</div>
+          {/* Fit Score */}
+          <div className={`rounded-xl px-2.5 py-2 border ${
+            account.isDisqualified ? 'bg-red-50 dark:bg-red-500/15 border-red-200 dark:border-red-500/30'
+            : info.fitScore >= 80 ? 'bg-emerald-50 dark:bg-emerald-500/20 border-emerald-200 dark:border-emerald-500/35'
+            : info.fitScore >= 60 ? 'bg-amber-50 dark:bg-amber-500/20 border-amber-200 dark:border-amber-500/35'
+            : 'bg-slate-100 dark:bg-white/[0.07] border-slate-200 dark:border-white/[0.12]'
+          }`}>
+            <div className="text-[9px] font-mono uppercase tracking-wider text-slate-500 dark:text-zinc-400">Fit</div>
+            <div className={`text-[15px] font-bold font-mono leading-tight mt-0.5 ${fitTone}`}>{info.fitScore}%</div>
           </div>
-          <div className="rounded-lg bg-slate-50 dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.05] px-2 py-1.5">
-            <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500">Timing Score</div>
-            <div className={`text-sm font-semibold font-mono mt-0.5 ${timingTone}`}>{info.timingScore}%</div>
+          {/* Timing Score */}
+          <div className={`rounded-xl px-2.5 py-2 border ${
+            account.isDisqualified ? 'bg-red-50 dark:bg-red-500/15 border-red-200 dark:border-red-500/30'
+            : info.timingScore >= 80 ? 'bg-rose-50 dark:bg-rose-500/20 border-rose-200 dark:border-rose-500/35'
+            : info.timingScore >= 60 ? 'bg-amber-50 dark:bg-amber-500/20 border-amber-200 dark:border-amber-500/35'
+            : 'bg-purple-50 dark:bg-purple-500/15 border-purple-200 dark:border-purple-500/30'
+          }`}>
+            <div className="text-[9px] font-mono uppercase tracking-wider text-slate-500 dark:text-zinc-400">Timing</div>
+            <div className={`text-[15px] font-bold font-mono leading-tight mt-0.5 ${timingTone}`}>{info.timingScore}%</div>
           </div>
-          <div
-            className="rounded-lg bg-slate-50 dark:bg-white/[0.03] border border-slate-100 dark:border-white/[0.05] px-2 py-1.5"
-            title={`Sector model: ${info.appliedSectorModel}`}
-          >
-            <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500 flex items-center gap-1">
-              <Sliders className="w-2.5 h-2.5" />
-              Sector
+          {/* Sector multiplier */}
+          <div className={`rounded-xl px-2.5 py-2 border ${
+            info.weightedSectorMultiplier > 1.0 ? 'bg-emerald-50 dark:bg-emerald-500/20 border-emerald-200 dark:border-emerald-500/35'
+            : info.weightedSectorMultiplier < 1.0 ? 'bg-amber-50 dark:bg-amber-500/20 border-amber-200 dark:border-amber-500/35'
+            : 'bg-slate-100 dark:bg-white/[0.07] border-slate-200 dark:border-white/[0.12]'
+          }`} title={`Sector model: ${info.appliedSectorModel}`}>
+            <div className="text-[9px] font-mono uppercase tracking-wider text-slate-500 dark:text-zinc-400 flex items-center gap-1">
+              <Sliders className="w-2.5 h-2.5" />Sector
             </div>
-            <div className={`text-sm font-semibold font-mono mt-0.5 ${
+            <div className={`text-[15px] font-bold font-mono leading-tight mt-0.5 ${
               info.weightedSectorMultiplier > 1.0 ? 'text-emerald-600 dark:text-emerald-300'
               : info.weightedSectorMultiplier < 1.0 ? 'text-amber-600 dark:text-amber-300'
               : 'text-slate-600 dark:text-zinc-300'
-            }`}>
-              {info.weightedSectorMultiplier.toFixed(2)}x
-            </div>
+            }`}>{info.weightedSectorMultiplier.toFixed(2)}x</div>
           </div>
         </div>
 
@@ -324,41 +374,6 @@ export function AccountCard({ account, onClick, targetRoles, onStatusChange, onD
               +{(account.signals || []).length - 3}
             </span>
           )}
-        </div>
-
-        {/* Footer */}
-        <div className="pt-2.5 border-t border-slate-100 dark:border-white/[0.06] flex items-center justify-between">
-          <div className="flex -space-x-1.5">
-            {rolesToRender.map((role, i) => (
-              <div
-                key={i}
-                className="w-6 h-6 rounded-full border-2 border-white dark:border-[#2A2A2B] bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 flex items-center justify-center text-[9px] font-semibold cursor-help"
-                title={role.fullName}
-              >
-                {role.abbrev}
-              </div>
-            ))}
-          </div>
-          <div className="flex items-center gap-1">
-            {onDelete && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={(e) => onDelete(account.id, e)}
-                className="text-slate-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50/50 dark:hover:bg-red-500/10 w-7 h-7 p-0 rounded-md cursor-pointer"
-                title="Remove this account suggestion"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:bg-indigo-50/60 dark:hover:bg-indigo-500/10 px-2 h-7 text-[12px] font-semibold gap-1 cursor-pointer"
-            >
-              View Intel <ChevronRight className="w-3.5 h-3.5" />
-            </Button>
-          </div>
         </div>
 
       </div>

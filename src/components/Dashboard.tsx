@@ -19,7 +19,23 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { toast } from 'sonner';
 import { computeWeightsRecalibration, SellerChannelPartner, DEFAULT_CHANNEL_PARTNERS, computePathwayAssessment } from '../utils/calibration';
 import { ThemeToggle } from './ThemeToggle';
-import { PieChart, Pie, Cell, BarChart, Bar, ResponsiveContainer, Tooltip } from 'recharts';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
+
+// Classic 3-face 3D bar shape for recharts
+const ThreeDBar = ({ x, y, width, height, fill, topColor, sideColor, depth = 5 }: {
+  x: number; y: number; width: number; height: number;
+  fill: string; topColor: string; sideColor: string; depth?: number;
+}) => {
+  if (!height || height <= 0 || !width || width <= 0) return null;
+  const d = Math.min(depth, width * 0.55);
+  return (
+    <g>
+      <rect x={x} y={y} width={width} height={height} fill={fill} />
+      <polygon points={`${x},${y} ${x+d},${y-d} ${x+width+d},${y-d} ${x+width},${y}`} fill={topColor} />
+      <polygon points={`${x+width},${y} ${x+width+d},${y-d} ${x+width+d},${y+height-d} ${x+width},${y+height}`} fill={sideColor} />
+    </g>
+  );
+};
 
 // Country → states/provinces. Countries not in this map have no state-level picker.
 const COUNTRY_STATES: Record<string, string[]> = {
@@ -131,6 +147,13 @@ export function Dashboard({
   onBack
 }: DashboardProps) {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
+  useEffect(() => {
+    const obs = new MutationObserver(() => setIsDark(document.documentElement.classList.contains('dark')));
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => obs.disconnect();
+  }, []);
 
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<{ name: string; content?: string } | null>(null);
@@ -1169,7 +1192,7 @@ export function Dashboard({
 
                 const compositionData = [
                   { name: 'Immediate', value: priorityOverview.immediate, fill: '#f43f5e' },
-                  { name: 'Nurture', value: priorityOverview.nurture, fill: '#14b8a6' },
+                  { name: 'Warm Track', value: priorityOverview.nurture, fill: '#14b8a6' },
                   { name: 'Standard', value: priorityOverview.standard, fill: '#94a3b8' },
                 ].filter(d => d.value > 0);
 
@@ -1209,42 +1232,42 @@ export function Dashboard({
                 {/* Card 1: Total Pipeline — HERO DONUT with vertical legend list */}
                 <div
                   onClick={() => setPriorityFilter('all')}
-                  className="relative overflow-hidden p-4 rounded-2xl border transition-all cursor-pointer text-left border-[#1d8ecd] bg-gradient-to-br from-[#1d8ecd]/15 to-[#1d8ecd]/[0.05] dark:from-[#1d8ecd]/30 dark:to-[#1d8ecd]/15 ring-1 ring-[#1d8ecd]/30"
+                  className="relative overflow-hidden p-3 rounded-2xl border transition-all cursor-pointer text-left border-[#1d8ecd] bg-gradient-to-br from-[#1d8ecd]/15 to-[#1d8ecd]/[0.05] dark:from-[#1d8ecd]/30 dark:to-[#1d8ecd]/15 ring-1 ring-[#1d8ecd]/30"
                 >
                   <div className="flex items-center gap-1.5 mb-1">
                     <Compass className="w-4 h-4 text-[#1d8ecd]" />
-                    <span className="text-[18px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Total Pipeline</span>
+                    <span className="text-[16px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Total Pipeline</span>
                   </div>
-                  <p className="text-[11px] text-slate-600 dark:text-zinc-400 mb-3 leading-snug">
+                  <p className="text-[11px] text-slate-600 dark:text-zinc-400 mb-4 leading-snug">
                     Full pipeline coverage across every priority tier
                   </p>
 
                   <div className="flex items-center gap-3">
-                    {/* Prominent donut on the left */}
-                    <div className="relative w-20 h-20 shrink-0" onClick={(e) => e.stopPropagation()}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={compositionData.length ? compositionData : [{ name: 'Empty', value: 1, fill: '#e5e7eb' }]}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={26}
-                            outerRadius={38}
-                            paddingAngle={compositionData.length > 1 ? 3 : 0}
-                            dataKey="value"
-                            stroke="none"
-                          >
-                            {(compositionData.length ? compositionData : [{ fill: '#e5e7eb' }]).map((d, i) => (
-                              <Cell key={i} fill={d.fill} />
-                            ))}
-                          </Pie>
-                          {compositionData.length > 0 && (
-                            <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
-                          )}
-                        </PieChart>
-                      </ResponsiveContainer>
-                      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                        <span className="text-lg font-semibold font-mono text-slate-900 dark:text-zinc-50 leading-none" style={{ letterSpacing: '-0.03em' }}>{priorityOverview.total}</span>
+                    {/* Enlarged pie — classic 3D tilt */}
+                    <div className="flex flex-col items-center shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <div className="relative w-20 h-20">
+                        <div className="absolute inset-0" style={{ transform: 'perspective(400px) rotateX(15deg)', transformOrigin: 'center 60%', filter: 'drop-shadow(0 4px 3px rgba(0,0,0,0.15))' }}>
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Pie
+                                data={compositionData.length ? compositionData : [{ name: 'Empty', value: 1, fill: '#e5e7eb' }]}
+                                cx="50%"
+                                cy="50%"
+                                outerRadius={36}
+                                paddingAngle={compositionData.length > 1 ? 3 : 0}
+                                dataKey="value"
+                                stroke="none"
+                              >
+                                {(compositionData.length ? compositionData : [{ fill: '#e5e7eb' }]).map((d, i) => (
+                                  <Cell key={i} fill={d.fill} />
+                                ))}
+                              </Pie>
+                              {compositionData.length > 0 && (
+                                <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
+                              )}
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
                       </div>
                     </div>
                     {/* Vertical legend list */}
@@ -1254,12 +1277,17 @@ export function Dashboard({
                         <span className="font-mono font-semibold text-slate-700 dark:text-zinc-200">{priorityOverview.immediate}</span>
                       </div>
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className="flex items-center gap-1.5 text-slate-600 dark:text-zinc-300"><span className="w-1.5 h-1.5 rounded-full bg-teal-500" />Nurture</span>
+                        <span className="flex items-center gap-1.5 text-slate-600 dark:text-zinc-300"><span className="w-1.5 h-1.5 rounded-full bg-teal-500" />Warm Track</span>
                         <span className="font-mono font-semibold text-slate-700 dark:text-zinc-200">{priorityOverview.nurture}</span>
                       </div>
                       <div className="flex items-center justify-between text-[11px]">
                         <span className="flex items-center gap-1.5 text-slate-600 dark:text-zinc-300"><span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500" />Standard</span>
                         <span className="font-mono font-semibold text-slate-700 dark:text-zinc-200">{priorityOverview.standard}</span>
+                      </div>
+                      {/* Total — highlighted below Standard */}
+                      <div className="flex items-center justify-between text-[11px] pt-1 mt-0.5 border-t border-[#1d8ecd]/30">
+                        <span className="flex items-center gap-1.5 font-semibold text-[#1d8ecd]"><span className="w-1.5 h-1.5 rounded-full bg-[#1d8ecd]" />Total</span>
+                        <span className="font-mono font-bold text-[#1d8ecd] bg-[#1d8ecd]/10 px-1.5 py-0.5 rounded">{priorityOverview.total}</span>
                       </div>
                     </div>
                   </div>
@@ -1268,7 +1296,7 @@ export function Dashboard({
                 {/* Card 2: Immediate Action — URGENT ALERT with pulsing accent bar + gradient */}
                 <div
                   onClick={() => setPriorityFilter('immediate')}
-                  className="relative overflow-hidden p-4 rounded-2xl border transition-all cursor-pointer text-left border-rose-500 bg-gradient-to-br from-rose-100 to-rose-50 dark:from-rose-900/30 dark:to-rose-950/20 ring-1 ring-rose-300"
+                  className="relative overflow-hidden p-3 rounded-2xl border transition-all cursor-pointer text-left border-rose-500 bg-gradient-to-br from-rose-100 to-rose-50 dark:from-rose-900/30 dark:to-rose-950/20"
                 >
                   {/* Pulsing accent bar at top */}
                   <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-rose-400 via-rose-500 to-orange-500 animate-pulse" />
@@ -1276,7 +1304,7 @@ export function Dashboard({
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-1.5">
                       <TrendingUp className="w-4 h-4 text-rose-500 dark:text-rose-400" />
-                      <span className="text-[18px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Immediate Action</span>
+                      <span className="text-[16px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Immediate Action</span>
                     </div>
                     {priorityOverview.immediate > 0 && (
                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-semibold text-rose-700 dark:text-rose-300 bg-rose-100 dark:bg-rose-500/20 border border-rose-200 dark:border-rose-500/30 uppercase tracking-wider">
@@ -1288,130 +1316,193 @@ export function Dashboard({
                       </span>
                     )}
                   </div>
-                  <p className="text-[11px] text-slate-600 dark:text-zinc-400 mb-3 leading-snug">
+                  <p className="text-[11px] text-slate-600 dark:text-zinc-400 mb-4 leading-snug">
                     Hot buyers ready now — reach out within 48 hours
                   </p>
 
                   {/* Huge dominant count */}
-                  <div className="text-5xl font-semibold font-mono text-rose-600 dark:text-rose-300 leading-none mb-1" style={{ letterSpacing: '-0.04em' }}>
-                    {priorityOverview.immediate}
+                  <div className="relative z-10 flex items-baseline gap-1 leading-none mb-1">
+                    <span className="text-4xl font-semibold font-mono text-rose-600 dark:text-rose-300" style={{ letterSpacing: '-0.04em' }}>{priorityOverview.immediate}</span>
+                    <span className="text-lg font-mono text-rose-400/70 dark:text-rose-400/60" style={{ letterSpacing: '-0.02em' }}>/{priorityOverview.total}</span>
                   </div>
-                  <div className="text-[11px] text-rose-700/80 dark:text-rose-300/80 mb-3 font-medium">
+                  <div className="relative z-10 text-[11px] text-rose-700/80 dark:text-rose-300/80 font-medium">
                     high-intent accounts
                   </div>
 
-                  {/* Slim bar chart at the bottom */}
-                  {(() => {
-                    const immTotal = immBins.reduce((s, b) => s + b.count, 0);
-                    const chartData = immTotal > 0
-                      ? immBins
-                      : immBins.map(b => ({ ...b, count: 1, _empty: true }));
-                    return (
-                      <div className="h-10 -mx-1" onClick={(e) => e.stopPropagation()}>
-                        <ResponsiveContainer width="100%" height="100%">
-                          <BarChart data={chartData} margin={{ top: 2, right: 0, left: 0, bottom: 0 }}>
-                            <Bar
-                              dataKey="count"
-                              fill={immTotal > 0 ? '#f43f5e' : '#fecdd3'}
-                              radius={[2, 2, 0, 0]}
-                              minPointSize={2}
-                            />
-                            {immTotal > 0 && (
-                              <Tooltip cursor={{ fill: 'rgba(244,63,94,0.12)' }} contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
-                            )}
-                          </BarChart>
-                        </ResponsiveContainer>
-                      </div>
-                    );
-                  })()}
-                  <div className="mt-1 text-[9px] font-mono uppercase tracking-wider text-rose-500/70 dark:text-rose-300/70">Fit-score distribution</div>
+                  {/* Running spline wave — decorative bottom fill */}
+                  <div className="absolute bottom-0 left-0 right-0 h-24 overflow-hidden pointer-events-none rounded-b-2xl">
+                    <motion.div
+                      className="absolute bottom-0 flex"
+                      style={{ width: '200%' }}
+                      animate={{ x: ['0%', '-50%'] }}
+                      transition={{ duration: 28, repeat: Infinity, ease: 'linear' }}
+                    >
+                      {[0, 1].map(i => (
+                        <svg key={i} viewBox="0 0 800 160" style={{ width: '50%', display: 'block', flexShrink: 0 }} preserveAspectRatio="none">
+                          <path d="M0,100 C67,55 133,145 200,100 C267,55 333,145 400,100 C467,55 533,145 600,100 C667,55 733,145 800,100 L800,160 L0,160 Z" fill="rgba(244,63,94,0.22)" />
+                          <path d="M0,120 C67,85 133,152 200,120 C267,85 333,152 400,120 C467,85 533,152 600,120 C667,85 733,152 800,120 L800,160 L0,160 Z" fill="rgba(244,63,94,0.12)" />
+                        </svg>
+                      ))}
+                    </motion.div>
+                  </div>
                 </div>
 
                 {/* Card 3: Warm Track — CENTERED RADIAL GAUGE dominating the card */}
                 <div
                   onClick={() => setPriorityFilter('nurture')}
-                  className="relative overflow-hidden p-4 rounded-2xl border transition-all cursor-pointer text-left flex flex-col items-center border-teal-500 bg-gradient-to-br from-teal-100 to-teal-50 dark:from-teal-900/40 dark:to-teal-950/20 ring-1 ring-teal-300"
+                  className="relative overflow-hidden p-3 rounded-2xl border transition-all cursor-pointer text-left flex flex-col items-center border-teal-500 bg-gradient-to-br from-teal-100 to-teal-50 dark:from-teal-900/40 dark:to-teal-950/20 ring-1 ring-teal-300"
                 >
                   <div className="w-full flex items-center gap-1.5 mb-1">
                     <Clock className="w-4 h-4 text-teal-600 dark:text-teal-300" />
-                    <span className="text-[18px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Warm Track</span>
+                    <span className="text-[16px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Warm Track</span>
                   </div>
-                  <p className="w-full text-[11px] text-slate-600 dark:text-zinc-400 mb-3 leading-snug">
+                  <p className="w-full text-[11px] text-slate-600 dark:text-zinc-400 mb-4 leading-snug">
                     Right customer, wrong time — stay in touch until they're ready to buy
                   </p>
 
-                  {/* Big centered radial gauge */}
-                  <div className="relative w-28 h-28 my-1" onClick={(e) => e.stopPropagation()}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={[
-                            { name: 'Nurture', value: priorityOverview.nurture, fill: '#14b8a6' },
-                            { name: 'Rest', value: Math.max(0, priorityOverview.total - priorityOverview.nurture), fill: 'transparent' },
-                          ]}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={42}
-                          outerRadius={54}
-                          startAngle={90}
-                          endAngle={-270}
-                          dataKey="value"
-                          stroke="none"
-                          cornerRadius={6}
-                        />
-                        <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                    {/* Background ring */}
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <div className="w-[108px] h-[108px] rounded-full border-[12px] border-slate-100 dark:border-white/[0.05] -z-10 absolute" />
-                    </div>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                      <span className="text-2xl font-semibold font-mono text-teal-600 dark:text-teal-300 leading-none" style={{ letterSpacing: '-0.03em' }}>{nurturePct}%</span>
-                      <span className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500 mt-0.5">share</span>
-                    </div>
-                  </div>
-
-                  <div className="w-full mt-2 flex items-center justify-between text-[10px] font-mono text-slate-500 dark:text-zinc-400">
-                    <span>Queued</span>
-                    <span className="font-semibold text-teal-600 dark:text-teal-300">{priorityOverview.nurture}/{priorityOverview.total}</span>
-                  </div>
+                  {/* Speed meter gauge — pure SVG, large, % text on right */}
+                  {(() => {
+                    const W = 170, H = 68;
+                    const cx = W / 2, cy = H - 8;
+                    const innerR = 40, outerR = 62;
+                    const needleLen = outerR - 3;
+                    const angleRad = Math.PI - (nurturePct / 100) * Math.PI;
+                    const nx = cx + needleLen * Math.cos(angleRad);
+                    const ny = cy - needleLen * Math.sin(angleRad);
+                    const tx = cx - 10 * Math.cos(angleRad);
+                    const ty = cy + 10 * Math.sin(angleRad);
+                    const arc = (sDeg: number, eDeg: number) => {
+                      const s = sDeg * Math.PI / 180, e = eDeg * Math.PI / 180;
+                      const ox1 = cx + outerR * Math.cos(s), oy1 = cy - outerR * Math.sin(s);
+                      const ox2 = cx + outerR * Math.cos(e), oy2 = cy - outerR * Math.sin(e);
+                      const ix2 = cx + innerR * Math.cos(e), iy2 = cy - innerR * Math.sin(e);
+                      const ix1 = cx + innerR * Math.cos(s), iy1 = cy - innerR * Math.sin(s);
+                      const lg = Math.abs(sDeg - eDeg) > 180 ? 1 : 0;
+                      return `M${ox1},${oy1} A${outerR},${outerR} 0 ${lg} 1 ${ox2},${oy2} L${ix2},${iy2} A${innerR},${innerR} 0 ${lg} 0 ${ix1},${iy1}Z`;
+                    };
+                    const zones = [
+                      { s: 180, e: 120, fill: isDark ? '#5eead4' : '#99f6e4' },
+                      { s: 120, e: 60,  fill: isDark ? '#14b8a6' : '#2dd4bf' },
+                      { s: 60,  e: 0,   fill: isDark ? '#0f766e' : '#0d9488' },
+                    ];
+                    return (
+                      <div className="flex items-center w-full gap-3 my-1" onClick={(e) => e.stopPropagation()}>
+                        {/* Gauge */}
+                        <div className="relative shrink-0" style={{ width: W, height: H }}>
+                          <svg width={W} height={H} style={{ overflow: 'visible' }}>
+                            {zones.map((z, i) => <path key={i} d={arc(z.s, z.e)} fill={z.fill} />)}
+                            <line x1={tx} y1={ty} x2={nx} y2={ny} stroke="#0d9488" strokeWidth="2.5" strokeLinecap="round" />
+                            <circle cx={cx} cy={cy} r="5" fill="#99f6e4" />
+                            <circle cx={cx} cy={cy} r="2.5" fill="#0d9488" />
+                            <text x={cx - outerR} y={cy + 14} fontSize="8" textAnchor="middle" fill={isDark ? '#6b7280' : '#94a3b8'} fontFamily="ui-monospace,monospace">0%</text>
+                            <text x={cx + outerR} y={cy + 14} fontSize="8" textAnchor="middle" fill={isDark ? '#6b7280' : '#94a3b8'} fontFamily="ui-monospace,monospace">100%</text>
+                          </svg>
+                        </div>
+                        {/* Value + Queued — right side */}
+                        <div className="flex flex-col items-center shrink-0 gap-2">
+                          <div className="flex flex-col items-center">
+                            <span className="text-2xl font-bold font-mono text-teal-600 dark:text-teal-300 leading-none" style={{ letterSpacing: '-0.03em' }}>{nurturePct}%</span>
+                            <span className="text-[9px] font-mono uppercase tracking-widest text-slate-400 dark:text-zinc-500 mt-1">share</span>
+                          </div>
+                          <div className="flex flex-col items-center border-t border-teal-200 dark:border-teal-800 pt-2 w-full">
+                            <div className="flex items-baseline gap-0.5 leading-none">
+                              <span className="text-2xl font-bold font-mono text-teal-600 dark:text-teal-300" style={{ letterSpacing: '-0.04em' }}>{priorityOverview.nurture}</span>
+                              <span className="text-base font-mono text-teal-400/70 dark:text-teal-400/60" style={{ letterSpacing: '-0.02em' }}>/{priorityOverview.total}</span>
+                            </div>
+                            <span className="text-[9px] font-mono uppercase tracking-widest text-slate-400 dark:text-zinc-500 mt-1">queued</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Card 4: Standard follow-up — MINIMAL TYPOGRAPHIC (no chart, tabular list) */}
                 <div
                   onClick={() => setPriorityFilter('standard')}
-                  className="p-4 rounded-2xl border transition-all cursor-pointer text-left border-amber-500 bg-gradient-to-br from-amber-100 to-amber-50 dark:from-amber-900/40 dark:to-amber-950/20 ring-1 ring-amber-300"
+                  className="p-3 rounded-2xl border transition-all cursor-pointer text-left border-amber-500 bg-gradient-to-br from-amber-100 to-amber-50 dark:from-amber-900/40 dark:to-amber-950/20 ring-1 ring-amber-300"
                 >
                   <div className="flex items-center gap-1.5 mb-1">
                     <Lightbulb className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
-                    <span className="text-[18px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Standard follow-up</span>
+                    <span className="text-[16px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Standard follow-up</span>
                   </div>
-                  <p className="text-[11px] text-slate-600 dark:text-zinc-400 mb-3 leading-snug">
+                  <p className="text-[11px] text-slate-600 dark:text-zinc-400 mb-2 leading-snug">
                     Lower priority — check back with a light touch every few months
                   </p>
 
                   {/* Big monospace number, no chart */}
-                  <div className="text-4xl font-semibold font-mono text-slate-700 dark:text-zinc-100 leading-none mb-3" style={{ letterSpacing: '-0.03em' }}>
-                    {priorityOverview.standard}
+                  <div className="flex items-baseline gap-2 mb-2">
+                    <span className="text-3xl font-semibold font-mono text-slate-700 dark:text-zinc-100 leading-none" style={{ letterSpacing: '-0.03em' }}>{priorityOverview.standard}</span>
+                    <span className="text-[12px] font-mono text-slate-400 dark:text-zinc-500">/ {priorityOverview.total} total</span>
                   </div>
 
-                  {/* Tabular distribution list (fit-score bins) */}
-                  <div className="border-t border-slate-200/70 dark:border-white/[0.06] pt-2 space-y-1">
-                    {stdBins.map((bin, idx) => (
-                      <div key={idx} className="flex items-center justify-between text-[10px] font-mono text-slate-500 dark:text-zinc-500">
-                        <span>Fit {bin.range}</span>
-                        <span className="flex items-center gap-2">
-                          <span className="w-8 h-0.5 bg-slate-200 dark:bg-white/[0.06] rounded-full overflow-hidden">
-                            <span
-                              className="block h-full bg-slate-500 dark:bg-zinc-400"
-                              style={{ width: `${bin.count === 0 ? 0 : Math.min(100, (bin.count / Math.max(1, Math.max(...stdBins.map(b => b.count)))) * 100)}%` }}
-                            />
-                          </span>
-                          <span className="font-semibold text-slate-700 dark:text-zinc-200 w-3 text-right">{bin.count}</span>
-                        </span>
-                      </div>
-                    ))}
+                  {/* Vertical bar chart — fit-score distribution */}
+                  <div className="border-t border-slate-200/70 dark:border-white/[0.06] pt-2">
+                    <ResponsiveContainer width="100%" height={82}>
+                      <BarChart
+                        data={stdBins.map(b => ({ name: b.range, count: b.count }))}
+                        margin={{ top: 24, right: 6, bottom: 4, left: 4 }}
+                        barCategoryGap="10%"
+                      >
+                        <XAxis
+                          dataKey="name"
+                          tick={{ fontSize: 9, fill: isDark ? '#fde68a' : '#92400e', fontFamily: 'ui-monospace, monospace' }}
+                          axisLine={false}
+                          tickLine={false}
+                          interval={0}
+                        />
+                        <YAxis hide width={0} />
+                        <Tooltip
+                          contentStyle={tooltipStyle}
+                          labelStyle={tooltipLabelStyle}
+                          itemStyle={tooltipItemStyle}
+                          formatter={(v: any) => [v, 'Accounts']}
+                        />
+                        <Bar
+                          dataKey="count"
+                          label={{
+                            content: (props: any) => {
+                              const { x, y, width, value } = props;
+                              if (!value || value <= 0) return null;
+                              return (
+                                <text
+                                  x={(x ?? 0) + (width ?? 0) / 2}
+                                  y={(y ?? 0) - 6 - 5}
+                                  textAnchor="middle"
+                                  fontSize={9}
+                                  fill={isDark ? '#fde68a' : '#92400e'}
+                                  fontFamily="ui-monospace, monospace"
+                                >
+                                  {value}
+                                </text>
+                              );
+                            }
+                          }}
+                          shape={(props: any) => {
+                            if (!props.value || props.value <= 0) {
+                              const stubH = 6;
+                              return (
+                                <rect
+                                  x={props.x} y={props.y - stubH}
+                                  width={props.width} height={stubH}
+                                  fill={isDark ? '#78350f' : '#fed7aa'}
+                                  rx={2}
+                                />
+                              );
+                            }
+                            return (
+                              <ThreeDBar
+                                {...props}
+                                fill={isDark ? '#fbbf24' : '#f59e0b'}
+                                topColor={isDark ? '#fde68a' : '#fcd34d'}
+                                sideColor={isDark ? '#f59e0b' : '#b45309'}
+                                depth={6}
+                              />
+                            );
+                          }}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
                 </div>
               </div>
@@ -2054,7 +2145,7 @@ export function Dashboard({
                       <li className="flex gap-2"><Compass className="w-4 h-4 text-[#1d8ecd] shrink-0 mt-0.5" /><span><strong>Total Pipeline</strong> — donut of tier composition across all active accounts.</span></li>
                       <li className="flex gap-2"><TrendingUp className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" /><span><strong>Immediate Action</strong> — count + fit-score distribution of urgent accounts.</span></li>
                       <li className="flex gap-2"><Clock className="w-4 h-4 text-teal-500 shrink-0 mt-0.5" /><span><strong>Warm Track</strong> — % of pipeline waiting for timing to catch up.</span></li>
-                      <li className="flex gap-2"><Lightbulb className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" /><span><strong>Standard Follow-up</strong> — tabular fit-score bins for the long-tail set.</span></li>
+                      <li className="flex gap-2"><Lightbulb className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" /><span><strong>Standard Follow-up</strong> — horizontal bar chart of fit-score distribution for the long-tail set.</span></li>
                     </ul>
                   </section>
 
@@ -3117,7 +3208,7 @@ export function Dashboard({
                     railBg = 'bg-teal-50/40 dark:bg-teal-500/5';
                     chipClass = 'bg-teal-100/70 dark:bg-teal-500/15 border-teal-200 dark:border-teal-500/25 text-teal-700 dark:text-teal-300';
                     scoreText = 'text-teal-700 dark:text-teal-300';
-                    chipLabel = 'Nurture';
+                    chipLabel = 'Warm Track';
                   }
 
                   return (
