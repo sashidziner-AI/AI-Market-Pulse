@@ -87,7 +87,12 @@ async function getJudgeClient() {
   return judgeClient;
 }
 
-async function llmJudgeScore(rubric: string, subject: unknown): Promise<{ score: number; reason: string }> {
+// Number of judge samples to average when scoring subjective quality.
+// Reduces LLM-as-judge variance (single-shot judges have ~±2 point spread on
+// borderline cases). Configurable via EVAL_JUDGE_SAMPLES env var.
+const JUDGE_SAMPLES = Math.max(1, parseInt(process.env.EVAL_JUDGE_SAMPLES ?? "3", 10) || 3);
+
+async function runOneJudge(rubric: string, subject: unknown): Promise<{ score: number; reason: string }> {
   const ai = await getJudgeClient();
   const subjectText = typeof subject === "string" ? subject : JSON.stringify(subject, null, 2);
   const prompt = `You are a rigorous evaluator. Score the SUBJECT against the RUBRIC on a 1-10 scale.
@@ -104,6 +109,7 @@ Respond with a single JSON object of shape { "score": <1-10>, "reason": "<one-se
   const res = await ai.chat.completions.create({
     model: "gpt-4o-mini",
     max_tokens: 200,
+    temperature: 0.2, // low variance across samples while still allowing minor spread
     messages: [
       { role: "system", content: "You return only valid JSON. No prose." },
       { role: "user", content: prompt },
@@ -121,6 +127,24 @@ Respond with a single JSON object of shape { "score": <1-10>, "reason": "<one-se
     return { score: 0, reason: "judge returned non-JSON" };
   }
 }
+
+async function llmJudgeScore(rubric: string, subject: unknown): Promise<{ score: number; reason: string; samples: number[] }> {
+  // Fire N judge calls in parallel to keep wall-clock latency close to a single call.
+  const results = await Promise.all(
+    Array.from({ length: JUDGE_SAMPLES }, () => runOneJudge(rubric, subject))
+  );
+  const scores = results.map((r) => r.score);
+  const avg = scores.reduce((s, v) => s + v, 0) / scores.length;
+  // Pick the reason from the median-scored sample — most representative.
+  const sortedByScore = [...results].sort((a, b) => a.score - b.score);
+  const median = sortedByScore[Math.floor(sortedByScore.length / 2)];
+  return {
+    score: Math.round(avg * 10) / 10, // 1-decimal precision
+    reason: median.reason,
+    samples: scores,
+  };
+}
+
 
 async function evaluate(expectation: Expectation, response: unknown): Promise<ExpectationResult> {
   switch (expectation.type) {
@@ -187,13 +211,14 @@ async function evaluate(expectation: Expectation, response: unknown): Promise<Ex
         return { ok: false, detail: `llmJudge "${expectation.path ?? "*"}" — target is missing` };
       }
       try {
-        const { score, reason } = await llmJudgeScore(expectation.rubric, subject);
+        const { score, reason, samples } = await llmJudgeScore(expectation.rubric, subject);
         const ok = score >= expectation.passingScore;
+        const sampleStr = samples.length > 1 ? ` [samples: ${samples.join(",")}]` : "";
         return {
           ok,
           detail: ok
-            ? `llmJudge "${expectation.path ?? "*"}" score=${score}/10 ≥ ${expectation.passingScore} ✓ (${reason})`
-            : `llmJudge "${expectation.path ?? "*"}" score=${score}/10 < ${expectation.passingScore} — ${reason}`,
+            ? `llmJudge "${expectation.path ?? "*"}" score=${score}/10${sampleStr} ≥ ${expectation.passingScore} ✓ (${reason})`
+            : `llmJudge "${expectation.path ?? "*"}" score=${score}/10${sampleStr} < ${expectation.passingScore} — ${reason}`,
         };
       } catch (err: any) {
         return { ok: false, detail: `llmJudge "${expectation.path ?? "*"}" — judge unavailable: ${err?.message ?? err}` };

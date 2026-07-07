@@ -60,7 +60,7 @@ Dot-separated. Numeric segments address array indices.
 | `arrayLengthAtLeast` | Path is an array with `.length >= min` |
 | `equals` | Deep-equals `value` (JSON stringified compare) |
 | `notFallback` | `response.isFallback !== true`. Fails when the AI short-circuited to canned data — useful for verifying live API is working. |
-| `llmJudge` | Sends the target subtree to `gpt-4o-mini` with a rubric, receives a 1-10 score, passes if `score >= passingScore`. Useful for subjective quality checks (e.g. "is this outreach angle actually good?"). Requires `OPENAI_API_KEY` for the judge; each judge call costs a few tenths of a cent. |
+| `llmJudge` | Sends the target subtree to `gpt-4o-mini` with a rubric, fires **3 parallel samples at temperature 0.2**, averages the scores, uses the median-sample's reason. Passes if `score >= passingScore`. Useful for subjective quality checks (e.g. "is this outreach angle actually good?"). Requires `OPENAI_API_KEY`; roughly 3× the per-judge cost of a single sample (~$0.001 per llmJudge expectation), traded for a ~5× drop in score variance across runs. Override sample count with `EVAL_JUDGE_SAMPLES=1` (fast, noisy) or `EVAL_JUDGE_SAMPLES=5` (slower, tighter). |
 
 ### `llmJudge` example
 
