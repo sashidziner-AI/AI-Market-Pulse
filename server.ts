@@ -2506,6 +2506,49 @@ function getSocialFallback(domain: string): any {
   };
 }
 
+// ── Shared social helpers ──────────────────────────────────────────────────
+
+function serverFmtNum(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
+const SOCIAL_WINDOW_DAYS = 15;
+
+function windowStart(): Date {
+  const d = new Date();
+  d.setDate(d.getDate() - SOCIAL_WINDOW_DAYS);
+  return d;
+}
+
+function isWithinWindow(dateStr: string): boolean {
+  try {
+    return new Date(dateStr) >= windowStart();
+  } catch {
+    return false;
+  }
+}
+
+// Derive posting cadence from how many posts occurred in the 15-day window.
+function cadenceFromCount(n: number): "daily" | "weekly" | "monthly" | "dormant" {
+  if (n >= 10) return "daily";
+  if (n >= 3)  return "weekly";
+  if (n >= 1)  return "monthly";
+  return "dormant";
+}
+
+function inferTopicFromText(text: string): string {
+  const t = text.toLowerCase();
+  if (/launch|announce|release|new product|unveil/.test(t)) return "product launch";
+  if (/hire|hiring|join us|career|open role|we.re growing/.test(t)) return "hiring";
+  if (/how to|why|what is|guide|tips|best practice|insights|strategy/.test(t)) return "thought leadership";
+  if (/partner|partnership|integrat|collab/.test(t)) return "partnership";
+  if (/fund|series [a-z]|raise|invest/.test(t)) return "funding";
+  if (/culture|team|behind the scene|day in the life|our team/.test(t)) return "culture";
+  return "other";
+}
+
 // YouTube Data API v3 helper — finds a company's channel, fetches subscriber
 // count, video count, and recent video stats (views/likes/comments).
 // Returns null if YOUTUBE_API_KEY is absent or the channel can't be found.
@@ -2536,8 +2579,9 @@ async function fetchYouTubeChannelData(companyName: string, domain: string): Pro
   const videoCount = parseInt(stats.videoCount ?? "0", 10);
   const customUrl: string = channel.snippet?.customUrl ?? "";
 
-  // Step 3 — recent videos (up to 5)
-  const videosData = await yt(`/search?channelId=${channelId}&order=date&maxResults=5&type=video&part=snippet`);
+  // Step 3 — videos published in the last 15 days
+  const publishedAfter = windowStart().toISOString();
+  const videosData = await yt(`/search?channelId=${channelId}&order=date&maxResults=15&type=video&part=snippet&publishedAfter=${encodeURIComponent(publishedAfter)}`);
   const videoItems: any[] = videosData.items ?? [];
 
   // Step 4 — per-video statistics (batch)
@@ -2550,20 +2594,8 @@ async function fetchYouTubeChannelData(companyName: string, domain: string): Pro
     }
   }
 
-  // Infer topic from video title via keyword matching
-  function inferTopic(title: string): string {
-    const t = title.toLowerCase();
-    if (/launch|announce|release|new product|unveil/.test(t)) return "product launch";
-    if (/hire|hiring|join us|career|open role|we're growing/.test(t)) return "hiring";
-    if (/how to|why|what is|guide|tips|best practice|insights|strategy/.test(t)) return "thought leadership";
-    if (/partner|partnership|integrat|collab/.test(t)) return "partnership";
-    if (/fund|series [a-z]|raise|invest/.test(t)) return "funding";
-    if (/culture|team|behind the scene|day in the life|our team/.test(t)) return "culture";
-    return "other";
-  }
-
-  // Map recent videos → SocialPost
-  const recentPosts = videoItems.slice(0, 3).map((v: any) => {
+  // Map ALL videos in the 15-day window → SocialPost (API already filtered by publishedAfter)
+  const recentPosts = videoItems.map((v: any) => {
     const videoId: string = v.id?.videoId ?? "";
     const vs = videoStatsMap[videoId] ?? {};
     const viewCount = parseInt(vs.viewCount ?? "0", 10);
@@ -2579,7 +2611,7 @@ async function fetchYouTubeChannelData(companyName: string, domain: string): Pro
     return {
       date: (v.snippet?.publishedAt ?? new Date().toISOString()).split("T")[0],
       summary: v.snippet?.title ?? "Untitled video",
-      topic: inferTopic(v.snippet?.title ?? ""),
+      topic: inferTopicFromText(v.snippet?.title ?? ""),
       engagementTier,
       url: `https://www.youtube.com/watch?v=${videoId}`,
       viewCount,
@@ -2588,15 +2620,8 @@ async function fetchYouTubeChannelData(companyName: string, domain: string): Pro
     };
   });
 
-  // Derive posting cadence from date gaps between recent videos
-  let postingCadence: "daily" | "weekly" | "monthly" | "dormant" = "monthly";
-  if (recentPosts.length >= 2) {
-    const ms = recentPosts.map((p) => new Date(p.date).getTime());
-    const avgGapDays = (ms[0] - ms[ms.length - 1]) / (ms.length - 1) / 86_400_000;
-    postingCadence = avgGapDays <= 2 ? "daily" : avgGapDays <= 10 ? "weekly" : avgGapDays <= 45 ? "monthly" : "dormant";
-  } else if (recentPosts.length === 0) {
-    postingCadence = "dormant";
-  }
+  // Derive cadence from count of videos in the 15-day window
+  const postingCadence = cadenceFromCount(recentPosts.length);
 
   // GTM signals from real data
   const signals: string[] = [];
@@ -2619,9 +2644,83 @@ async function fetchYouTubeChannelData(companyName: string, domain: string): Pro
   };
 }
 
+// X / Twitter real data via RapidAPI twitter-api45.
+// Returns { followerEstimate, postCount, recentPosts, signals } to be merged
+// into the AI-found X platform entry. Needs RAPIDAPI_KEY in .env.
+async function fetchXProfileData(handle: string): Promise<any | null> {
+  const apiKey = process.env.RAPIDAPI_KEY;
+  if (!apiKey) return null;
+
+  const screenname = handle.replace(/^@/, "").trim();
+  if (!screenname) return null;
+
+  const headers: Record<string, string> = {
+    "X-RapidAPI-Key": apiKey,
+    "X-RapidAPI-Host": "twitter-api45.p.rapidapi.com",
+  };
+
+  try {
+    const [profileResp, timelineResp] = await Promise.all([
+      fetch(`https://twitter-api45.p.rapidapi.com/screenname.php?screenname=${encodeURIComponent(screenname)}`, { headers }),
+      fetch(`https://twitter-api45.p.rapidapi.com/timeline.php?screenname=${encodeURIComponent(screenname)}&count=50`, { headers }),
+    ]);
+
+    if (!profileResp.ok) return null;
+    const profile = await profileResp.json();
+    if (!profile.screen_name) return null; // API error or not found
+
+    const followerCount = parseInt(profile.followers_count ?? "0", 10);
+    const tweetCount   = parseInt(profile.statuses_count   ?? "0", 10);
+
+    let recentPosts: any[] = [];
+    if (timelineResp.ok) {
+      const tlData = await timelineResp.json();
+      const tweets: any[] = tlData.timeline ?? tlData.tweets ?? [];
+      // Filter to past 15-day window only
+      const windowTweets = tweets.filter((t: any) => t.created_at && isWithinWindow(t.created_at));
+      recentPosts = windowTweets.map((t: any) => {
+        const likeCount    = parseInt(t.favorite_count ?? t.like_count ?? "0", 10);
+        const retweetCount = parseInt(t.retweet_count ?? "0", 10);
+        const commentCount = parseInt(t.reply_count   ?? "0", 10);
+        let engagementTier: "high" | "medium" | "low" = "medium";
+        if (followerCount > 0) {
+          const ratio = likeCount / followerCount;
+          engagementTier = ratio > 0.02 ? "high" : ratio > 0.003 ? "medium" : "low";
+        }
+        const text: string = t.full_text ?? t.text ?? "";
+        return {
+          date: new Date(t.created_at).toISOString().split("T")[0],
+          summary: text.length > 220 ? text.slice(0, 217) + "…" : text,
+          topic: inferTopicFromText(text),
+          engagementTier,
+          url: t.id_str ? `https://x.com/${screenname}/status/${t.id_str}` : undefined,
+          likeCount,
+          retweetCount,
+          commentCount,
+        };
+      });
+    }
+
+    const postingCadence = cadenceFromCount(recentPosts.length);
+
+    const signals: string[] = [];
+    if (followerCount > 500)  signals.push(`${serverFmtNum(followerCount)} X followers — established voice`);
+    if (tweetCount > 200)     signals.push(`${tweetCount.toLocaleString()} total posts — sustained content output`);
+    const avgLikes = recentPosts.reduce((s, p) => s + (p.likeCount ?? 0), 0) / Math.max(recentPosts.length, 1);
+    if (avgLikes > 30) signals.push(`~${Math.round(avgLikes)} avg likes per post — engaged audience`);
+    if (recentPosts.length === 0) signals.push("No X activity in the past 15 days — dormant or private account");
+    else if (signals.length === 0) signals.push("X account found — engagement metrics below threshold for strong GTM signal");
+
+    return { followerEstimate: followerCount, postCount: tweetCount, recentPosts, postingCadence, signals };
+  } catch (err) {
+    console.log(`[X RapidAPI] Lookup dropped: ${String(err).slice(0, 100)}`);
+    return null;
+  }
+}
+
 // 5. Social signals — YouTube (official API, real data) runs in parallel
-// with AI web_search (LinkedIn / X / Instagram). Results are merged and
-// cached. Falls back to getSocialFallback() only when both paths fail.
+// with AI web_search (LinkedIn / X). Results are merged and cached.
+// Falls back to getSocialFallback() only when both paths fail.
 app.post("/api/analyze-social", async (req, res) => {
   const { domain, companyName } = req.body;
   if (!domain) return res.status(400).json({ error: "domain is required" });
@@ -2634,23 +2733,26 @@ app.post("/api/analyze-social", async (req, res) => {
 
   const nameHint = companyName || extractNameFromUrl(domain);
 
+  const windowDaysAgo = windowStart().toISOString().split("T")[0]; // e.g. "2026-06-23"
   const aiPrompt = `You have access to web_search. Find the verified social media presence of ${nameHint} (domain: ${domain}).
 
-Search strategy (3-5 searches):
-1. "${nameHint} LinkedIn" or "site:linkedin.com/company ${nameHint}" — company page, follower count, recent posts
-2. "${nameHint} twitter" or "${nameHint} X social" — handle, recent tweets with engagement
-3. "${nameHint} instagram" — only if consumer-facing industry; skip pure B2B
+IMPORTANT: Only return posts from the past 15 days (on or after ${windowDaysAgo}). Older posts should be ignored.
+
+Search strategy (2-4 searches):
+1. "${nameHint} LinkedIn" or "site:linkedin.com/company ${nameHint}" — company page, follower count, posts from the last 15 days
+2. "${nameHint} twitter" or "${nameHint} X social" — handle, recent tweets within the last 15 days with engagement
+3. "${nameHint} facebook" — only if relevant; skip pure B2B SaaS companies
 
 For each verified platform return:
-- platform: exactly "linkedin", "x", "instagram", or "facebook" (NOT "youtube" — handled separately)
+- platform: exactly "linkedin", "x", or "facebook" (NOT "youtube" — handled separately, NOT "instagram" — not used))
 - handle: the username/handle
 - url: verified direct page URL
 - followerEstimate: integer if found
-- postingCadence: "daily" | "weekly" | "monthly" | "dormant"
-- recentPosts: 2-3 most recent, each with date (YYYY-MM-DD), summary (1-2 sentences), topic ("product launch"|"hiring"|"thought leadership"|"partnership"|"funding"|"culture"|"other"), engagementTier ("high"|"medium"|"low"), optional url
-- signals: 2-4 GTM buying-intent signals from their social activity
+- postingCadence: "daily" | "weekly" | "monthly" | "dormant" (base this on activity in the past 15 days only)
+- recentPosts: posts from the past 15 days only (date must be on or after ${windowDaysAgo}), each with date (YYYY-MM-DD), summary (1-2 sentences), topic ("product launch"|"hiring"|"thought leadership"|"partnership"|"funding"|"culture"|"other"), engagementTier ("high"|"medium"|"low"), optional url. If no posts found in 15 days, return empty array.
+- signals: 2-4 GTM buying-intent signals from their social activity in the past 15 days
 
-CRITICAL: Only include platforms you can verify. Never fabricate handles or URLs. If nothing is found, return empty platforms array.`;
+CRITICAL: Only include platforms you can verify. Never fabricate handles or URLs. Only include posts with dates on or after ${windowDaysAgo}. If nothing is found, return empty platforms array.`;
 
   const aiSchema = {
     type: Type.OBJECT,
@@ -2688,9 +2790,14 @@ CRITICAL: Only include platforms you can verify. Never fabricate handles or URLs
     required: ["platforms"],
   };
 
-  // Fire YouTube (official API, real data) + AI web_search in parallel.
-  // Promise.allSettled so one failure never blocks the other.
-  const [ytResult, aiResult] = await Promise.allSettled([
+  // Guess handle from domain prefix (e.g. stripe.com → "stripe").
+  // Works for ~80% of companies. Used to start X real-data lookup in
+  // parallel with AI so we don't wait on AI first.
+  const guessedHandle = domain.split(".")[0].toLowerCase().replace(/[^a-z0-9]/g, "");
+
+  // Fire 3 in parallel — YouTube + AI + X.
+  // allSettled so any single failure never blocks the others.
+  const [ytResult, aiResult, xResult] = await Promise.allSettled([
     fetchYouTubeChannelData(nameHint, domain),
     generateStructuredData(aiPrompt, aiSchema, {
       endpoint: "/api/analyze-social",
@@ -2702,17 +2809,35 @@ CRITICAL: Only include platforms you can verify. Never fabricate handles or URLs
         openai: [MODEL_GPT_4O_MINI, MODEL_GPT_4O],
       },
     }),
+    fetchXProfileData(guessedHandle),
   ]);
 
-  // Merge: start with AI results for LinkedIn/X/Instagram, then inject YouTube
+  // 1. Start with AI-found platforms (LinkedIn, X, Instagram, Facebook)
   let platforms: any[] = [];
   if (aiResult.status === "fulfilled") {
     platforms = (aiResult.value as any)?.platforms ?? [];
   }
-  // Real YouTube data overwrites any guessed YouTube entry the AI may have added
+
+  // 2. Inject real YouTube data (overwrites any AI-guessed YouTube entry)
   if (ytResult.status === "fulfilled" && ytResult.value) {
     platforms = platforms.filter((p: any) => p.platform !== "youtube");
     platforms.push(ytResult.value);
+  }
+
+  // 3. Merge real X data into AI's X platform entry (or add it if AI missed it)
+  if (xResult.status === "fulfilled" && xResult.value) {
+    const aiX = platforms.find((p: any) => p.platform === "x");
+    if (aiX) {
+      Object.assign(aiX, xResult.value);
+    } else if ((xResult.value.followerEstimate ?? 0) > 0) {
+      platforms.push({
+        platform: "x",
+        handle: `@${guessedHandle}`,
+        url: `https://x.com/${guessedHandle}`,
+        postingCadence: "weekly",
+        ...xResult.value,
+      });
+    }
   }
 
   if (platforms.length === 0) {

@@ -818,6 +818,9 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
               <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <Globe className="w-4 h-4 text-indigo-600 dark:text-indigo-300" />
                 Social Signals
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60">
+                  Past 15 days
+                </span>
               </h3>
               <div className="flex items-center gap-2">
                 {socialLoading && (
@@ -872,11 +875,12 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
               </div>
             ) : (
               <Tabs defaultValue={socialData.platforms[0]?.platform} className="w-full">
-                {/* Tab triggers — one per platform */}
+                {/* Tab triggers — one per platform with post count badge */}
                 <TabsList className="w-full flex h-auto p-1 bg-slate-100 dark:bg-slate-800 rounded-xl gap-1 mb-4">
                   {socialData.platforms.map((p) => {
                     const pm = SOCIAL_META[p.platform] ?? SOCIAL_META.linkedin;
                     const TabIcon = pm.Icon;
+                    const postCount15d = p.recentPosts.length;
                     return (
                       <TabsTrigger
                         key={p.platform}
@@ -885,10 +889,12 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                       >
                         <TabIcon className={`w-3.5 h-3.5 shrink-0 ${pm.tabDot}`} />
                         <span className="hidden sm:inline">{pm.label}</span>
-                        {p.followerEstimate !== undefined && p.followerEstimate > 0 && (
-                          <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 hidden md:inline">
-                            {fmtNum(p.followerEstimate)}
+                        {postCount15d > 0 ? (
+                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 hidden md:inline">
+                            {postCount15d}
                           </span>
+                        ) : (
+                          <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 hidden md:inline">—</span>
                         )}
                       </TabsTrigger>
                     );
@@ -1819,7 +1825,12 @@ function SocialPlatformCard({ platform }: { platform: SocialPlatformData; key?: 
 
       <div className="p-4 space-y-3">
         {/* Recent posts */}
-        {platform.recentPosts.length > 0 && (
+        {platform.recentPosts.length === 0 ? (
+          <div className="flex items-center justify-center gap-2 py-5 text-[12.5px] text-slate-400 dark:text-slate-500 font-medium">
+            <span className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[11px]">—</span>
+            No activity in the past 15 days
+          </div>
+        ) : (
           <div className="space-y-2">
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">{isYouTube ? 'Recent Videos' : 'Recent Posts'}</div>
             {platform.recentPosts.map((post, i) => (
@@ -1845,6 +1856,11 @@ function SocialPlatformCard({ platform }: { platform: SocialPlatformData; key?: 
                         👍 {fmtNum(post.likeCount)}
                       </span>
                     )}
+                    {post.retweetCount !== undefined && post.retweetCount > 0 && (
+                      <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                        🔁 {fmtNum(post.retweetCount)}
+                      </span>
+                    )}
                     {post.commentCount !== undefined && post.commentCount > 0 && (
                       <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
                         💬 {fmtNum(post.commentCount)}
@@ -1862,7 +1878,7 @@ function SocialPlatformCard({ platform }: { platform: SocialPlatformData; key?: 
           </div>
         )}
 
-        {/* GTM Signals */}
+        {/* GTM Signals — always shown even when no posts in window */}
         {platform.signals.length > 0 && (
           <div className="space-y-1.5 pt-1 border-t border-slate-100 dark:border-slate-700/50">
             <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Buying Intent Signals</div>

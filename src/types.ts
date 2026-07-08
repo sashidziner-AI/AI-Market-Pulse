@@ -166,6 +166,7 @@ export interface SocialPost {
   viewCount?: number;
   likeCount?: number;
   commentCount?: number;
+  retweetCount?: number;
 }
 
 export interface SocialPlatformData {
