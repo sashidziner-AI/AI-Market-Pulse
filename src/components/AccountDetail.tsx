@@ -1,13 +1,14 @@
 import React from 'react';
-import { TargetAccount, DetailedAnalysis, MultiThreadingStrategy, StakeholderNode, IntelCitation } from '../types';
+import { TargetAccount, DetailedAnalysis, MultiThreadingStrategy, StakeholderNode, IntelCitation, SocialActivity, SocialPlatformData } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  X, ShieldCheck, Mail, Linkedin, Users, 
-  Lightbulb, AlertCircle, Copy, Check, 
+import {
+  X, ShieldCheck, Mail, Linkedin, Users,
+  Lightbulb, AlertCircle, Copy, Check,
   ArrowUpRight, Info, Clock, TrendingUp, AlertTriangle,
   Network, GitBranch, ShieldAlert, Sparkles, Sliders, SlidersHorizontal, Target,
-  ExternalLink
+  ExternalLink, Globe, Activity, RefreshCw
 } from 'lucide-react';
+import { FaLinkedin, FaYoutube, FaXTwitter, FaInstagram, FaFacebook } from 'react-icons/fa6';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -442,6 +443,36 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
     setIsEditing(false);
   }, [account]);
 
+  // Social signals state — lazy-fetched on mount once per account
+  const [socialLoading, setSocialLoading] = React.useState(false);
+  const [socialData, setSocialData] = React.useState<SocialActivity | null>(account.socialActivity ?? null);
+
+  // Sync social data when account prop changes (e.g. parent re-propagates saved result)
+  React.useEffect(() => {
+    setSocialData(account.socialActivity ?? null);
+  }, [account.id]);
+
+  // Auto-fetch on mount if social activity not yet loaded for this account
+  React.useEffect(() => {
+    if (account.socialActivity) return;
+    let cancelled = false;
+    setSocialLoading(true);
+    fetch('/api/analyze-social', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain: account.domain, companyName: account.name }),
+    })
+      .then(r => r.ok ? r.json() : Promise.reject(r.status))
+      .then((data: SocialActivity) => {
+        if (cancelled) return;
+        setSocialData(data);
+        setSocialLoading(false);
+        onUpdateAccount?.({ ...account, socialActivity: data });
+      })
+      .catch(() => { if (!cancelled) setSocialLoading(false); });
+    return () => { cancelled = true; };
+  }, [account.id]);
+
   const handleCopy = (text: string, type: string) => {
     navigator.clipboard.writeText(text);
     setCopied(type);
@@ -777,6 +808,100 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                   Reset to Auto-Detected Norms
                 </button>
               </div>
+            )}
+          </section>
+
+          {/* Social Signals — tabbed per platform */}
+          <section className="space-y-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs text-left">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <Globe className="w-4 h-4 text-indigo-600 dark:text-indigo-300" />
+                Social Signals
+              </h3>
+              <div className="flex items-center gap-2">
+                {socialLoading && (
+                  <span className="text-[11px] text-indigo-500 dark:text-indigo-400 font-mono animate-pulse">Scanning…</span>
+                )}
+                {socialData?.isFallback && !socialLoading && (
+                  <Badge variant="outline" className="text-[11px] text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800/60 bg-amber-50/50 dark:bg-amber-950/30">
+                    Simulated
+                  </Badge>
+                )}
+                {socialData && !socialData.isFallback && !socialLoading && (
+                  <Badge variant="outline" className="text-[11px] text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60">
+                    Live
+                  </Badge>
+                )}
+                {!socialLoading && (
+                  <button
+                    title="Refresh social signals"
+                    onClick={() => {
+                      setSocialData(null);
+                      setSocialLoading(true);
+                      fetch('/api/analyze-social', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ domain: account.domain, companyName: account.name }),
+                      })
+                        .then(r => r.ok ? r.json() : Promise.reject(r.status))
+                        .then((data: SocialActivity) => {
+                          setSocialData(data);
+                          setSocialLoading(false);
+                          onUpdateAccount?.({ ...account, socialActivity: data });
+                        })
+                        .catch(() => setSocialLoading(false));
+                    }}
+                    className="p-1 rounded-lg text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Body */}
+            {socialLoading ? (
+              <div className="flex flex-col items-center gap-3 py-8 text-slate-400 dark:text-slate-500">
+                <div className="w-7 h-7 border-2 border-slate-200 dark:border-slate-700 border-t-indigo-500 rounded-full animate-spin" />
+                <p className="text-[13px] font-medium">Scanning social media presence…</p>
+              </div>
+            ) : !socialData || socialData.platforms.length === 0 ? (
+              <div className="text-center py-6 text-slate-400 dark:text-slate-500 text-[13px] font-medium">
+                No verified social presence found for this account.
+              </div>
+            ) : (
+              <Tabs defaultValue={socialData.platforms[0]?.platform} className="w-full">
+                {/* Tab triggers — one per platform */}
+                <TabsList className="w-full flex h-auto p-1 bg-slate-100 dark:bg-slate-800 rounded-xl gap-1 mb-4">
+                  {socialData.platforms.map((p) => {
+                    const pm = SOCIAL_META[p.platform] ?? SOCIAL_META.linkedin;
+                    const TabIcon = pm.Icon;
+                    return (
+                      <TabsTrigger
+                        key={p.platform}
+                        value={p.platform}
+                        className="flex-1 flex items-center justify-center gap-1.5 text-[12px] font-semibold py-1.5 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all"
+                      >
+                        <TabIcon className={`w-3.5 h-3.5 shrink-0 ${pm.tabDot}`} />
+                        <span className="hidden sm:inline">{pm.label}</span>
+                        {p.followerEstimate !== undefined && p.followerEstimate > 0 && (
+                          <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 hidden md:inline">
+                            {fmtNum(p.followerEstimate)}
+                          </span>
+                        )}
+                      </TabsTrigger>
+                    );
+                  })}
+                </TabsList>
+
+                {/* Tab content — one panel per platform */}
+                {socialData.platforms.map((p) => (
+                  <TabsContent key={p.platform} value={p.platform} className="mt-0 animate-in fade-in duration-150">
+                    <SocialPlatformCard platform={p} />
+                  </TabsContent>
+                ))}
+              </Tabs>
             )}
           </section>
 
@@ -1606,6 +1731,151 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
         </Button>
       </div>
     </motion.div>
+  );
+}
+
+function fmtNum(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return n.toString();
+}
+
+const SOCIAL_META: Record<string, {
+  label: string;
+  Icon: React.ComponentType<{ className?: string }>;
+  chipClass: string;
+  iconClass: string;
+  tabDot: string;
+}> = {
+  linkedin:  { label: 'LinkedIn',    Icon: FaLinkedin,  chipClass: 'bg-blue-50 dark:bg-blue-950/40 text-blue-800 dark:text-blue-200 border-blue-200 dark:border-blue-800/60',     iconClass: 'text-blue-600 dark:text-blue-400',    tabDot: 'text-blue-500' },
+  youtube:   { label: 'YouTube',     Icon: FaYoutube,   chipClass: 'bg-red-50 dark:bg-red-950/40 text-red-800 dark:text-red-200 border-red-200 dark:border-red-800/60',           iconClass: 'text-red-600 dark:text-red-400',      tabDot: 'text-red-500' },
+  x:         { label: 'X',           Icon: FaXTwitter,  chipClass: 'bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 border-slate-200 dark:border-slate-700',    iconClass: 'text-slate-800 dark:text-slate-200',  tabDot: 'text-slate-700 dark:text-slate-300' },
+  instagram: { label: 'Instagram',   Icon: FaInstagram, chipClass: 'bg-pink-50 dark:bg-pink-950/40 text-pink-800 dark:text-pink-200 border-pink-200 dark:border-pink-800/60',     iconClass: 'text-pink-600 dark:text-pink-400',    tabDot: 'text-pink-500' },
+  facebook:  { label: 'Facebook',    Icon: FaFacebook,  chipClass: 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-800 dark:text-indigo-200 border-indigo-200 dark:border-indigo-800/60', iconClass: 'text-indigo-600 dark:text-indigo-400', tabDot: 'text-indigo-500' },
+};
+
+function SocialPlatformCard({ platform }: { platform: SocialPlatformData; key?: any }) {
+  const meta = SOCIAL_META[platform.platform] ?? SOCIAL_META.linkedin;
+  const { Icon } = meta;
+  const isYouTube = platform.platform === 'youtube';
+
+  const cadenceBadge: Record<string, string> = {
+    daily:   'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/50',
+    weekly:  'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800/50',
+    monthly: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/50',
+    dormant: 'bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-700',
+  };
+
+  const topicBadge: Record<string, string> = {
+    'product launch':      'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800/50',
+    'hiring':              'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/50',
+    'thought leadership':  'bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-800/50',
+    'partnership':         'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800/50',
+    'funding':             'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/50',
+    'culture':             'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800/50',
+    'other':               'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700',
+  };
+
+  const engagementDot: Record<string, string> = {
+    high:   'bg-emerald-500',
+    medium: 'bg-amber-400',
+    low:    'bg-slate-300 dark:bg-slate-600',
+  };
+
+  return (
+    <div className="rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/40 dark:bg-slate-800/30 overflow-hidden">
+      {/* Platform header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700/60 bg-white/60 dark:bg-slate-900/60">
+        <div className="flex items-center gap-2.5">
+          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-bold border ${meta.chipClass}`}>
+            <Icon className={`w-3.5 h-3.5 ${meta.iconClass}`} />
+            {meta.label}
+          </span>
+          <a
+            href={platform.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[12px] font-mono text-indigo-600 dark:text-indigo-300 hover:underline truncate max-w-[160px]"
+          >
+            {platform.handle}
+          </a>
+        </div>
+        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+          {platform.followerEstimate !== undefined && platform.followerEstimate > 0 && (
+            <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
+              {fmtNum(platform.followerEstimate)} {isYouTube ? 'subscribers' : 'followers'}
+            </span>
+          )}
+          {isYouTube && platform.postCount !== undefined && platform.postCount > 0 && (
+            <span className="text-[11px] font-mono text-slate-400 dark:text-slate-500">
+              {platform.postCount.toLocaleString()} videos
+            </span>
+          )}
+          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border capitalize ${cadenceBadge[platform.postingCadence] ?? cadenceBadge.monthly}`}>
+            {platform.postingCadence}
+          </span>
+        </div>
+      </div>
+
+      <div className="p-4 space-y-3">
+        {/* Recent posts */}
+        {platform.recentPosts.length > 0 && (
+          <div className="space-y-2">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">{isYouTube ? 'Recent Videos' : 'Recent Posts'}</div>
+            {platform.recentPosts.map((post, i) => (
+              <div key={i} className="flex gap-2.5 bg-white dark:bg-slate-900/60 rounded-lg p-2.5 border border-slate-100 dark:border-slate-700/60">
+                <div className="mt-1.5 shrink-0">
+                  <span className={`block w-2 h-2 rounded-full ${engagementDot[post.engagementTier] ?? engagementDot.low}`} title={`${post.engagementTier} engagement`} />
+                </div>
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <p className="text-[12.5px] leading-relaxed text-slate-700 dark:text-slate-300">{post.summary}</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border capitalize ${topicBadge[post.topic] ?? topicBadge.other}`}>
+                      {post.topic}
+                    </span>
+                    <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono">{post.date}</span>
+                    {/* YouTube real metrics */}
+                    {post.viewCount !== undefined && post.viewCount > 0 && (
+                      <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                        👁 {fmtNum(post.viewCount)}
+                      </span>
+                    )}
+                    {post.likeCount !== undefined && post.likeCount > 0 && (
+                      <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                        👍 {fmtNum(post.likeCount)}
+                      </span>
+                    )}
+                    {post.commentCount !== undefined && post.commentCount > 0 && (
+                      <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                        💬 {fmtNum(post.commentCount)}
+                      </span>
+                    )}
+                    {post.url && (
+                      <a href={post.url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-indigo-500 dark:text-indigo-400 hover:underline flex items-center gap-0.5 font-medium">
+                        {isYouTube ? 'Watch' : 'View post'} <ExternalLink className="w-2.5 h-2.5" />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* GTM Signals */}
+        {platform.signals.length > 0 && (
+          <div className="space-y-1.5 pt-1 border-t border-slate-100 dark:border-slate-700/50">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Buying Intent Signals</div>
+            {platform.signals.map((signal, i) => (
+              <div key={i} className="flex items-start gap-1.5 text-[12px] text-slate-700 dark:text-slate-300">
+                <Activity className="w-3 h-3 mt-0.5 text-indigo-500 dark:text-indigo-400 shrink-0" />
+                <span>{signal}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

@@ -18,6 +18,7 @@ const businessCache = new Map<string, any>();
 const discoveryCache = new Map<string, any>();
 const accountAnalysisCache = new Map<string, any>();
 const enrichmentCache = new Map<string, any>();
+const socialCache = new Map<string, any>();
 
 // JSON-Schema type constants. Naming preserved so the existing endpoint
 // schemas (Type.OBJECT, Type.STRING, ...) continue to compile and now
@@ -2442,6 +2443,286 @@ app.post("/api/enrich-stakeholder", async (req, res) => {
     enrichmentCache.set(cacheKey, fallback);
     return res.json(fallback);
   }
+});
+
+function getSocialFallback(domain: string): any {
+  const companyName = extractNameFromUrl(domain);
+  const today = new Date();
+  const daysAgo = (d: number) => new Date(today.getTime() - d * 86400000).toISOString().split("T")[0];
+  return {
+    platforms: [
+      {
+        platform: "linkedin",
+        handle: companyName.toLowerCase().replace(/[^a-z0-9]/g, "-"),
+        url: `https://www.linkedin.com/company/${companyName.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
+        followerEstimate: 1400,
+        postingCadence: "weekly",
+        recentPosts: [
+          {
+            date: daysAgo(4),
+            summary: `${companyName} is expanding its engineering team with 4 new senior hires across platform and infra roles.`,
+            topic: "hiring",
+            engagementTier: "high",
+          },
+          {
+            date: daysAgo(11),
+            summary: `${companyName} published a thought-leadership piece on reducing operational overhead through workflow automation.`,
+            topic: "thought leadership",
+            engagementTier: "medium",
+          },
+          {
+            date: daysAgo(19),
+            summary: `${companyName} announced a new integration partnership with a leading CRM and data platform provider.`,
+            topic: "partnership",
+            engagementTier: "medium",
+          },
+        ],
+        signals: [
+          "Actively posting engineering hiring content — team scaling, budget unlocked",
+          "Weekly thought-leadership cadence signals active marketing investment",
+          "Recent partnership announcement indicates vendor evaluation appetite",
+        ],
+      },
+      {
+        platform: "x",
+        handle: `@${companyName.toLowerCase().replace(/[^a-z0-9]/g, "")}`,
+        url: `https://x.com/${companyName.toLowerCase().replace(/[^a-z0-9]/g, "")}`,
+        followerEstimate: 640,
+        postingCadence: "weekly",
+        recentPosts: [
+          {
+            date: daysAgo(6),
+            summary: `Shared a customer success story — reduced onboarding time by 40% using their platform.`,
+            topic: "thought leadership",
+            engagementTier: "medium",
+          },
+        ],
+        signals: [
+          "Amplifying customer wins publicly — signals active deal-close momentum",
+        ],
+      },
+    ],
+    isFallback: true,
+  };
+}
+
+// YouTube Data API v3 helper — finds a company's channel, fetches subscriber
+// count, video count, and recent video stats (views/likes/comments).
+// Returns null if YOUTUBE_API_KEY is absent or the channel can't be found.
+async function fetchYouTubeChannelData(companyName: string, domain: string): Promise<any | null> {
+  const apiKey = process.env.YOUTUBE_API_KEY;
+  if (!apiKey) return null;
+
+  const yt = async (path: string) => {
+    const r = await fetch(`https://www.googleapis.com/youtube/v3${path}&key=${apiKey}`);
+    if (!r.ok) throw new Error(`YouTube ${r.status}`);
+    return r.json();
+  };
+
+  // Step 1 — search for the channel by company name
+  const searchData = await yt(`/search?q=${encodeURIComponent(companyName)}&type=channel&part=snippet&maxResults=3`);
+  if (!searchData.items?.length) return null;
+
+  const channelItem = searchData.items[0];
+  const channelId: string = channelItem.snippet?.channelId || channelItem.id?.channelId;
+  if (!channelId) return null;
+
+  // Step 2 — channel statistics
+  const channelData = await yt(`/channels?id=${channelId}&part=statistics,snippet`);
+  if (!channelData.items?.length) return null;
+  const channel = channelData.items[0];
+  const stats = channel.statistics ?? {};
+  const subscriberCount = parseInt(stats.subscriberCount ?? "0", 10);
+  const videoCount = parseInt(stats.videoCount ?? "0", 10);
+  const customUrl: string = channel.snippet?.customUrl ?? "";
+
+  // Step 3 — recent videos (up to 5)
+  const videosData = await yt(`/search?channelId=${channelId}&order=date&maxResults=5&type=video&part=snippet`);
+  const videoItems: any[] = videosData.items ?? [];
+
+  // Step 4 — per-video statistics (batch)
+  let videoStatsMap: Record<string, any> = {};
+  const videoIds = videoItems.map((v: any) => v.id?.videoId).filter(Boolean).join(",");
+  if (videoIds) {
+    const vsData = await yt(`/videos?id=${videoIds}&part=statistics`);
+    for (const item of vsData.items ?? []) {
+      videoStatsMap[item.id] = item.statistics ?? {};
+    }
+  }
+
+  // Infer topic from video title via keyword matching
+  function inferTopic(title: string): string {
+    const t = title.toLowerCase();
+    if (/launch|announce|release|new product|unveil/.test(t)) return "product launch";
+    if (/hire|hiring|join us|career|open role|we're growing/.test(t)) return "hiring";
+    if (/how to|why|what is|guide|tips|best practice|insights|strategy/.test(t)) return "thought leadership";
+    if (/partner|partnership|integrat|collab/.test(t)) return "partnership";
+    if (/fund|series [a-z]|raise|invest/.test(t)) return "funding";
+    if (/culture|team|behind the scene|day in the life|our team/.test(t)) return "culture";
+    return "other";
+  }
+
+  // Map recent videos → SocialPost
+  const recentPosts = videoItems.slice(0, 3).map((v: any) => {
+    const videoId: string = v.id?.videoId ?? "";
+    const vs = videoStatsMap[videoId] ?? {};
+    const viewCount = parseInt(vs.viewCount ?? "0", 10);
+    const likeCount = parseInt(vs.likeCount ?? "0", 10);
+    const commentCount = parseInt(vs.commentCount ?? "0", 10);
+
+    let engagementTier: "high" | "medium" | "low" = "medium";
+    if (subscriberCount > 0) {
+      const ratio = viewCount / subscriberCount;
+      engagementTier = ratio > 0.25 ? "high" : ratio > 0.05 ? "medium" : "low";
+    }
+
+    return {
+      date: (v.snippet?.publishedAt ?? new Date().toISOString()).split("T")[0],
+      summary: v.snippet?.title ?? "Untitled video",
+      topic: inferTopic(v.snippet?.title ?? ""),
+      engagementTier,
+      url: `https://www.youtube.com/watch?v=${videoId}`,
+      viewCount,
+      likeCount,
+      commentCount,
+    };
+  });
+
+  // Derive posting cadence from date gaps between recent videos
+  let postingCadence: "daily" | "weekly" | "monthly" | "dormant" = "monthly";
+  if (recentPosts.length >= 2) {
+    const ms = recentPosts.map((p) => new Date(p.date).getTime());
+    const avgGapDays = (ms[0] - ms[ms.length - 1]) / (ms.length - 1) / 86_400_000;
+    postingCadence = avgGapDays <= 2 ? "daily" : avgGapDays <= 10 ? "weekly" : avgGapDays <= 45 ? "monthly" : "dormant";
+  } else if (recentPosts.length === 0) {
+    postingCadence = "dormant";
+  }
+
+  // GTM signals from real data
+  const signals: string[] = [];
+  if (subscriberCount > 1000) signals.push(`${subscriberCount.toLocaleString()} YouTube subscribers — established brand reach`);
+  if (videoCount > 30) signals.push(`${videoCount} videos published — sustained content investment`);
+  if (postingCadence === "weekly" || postingCadence === "daily") signals.push(`Posting ${postingCadence} on YouTube — active marketing budget`);
+  if (recentPosts.some((p) => p.topic === "product launch")) signals.push("Recent product launch video — active release cycle, warm timing for outreach");
+  if (recentPosts.some((p) => p.topic === "hiring")) signals.push("Hiring content visible on YouTube — team scaling phase");
+  if (signals.length === 0) signals.push("YouTube channel found — content cadence below average for outreach timing signal");
+
+  return {
+    platform: "youtube",
+    handle: customUrl || `@${companyName.toLowerCase().replace(/[^a-z0-9]/g, "")}`,
+    url: `https://www.youtube.com/channel/${channelId}`,
+    followerEstimate: subscriberCount,
+    postCount: videoCount,
+    postingCadence,
+    recentPosts,
+    signals,
+  };
+}
+
+// 5. Social signals — YouTube (official API, real data) runs in parallel
+// with AI web_search (LinkedIn / X / Instagram). Results are merged and
+// cached. Falls back to getSocialFallback() only when both paths fail.
+app.post("/api/analyze-social", async (req, res) => {
+  const { domain, companyName } = req.body;
+  if (!domain) return res.status(400).json({ error: "domain is required" });
+
+  const cacheKey = domain.trim().toLowerCase();
+  if (socialCache.has(cacheKey)) {
+    console.log(`[Cache Hit] Serving cached social analysis for: ${cacheKey}`);
+    return res.json(socialCache.get(cacheKey));
+  }
+
+  const nameHint = companyName || extractNameFromUrl(domain);
+
+  const aiPrompt = `You have access to web_search. Find the verified social media presence of ${nameHint} (domain: ${domain}).
+
+Search strategy (3-5 searches):
+1. "${nameHint} LinkedIn" or "site:linkedin.com/company ${nameHint}" — company page, follower count, recent posts
+2. "${nameHint} twitter" or "${nameHint} X social" — handle, recent tweets with engagement
+3. "${nameHint} instagram" — only if consumer-facing industry; skip pure B2B
+
+For each verified platform return:
+- platform: exactly "linkedin", "x", "instagram", or "facebook" (NOT "youtube" — handled separately)
+- handle: the username/handle
+- url: verified direct page URL
+- followerEstimate: integer if found
+- postingCadence: "daily" | "weekly" | "monthly" | "dormant"
+- recentPosts: 2-3 most recent, each with date (YYYY-MM-DD), summary (1-2 sentences), topic ("product launch"|"hiring"|"thought leadership"|"partnership"|"funding"|"culture"|"other"), engagementTier ("high"|"medium"|"low"), optional url
+- signals: 2-4 GTM buying-intent signals from their social activity
+
+CRITICAL: Only include platforms you can verify. Never fabricate handles or URLs. If nothing is found, return empty platforms array.`;
+
+  const aiSchema = {
+    type: Type.OBJECT,
+    properties: {
+      platforms: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            platform: { type: Type.STRING },
+            handle: { type: Type.STRING },
+            url: { type: Type.STRING },
+            followerEstimate: { type: Type.NUMBER },
+            postingCadence: { type: Type.STRING },
+            recentPosts: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  date: { type: Type.STRING },
+                  summary: { type: Type.STRING },
+                  topic: { type: Type.STRING },
+                  engagementTier: { type: Type.STRING },
+                  url: { type: Type.STRING },
+                },
+                required: ["date", "summary", "topic", "engagementTier"],
+              },
+            },
+            signals: { type: Type.ARRAY, items: { type: Type.STRING } },
+          },
+          required: ["platform", "handle", "url", "postingCadence", "recentPosts", "signals"],
+        },
+      },
+    },
+    required: ["platforms"],
+  };
+
+  // Fire YouTube (official API, real data) + AI web_search in parallel.
+  // Promise.allSettled so one failure never blocks the other.
+  const [ytResult, aiResult] = await Promise.allSettled([
+    fetchYouTubeChannelData(nameHint, domain),
+    generateStructuredData(aiPrompt, aiSchema, {
+      endpoint: "/api/analyze-social",
+      useWebSearch: true,
+      maxSearches: 5,
+      maxTokens: 4096,
+      models: {
+        anthropic: [MODEL_HAIKU_4_5, MODEL_OPUS_4_7],
+        openai: [MODEL_GPT_4O_MINI, MODEL_GPT_4O],
+      },
+    }),
+  ]);
+
+  // Merge: start with AI results for LinkedIn/X/Instagram, then inject YouTube
+  let platforms: any[] = [];
+  if (aiResult.status === "fulfilled") {
+    platforms = (aiResult.value as any)?.platforms ?? [];
+  }
+  // Real YouTube data overwrites any guessed YouTube entry the AI may have added
+  if (ytResult.status === "fulfilled" && ytResult.value) {
+    platforms = platforms.filter((p: any) => p.platform !== "youtube");
+    platforms.push(ytResult.value);
+  }
+
+  if (platforms.length === 0) {
+    console.log(`[GTM Sandbox Advisory] Social analysis for ${domain} redirected to simulated data.`);
+    return res.json(getSocialFallback(domain));
+  }
+
+  const data = { platforms, isFallback: false };
+  socialCache.set(cacheKey, data);
+  res.json(data);
 });
 
 async function startServer() {

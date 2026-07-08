@@ -84,6 +84,7 @@ export interface TargetAccount {
   disqualificationReasons?: string[];
   forcedSectorModel?: 'SaaS' | 'Manufacturing' | 'Fintech' | 'Biotech' | 'AEC' | 'General';
   pathway?: PathwayAssessment;
+  socialActivity?: SocialActivity;
 }
 
 export interface ObjectionCounterNarrative {
@@ -154,6 +155,33 @@ export interface AccountCluster {
   sharedPainPoints: string[];
   unifiedValueMessage: string;
   coordinatedOutreachAngle: string;
+}
+
+export interface SocialPost {
+  date: string;
+  summary: string;
+  topic: 'product launch' | 'hiring' | 'thought leadership' | 'partnership' | 'funding' | 'culture' | 'other';
+  engagementTier: 'high' | 'medium' | 'low';
+  url?: string;
+  viewCount?: number;
+  likeCount?: number;
+  commentCount?: number;
+}
+
+export interface SocialPlatformData {
+  platform: 'linkedin' | 'instagram' | 'x' | 'facebook' | 'youtube';
+  handle: string;
+  url: string;
+  followerEstimate?: number;
+  postCount?: number;
+  postingCadence: 'daily' | 'weekly' | 'monthly' | 'dormant';
+  recentPosts: SocialPost[];
+  signals: string[];
+}
+
+export interface SocialActivity {
+  platforms: SocialPlatformData[];
+  isFallback?: boolean;
 }
 
 export interface SavedReport {
