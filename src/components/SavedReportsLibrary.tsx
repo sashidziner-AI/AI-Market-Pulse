@@ -518,25 +518,26 @@ export function SavedReportsLibrary({
       ) : (
         /* Empty State */
         <motion.div
-          initial={{ opacity: 0, scale: 0.98 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="flex flex-col items-center justify-center py-16 px-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-3xl text-center space-y-6 max-w-xl mx-auto"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+          className="flex flex-col items-center justify-center py-20 px-4 bg-white dark:bg-white/[0.02] border border-stone-200 dark:border-white/[0.06] rounded-3xl text-center space-y-6 max-w-xl mx-auto"
         >
-          <div className="p-4 rounded-full bg-slate-50 dark:bg-slate-800/50 border border-slate-150 dark:border-slate-700 text-indigo-500 dark:text-indigo-400">
-            <FileText className="w-10 h-10 stroke-[1.5]" />
+          <div className="p-5 rounded-2xl bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-950/30 dark:to-amber-950/20 border border-orange-100 dark:border-orange-900/30">
+            <FileText className="w-10 h-10 stroke-[1.5] text-orange-500 dark:text-orange-400" />
           </div>
           <div className="space-y-2">
-            <h3 className="text-xl font-semibold text-slate-950 font-sans">Your Report Library is Empty</h3>
-            <p className="text-sm text-slate-500 dark:text-slate-300 max-w-sm mx-auto leading-relaxed">
-              Generate website market analyzes and target lists first, then click "Save Report" inside the dashboard to build your collection.
+            <h3 className="text-xl font-semibold text-zinc-900 dark:text-zinc-100 font-sans tracking-tight" style={{ letterSpacing: '-0.02em' }}>Your report library is empty</h3>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 max-w-sm mx-auto leading-relaxed">
+              Analyze a website to build your first target account plan — then save it here to revisit and iterate later.
             </p>
           </div>
           <Button
             onClick={onNavigateToAnalyze}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs h-10 px-5 rounded-xl cursor-pointer shadow-xs gap-1"
+            className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white font-semibold text-sm h-10 px-5 rounded-xl cursor-pointer shadow-[0_1px_3px_rgba(245,130,32,0.45)] gap-2 border-0"
           >
             <Sparkles className="w-4 h-4" />
-            <span>Map Companies Now</span>
+            <span>Start your first analysis</span>
           </Button>
         </motion.div>
       )}

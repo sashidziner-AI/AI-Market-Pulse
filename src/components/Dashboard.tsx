@@ -929,9 +929,16 @@ export function Dashboard({
                  activeTab === 'clusters' ? 'Strategic Account Segments' :
                  activeTab === 'partner-pathways' ? 'Partner Referral & Warm Pathways' : 'Pipeline'}
               </h2>
-              <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-mono font-bold text-[12px] px-2 py-0.5 rounded-full">
-                {filteredAccounts.length} Leads
-              </Badge>
+              {isDiscovering && accounts.length === 0 ? (
+                <Badge variant="secondary" className="bg-orange-500/15 text-orange-300 border border-orange-500/20 font-mono font-bold text-[12px] px-2 py-0.5 rounded-full flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse" />
+                  Scanning…
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-mono font-bold text-[12px] px-2 py-0.5 rounded-full">
+                  {filteredAccounts.length} Leads
+                </Badge>
+              )}
             </div>
 
             <div className="flex items-center gap-3">
@@ -1072,7 +1079,12 @@ export function Dashboard({
           </div>
         </header>
 
-        <section className="p-8 flex-1">
+        <motion.section
+          className="p-8 flex-1"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        >
           <div className="max-w-full mx-auto space-y-8">
             {analysis.isFallback && (
               <div className="p-4 rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/70 dark:bg-amber-950/40 flex items-start gap-3 shadow-xs animate-in fade-in duration-300">
@@ -2346,22 +2358,49 @@ export function Dashboard({
             </div>
 
             {isDiscovering && accounts.length === 0 ? (
-               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                 {[1,2,3,4,5,6].map(i => (
-                    <div key={i} className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm space-y-4">
-                        <div className="flex justify-between items-start">
-                            <Skeleton className="h-6 w-32" />
-                            <Skeleton className="h-8 w-12 rounded-lg" />
+              <div className="space-y-5">
+                {/* Discovery progress banner */}
+                <div className="p-4 rounded-2xl border border-orange-200/60 dark:border-orange-500/20 bg-gradient-to-r from-orange-50/80 to-amber-50/30 dark:from-orange-950/30 dark:to-amber-950/10 flex items-start gap-3.5">
+                  <div className="relative flex h-2.5 w-2.5 mt-0.5 shrink-0">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-orange-400 opacity-75" />
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-orange-500" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-[13px] font-semibold text-orange-900 dark:text-orange-200">
+                      AI is scanning the web for high-intent accounts…
+                    </p>
+                    <p className="text-[12px] text-orange-700/70 dark:text-orange-300/60">
+                      Running live searches · Scoring ICP fit & timing · Building account profiles
+                    </p>
+                  </div>
+                </div>
+
+                {/* Shimmer skeleton cards matching the real AccountCard layout */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {[1,2,3,4,5,6].map(i => (
+                    <div key={i} className="rounded-2xl border border-slate-100 dark:border-white/[0.05] bg-white dark:bg-[#2A2A2B] shadow-xs overflow-hidden flex min-h-[200px]">
+                      <div className="w-36 shrink-0 border-r border-slate-100 dark:border-white/[0.05] bg-slate-50/50 dark:bg-white/[0.02] flex flex-col items-center px-3 py-4 gap-3">
+                        <Skeleton className="h-5 w-20 rounded-md" />
+                        <Skeleton className="h-12 w-12 rounded-full mt-2" />
+                        <Skeleton className="h-5 w-16 rounded-md mt-auto" />
+                      </div>
+                      <div className="flex-1 p-4 space-y-3">
+                        <Skeleton className="h-5 w-3/4" />
+                        <Skeleton className="h-3 w-1/2" />
+                        <div className="space-y-1.5 pt-1">
+                          <Skeleton className="h-3 w-full" />
+                          <Skeleton className="h-3 w-5/6" />
+                          <Skeleton className="h-3 w-4/6" />
                         </div>
-                        <Skeleton className="h-4 w-full" />
-                        <Skeleton className="h-4 w-2/3" />
-                        <div className="flex gap-2">
-                           <Skeleton className="h-6 w-16 rounded-full" />
-                           <Skeleton className="h-6 w-16 rounded-full" />
+                        <div className="flex gap-2 pt-1">
+                          <Skeleton className="h-5 w-16 rounded-full" />
+                          <Skeleton className="h-5 w-20 rounded-full" />
                         </div>
+                      </div>
                     </div>
-                 ))}
-               </div>
+                  ))}
+                </div>
+              </div>
             ) : activeTab === 'pipeline' ? (
               /* GTM Kanban Sprint Board View */
               viewMode === 'grid' ? (
@@ -3312,19 +3351,30 @@ export function Dashboard({
             )}
 
             {accounts.length === 0 && !isDiscovering && (
-              <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
-                <div className="p-4 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400">
-                  <BarChart3 className="w-12 h-12" />
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                className="flex flex-col items-center justify-center py-24 text-center space-y-5"
+              >
+                <div className="p-5 rounded-2xl bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-950/30 dark:to-amber-950/20 border border-orange-100 dark:border-orange-900/30 text-orange-400 dark:text-orange-400">
+                  <Radar className="w-10 h-10" />
                 </div>
-                <div className="space-y-1">
-                  <h3 className="font-semibold text-slate-900 dark:text-slate-100 text-lg">No accounts discovered yet</h3>
-                  <p className="text-slate-500 dark:text-slate-300 max-w-xs text-sm">Run an autonomous discovery to find target accounts based on your business profile.</p>
+                <div className="space-y-1.5">
+                  <h3 className="font-semibold text-zinc-100 text-lg tracking-tight">No accounts discovered yet</h3>
+                  <p className="text-zinc-400 max-w-xs text-[13px] leading-relaxed">Run an autonomous scan to surface high-intent accounts that match your ICP.</p>
                 </div>
-                <Button onClick={onRefreshDiscovery} className="bg-indigo-600">Start Discovery</Button>
-              </div>
+                <Button
+                  onClick={onRefreshDiscovery}
+                  className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white font-semibold shadow-[0_1px_2px_rgba(245,130,32,0.35)] border-0 gap-2"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  Start Discovery
+                </Button>
+              </motion.div>
             )}
           </div>
-        </section>
+        </motion.section>
       </main>
 
       <AnimatePresence>

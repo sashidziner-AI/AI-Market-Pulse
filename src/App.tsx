@@ -327,19 +327,20 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen text-slate-900 dark:text-slate-100 bg-linear-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-900 dark:selection:bg-indigo-900 dark:selection:text-indigo-100 flex flex-col justify-start">
+    <div className="min-h-screen text-zinc-900 dark:text-zinc-100 bg-stone-50 dark:bg-[#1F1F20] font-sans selection:bg-orange-100 selection:text-orange-900 dark:selection:bg-orange-900/30 dark:selection:text-orange-100 flex flex-col justify-start">
       <Toaster position="top-center" expand={true} richColors />
       
       {/* Dynamic Navigation Header for Workspace Landing Screen */}
       {!analysis && (
-        <header className="w-full bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-700/80 sticky top-0 z-40 transition-all shadow-2xs">
+        <header className="w-full bg-stone-50/90 dark:bg-[#1F1F20]/90 backdrop-blur-md border-b border-stone-200/60 dark:border-white/[0.06] sticky top-0 z-40 transition-all">
           <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-indigo-600 text-white shadow-xs">
-                <Rocket className="w-4 h-4" />
+              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-400 via-orange-500 to-orange-600 flex items-center justify-center shadow-[0_1px_3px_rgba(245,130,32,0.45)]">
+                <Rocket className="w-3.5 h-3.5 text-white" />
               </div>
               <span
-                className="font-extrabold text-sm md:text-base tracking-tight text-slate-900 dark:text-slate-100 hover:opacity-90 cursor-pointer select-none"
+                className="font-bold text-sm md:text-base tracking-tight text-zinc-900 dark:text-zinc-100 hover:opacity-80 cursor-pointer select-none"
+                style={{ letterSpacing: '-0.02em' }}
                 onClick={() => setActiveLandingTab('analyze')}
               >
                 AI Market Pulse
@@ -347,13 +348,13 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200/60 dark:border-slate-700/60 shadow-inner">
+              <div className="flex items-center gap-1 bg-stone-100 dark:bg-white/[0.05] p-1 rounded-xl border border-stone-200/60 dark:border-white/[0.07]">
                 <button
                   onClick={() => setActiveLandingTab('analyze')}
-                  className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
                     activeLandingTab === 'analyze'
-                      ? 'bg-white dark:bg-slate-900 dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-3xs'
-                      : 'text-slate-500 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-200'
+                      ? 'bg-white dark:bg-white/[0.08] text-orange-600 dark:text-orange-400 shadow-sm'
+                      : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200'
                   }`}
                 >
                   <Globe className="w-3.5 h-3.5" />
@@ -362,16 +363,16 @@ export default function App() {
 
                 <button
                   onClick={() => setActiveLandingTab('saved-library')}
-                  className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer relative ${
+                  className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer relative ${
                     activeLandingTab === 'saved-library'
-                      ? 'bg-white dark:bg-slate-900 dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-3xs'
-                      : 'text-slate-500 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-200'
+                      ? 'bg-white dark:bg-white/[0.08] text-orange-600 dark:text-orange-400 shadow-sm'
+                      : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200'
                   }`}
                 >
                   <FileText className="w-3.5 h-3.5" />
                   <span>Saved Reports</span>
                   {savedReports.length > 0 && (
-                    <span className="absolute -top-1.5 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-indigo-600 text-[11px] font-bold text-white leading-none scale-90 border border-white dark:border-slate-900 font-mono">
+                    <span className="absolute -top-1.5 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-orange-500 text-[11px] font-bold text-white leading-none scale-90 border border-stone-50 dark:border-[#1F1F20] font-mono">
                       {savedReports.length}
                     </span>
                   )}

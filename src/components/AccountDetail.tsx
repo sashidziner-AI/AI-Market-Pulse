@@ -599,17 +599,22 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
         <div className="p-6 space-y-8">
           {/* Live streaming progress — visible while /api/analyze-account is running */}
           {account.analysisProgress && !analysis && (
-            <section className="rounded-2xl border border-indigo-200 dark:border-indigo-500/40 bg-gradient-to-br from-indigo-50 via-white to-white dark:from-indigo-950/40 dark:via-slate-900 dark:to-slate-900 p-4 space-y-3 shadow-sm">
+            <motion.section
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="rounded-2xl border border-orange-200 dark:border-orange-500/30 bg-gradient-to-br from-orange-50 via-amber-50/40 to-white dark:from-orange-950/30 dark:via-amber-950/10 dark:to-slate-900 p-4 space-y-3 shadow-sm"
+            >
               <div className="flex items-center gap-2.5">
                 <div className="relative flex h-2.5 w-2.5">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-400 opacity-75" />
-                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-indigo-500" />
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-orange-400 opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-orange-500" />
                 </div>
-                <h4 className="text-[13px] font-bold uppercase tracking-wider text-indigo-700 dark:text-indigo-200">
+                <h4 className="text-[13px] font-bold uppercase tracking-wider text-orange-700 dark:text-orange-200">
                   AI is analyzing this account
                 </h4>
-                <span className="ml-auto text-[11px] font-mono text-indigo-500 dark:text-indigo-400">
-                  Live • Claude Opus 4.7 + web_search
+                <span className="ml-auto text-[11px] font-mono text-orange-500 dark:text-orange-400">
+                  Live · GPT-4o + web search
                 </span>
               </div>
 
@@ -624,7 +629,7 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                           : 'text-slate-500 dark:text-slate-400'
                       }`}
                     >
-                      <span className="text-indigo-500 mt-0.5">›</span>
+                      <span className="text-orange-500 mt-0.5">›</span>
                       <span>{msg}</span>
                     </div>
                   ))}
@@ -632,8 +637,8 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
               )}
 
               {account.analysisProgress.searches.length > 0 && (
-                <div className="border-t border-indigo-100 dark:border-indigo-500/20 pt-2.5 space-y-1">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-indigo-500 dark:text-indigo-300">
+                <div className="border-t border-orange-100 dark:border-orange-500/20 pt-2.5 space-y-1">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-orange-500 dark:text-orange-300">
                     Web searches performed
                   </div>
                   {account.analysisProgress.searches.slice(-4).map((query, idx) => (
@@ -641,13 +646,13 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
                       key={`search-${idx}`}
                       className="flex items-start gap-1.5 text-[12px] font-mono text-slate-700 dark:text-slate-300 bg-white/60 dark:bg-slate-900/60 border border-slate-150 dark:border-slate-700/70 rounded-lg px-2 py-1"
                     >
-                      <span className="text-indigo-500 shrink-0">🔎</span>
+                      <span className="text-orange-500 shrink-0">🔎</span>
                       <span className="truncate">{query}</span>
                     </div>
                   ))}
                 </div>
               )}
-            </section>
+            </motion.section>
           )}
 
           {/* Executive Summary */}
