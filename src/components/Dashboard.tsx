@@ -3,7 +3,7 @@ import { BusinessAnalysis, TargetAccount } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { AccountCard, getAccountPriorityInfo } from './AccountCard';
 import { AccountDetail } from './AccountDetail';
-import { 
+import {
   BarChart3, Users, Zap, Briefcase, 
   Search, Filter, Plus, FileUp, Download, Play, LayoutGrid, List,
   LayoutDashboard, ListTodo, Radar, Network,
@@ -565,22 +565,231 @@ export function Dashboard({
   };
 
   const [isCrmOpen, setIsCrmOpen] = useState(false);
-  const [crmConnected, setCrmConnected] = useState<'none' | 'hubspot' | 'salesforce' | 'pipedrive' | 'prospectaccel'>('none');
-  const [selectedCrmType, setSelectedCrmType] = useState<'hubspot' | 'salesforce' | 'pipedrive' | 'prospectaccel'>('hubspot');
+  const [crmConnected, setCrmConnected] = useState<'none' | 'hubspot' | 'salesforce' | 'pipedrive' | 'prospectaccel'>(() => {
+    try {
+      const stored = localStorage.getItem('gtm_crm_session');
+      if (stored) return (JSON.parse(stored).provider || 'none');
+    } catch {}
+    return 'none';
+  });
+  const [selectedCrmType, setSelectedCrmType] = useState<'hubspot' | 'salesforce' | 'pipedrive' | 'prospectaccel'>('prospectaccel');
   const [crmStep, setCrmStep] = useState<1 | 2>(1);
   const [isCrmLoading, setIsCrmLoading] = useState(false);
   const [crmApiKey, setCrmApiKey] = useState('');
   const [crmUrl, setCrmUrl] = useState('');
+  const [crmSessionId, setCrmSessionId] = useState<string | null>(() => {
+    try {
+      const stored = localStorage.getItem('gtm_crm_session');
+      if (stored) return JSON.parse(stored).sessionId || null;
+    } catch {}
+    return null;
+  });
+  const [crmLastSync, setCrmLastSync] = useState<{ pushed: number; failed: number; at: string } | null>(null);
+  type CrmSyncItem = {
+    account: string;
+    domain?: string;
+    status: 'pending' | 'syncing' | 'success' | 'failed';
+    message?: string;
+    recordId?: string | number;
+    httpStatus?: number;
+    responsePreview?: string;
+    payloadSent?: Record<string, unknown>;
+    endpoint?: string;
+  };
+  const [crmSyncProgress, setCrmSyncProgress] = useState<CrmSyncItem[]>([]);
+  const [crmSyncActive, setCrmSyncActive] = useState(false);
+  const [crmSyncExpandedIdx, setCrmSyncExpandedIdx] = useState<number | null>(null);
 
-  const handleConnectCrm = () => {
+  const handleConnectCrm = async () => {
+    if (selectedCrmType === 'prospectaccel') {
+      if (!crmUrl.trim() || !crmApiKey.trim()) {
+        toast.error('Enter both the CRM endpoint URL and the signing secret.');
+        return;
+      }
+      setIsCrmLoading(true);
+      try {
+        const res = await fetch('/api/crm/connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            provider: 'prospectaccel',
+            endpoint: crmUrl.trim(),
+            secret: crmApiKey.trim(),
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Connection failed');
+
+        localStorage.setItem('gtm_crm_session', JSON.stringify({
+          provider: 'prospectaccel',
+          sessionId: data.sessionId,
+          endpoint: crmUrl.trim(),
+          connectedAt: data.connectedAt,
+        }));
+        setCrmSessionId(data.sessionId);
+        setCrmConnected('prospectaccel');
+        setIsCrmOpen(false);
+        setCrmStep(1);
+        setCrmApiKey('');
+        if (data.warning) {
+          toast.warning(`Connected to ${data.accountName}, but ${data.warning}`, { duration: 8000 });
+        } else {
+          toast.success(`Connected to ${data.accountName}. Ready to sync accounts.`);
+        }
+      } catch (err: any) {
+        toast.error(`Connection failed: ${err.message}`);
+      } finally {
+        setIsCrmLoading(false);
+      }
+      return;
+    }
+
+    // Other providers still use the mock demo flow for now
     setIsCrmLoading(true);
     setTimeout(() => {
       setIsCrmLoading(false);
       setCrmConnected(selectedCrmType);
       setIsCrmOpen(false);
       setCrmStep(1);
-      toast.success(`${getCrmName(selectedCrmType)} connected successfully! Buyer intent signals are now syncing.`);
+      toast.success(`${getCrmName(selectedCrmType)} connected successfully! (demo)`);
     }, 1500);
+  };
+
+  const handleTriggerCrmSync = async () => {
+    if (crmConnected !== 'prospectaccel' || !crmSessionId) {
+      setIsCrmLoading(true);
+      setTimeout(() => {
+        setIsCrmLoading(false);
+        toast.success('CRM Database has been fully synchronized with current GTM Waves.');
+      }, 1200);
+      return;
+    }
+
+    const syncable = accounts.filter(a => !(a as any).isDisqualified);
+    if (syncable.length === 0) {
+      toast.error('No qualified accounts to sync. Adjust ICP exclusions and try again.');
+      return;
+    }
+
+    setIsCrmLoading(true);
+    setCrmSyncActive(true);
+    // Seed progress list with all accounts pending — user sees the full plan
+    // upfront, then each row turns green/red as its turn comes.
+    setCrmSyncProgress(syncable.map((a: any) => ({
+      account: a.name,
+      domain: a.domain,
+      status: 'pending' as const,
+    })));
+
+    try {
+      const res = await fetch('/api/crm/sync?stream=1', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: crmSessionId, accounts: syncable }),
+      });
+
+      if (res.status === 401) {
+        localStorage.removeItem('gtm_crm_session');
+        setCrmSessionId(null);
+        setCrmConnected('none');
+        setIsCrmOpen(true);
+        toast.error('CRM session expired. Please reconnect.', { duration: 6000 });
+        return;
+      }
+      if (!res.ok) {
+        // Server may still return single JSON on error (e.g. 400 before stream started)
+        let data: any = {};
+        try { data = await res.json(); } catch {}
+        throw new Error(data.error || `Sync failed (HTTP ${res.status})`);
+      }
+      if (!res.body) throw new Error('Stream not supported by browser');
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finalPushed = 0;
+      let finalFailed = 0;
+      let firstError: string | undefined;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        let idx: number;
+        while ((idx = buffer.indexOf('\n')) !== -1) {
+          const line = buffer.slice(0, idx).trim();
+          buffer = buffer.slice(idx + 1);
+          if (!line) continue;
+          let evt: any;
+          try { evt = JSON.parse(line); } catch { continue; }
+
+          if (evt.type === 'account_start') {
+            setCrmSyncProgress(prev => prev.map((p, i) => i === evt.index ? { ...p, status: 'syncing' } : p));
+          } else if (evt.type === 'account_done') {
+            setCrmSyncProgress(prev => prev.map((p, i) =>
+              i === evt.index
+                ? {
+                    ...p,
+                    status: evt.status === 'success' ? 'success' : 'failed',
+                    message: evt.message,
+                    recordId: evt.recordId,
+                    httpStatus: evt.httpStatus,
+                    responsePreview: evt.responsePreview,
+                    payloadSent: evt.payloadSent,
+                    endpoint: evt.endpoint,
+                  }
+                : p
+            ));
+            if (evt.status === 'failed' && !firstError) firstError = evt.message;
+          } else if (evt.type === 'done') {
+            finalPushed = evt.pushed;
+            finalFailed = evt.failed;
+          }
+        }
+      }
+
+      setCrmLastSync({
+        pushed: finalPushed,
+        failed: finalFailed,
+        at: new Date().toISOString(),
+      });
+
+      if (finalFailed === 0) {
+        toast.success(`Synced ${finalPushed} of ${syncable.length} accounts to your CRM.`);
+      } else {
+        toast.warning(
+          `Sync complete with issues: ${finalPushed} pushed, ${finalFailed} failed. First error: ${firstError || 'unknown'}`,
+          { duration: 8000 }
+        );
+      }
+    } catch (err: any) {
+      toast.error(`Sync failed: ${err.message}`);
+    } finally {
+      setIsCrmLoading(false);
+      // Keep progress visible for 30s so the user can review outcomes,
+      // then auto-clear. They can manually dismiss earlier via a button.
+      setTimeout(() => setCrmSyncActive(false), 30000);
+    }
+  };
+
+  const handleDisconnectCrm = async () => {
+    if (crmSessionId) {
+      try {
+        await fetch('/api/crm/disconnect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: crmSessionId }),
+        });
+      } catch {}
+    }
+    localStorage.removeItem('gtm_crm_session');
+    setCrmSessionId(null);
+    setCrmConnected('none');
+    setCrmStep(1);
+    setIsCrmOpen(false);
+    setCrmLastSync(null);
+    toast.info('CRM disconnected.');
   };
 
   // Live Dynamic Disqualification Evaluation Engine
@@ -3176,16 +3385,16 @@ export function Dashboard({
               >
                 <AnimatePresence mode="popLayout">
                   {sortedFilteredAccounts.map((account) => (
-                    <AccountCard 
-                      key={account.id} 
-                      account={account} 
+                    <AccountCard
+                      key={account.id}
+                      account={account}
                       targetRoles={analysis.icp.targetRoles}
                       onStatusChange={onUpdateAccount ? (newStatus) => onUpdateAccount({ ...account, status: newStatus }) : undefined}
                       onDelete={handleDeleteAccountDirectly}
                       onClick={(acc) => {
                         onAnalyzeAccount(acc.id);
                         setSelectedAccountId(acc.id);
-                      }} 
+                      }}
                     />
                   ))}
                 </AnimatePresence>
@@ -3387,9 +3596,9 @@ export function Dashboard({
               onClick={() => setSelectedAccountId(null)}
               className="fixed inset-0 bg-slate-900/40 backdrop-blur-[2px] z-40 transition-opacity"
             />
-            <AccountDetail 
-              account={selectedAccount} 
-              onClose={() => setSelectedAccountId(null)} 
+            <AccountDetail
+              account={selectedAccount}
+              onClose={() => setSelectedAccountId(null)}
               onUpdateAccount={onUpdateAccount}
             />
           </>
@@ -3422,34 +3631,189 @@ export function Dashboard({
                 </div>
               </div>
 
+              {crmSyncActive && crmSyncProgress.length > 0 && (
+                (() => {
+                  const done = crmSyncProgress.filter(p => p.status === 'success' || p.status === 'failed').length;
+                  const total = crmSyncProgress.length;
+                  const current = crmSyncProgress.find(p => p.status === 'syncing');
+                  const pct = Math.round((done / total) * 100);
+                  return (
+                    <div className="border border-slate-200 dark:border-slate-700 rounded-xl p-3 space-y-2.5 bg-white dark:bg-slate-900 text-left">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="relative flex h-2 w-2">
+                            {isCrmLoading && (
+                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-400 opacity-75" />
+                            )}
+                            <span className={`relative inline-flex h-2 w-2 rounded-full ${isCrmLoading ? 'bg-indigo-500' : 'bg-emerald-500'}`} />
+                          </div>
+                          <span className="text-[12px] font-semibold text-slate-800 dark:text-slate-100">
+                            {isCrmLoading ? `Syncing ${done + 1}/${total}` : `Sync complete (${done}/${total})`}
+                          </span>
+                        </div>
+                        {!isCrmLoading && (
+                          <button
+                            onClick={() => setCrmSyncActive(false)}
+                            className="text-[11px] text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 underline"
+                          >
+                            Dismiss
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Progress bar */}
+                      <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-indigo-400 to-indigo-600 transition-all duration-300"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+
+                      {/* Currently syncing account (large label) */}
+                      {current && (
+                        <div className="text-[11.5px] text-slate-600 dark:text-slate-400 italic truncate">
+                          → {current.account}
+                        </div>
+                      )}
+
+                      {/* Compact per-account result list — failed rows are clickable to expand diagnostics */}
+                      <div className="max-h-80 overflow-y-auto space-y-1 scrollbar-thin -mx-0.5 px-0.5">
+                        {crmSyncProgress.map((p, i) => {
+                          const isExpanded = crmSyncExpandedIdx === i;
+                          const canExpand = p.status === 'failed' && !!p.payloadSent;
+                          return (
+                            <div key={i} className="space-y-1">
+                              <button
+                                type="button"
+                                disabled={!canExpand}
+                                onClick={() => canExpand && setCrmSyncExpandedIdx(isExpanded ? null : i)}
+                                className={`w-full flex items-center justify-between gap-2 py-1 px-2 rounded-md text-[11.5px] transition-all text-left ${
+                                  p.status === 'syncing' ? 'bg-indigo-50 dark:bg-indigo-950/30 text-indigo-800 dark:text-indigo-200' :
+                                  p.status === 'success' ? 'text-emerald-700 dark:text-emerald-300' :
+                                  p.status === 'failed' ? 'bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-300 hover:bg-rose-100/70 dark:hover:bg-rose-950/40 cursor-pointer' :
+                                  'text-slate-400 dark:text-slate-500'
+                                } ${!canExpand ? 'cursor-default' : ''}`}
+                              >
+                                <span className="truncate flex-1 flex items-center">
+                                  <span className="font-mono text-[10px] opacity-70 mr-1.5">{String(i + 1).padStart(2, '0')}</span>
+                                  <span className="truncate">{p.account}</span>
+                                </span>
+                                <span className="shrink-0 flex items-center gap-1">
+                                  {p.status === 'pending' && <Clock className="w-3 h-3" />}
+                                  {p.status === 'syncing' && <RefreshCw className="w-3 h-3 animate-spin" />}
+                                  {p.status === 'success' && <>
+                                    <CheckCircle2 className="w-3 h-3" />
+                                    {p.recordId && <span className="font-mono text-[10px] opacity-70">#{p.recordId}</span>}
+                                  </>}
+                                  {p.status === 'failed' && (
+                                    <>
+                                      {p.httpStatus && (
+                                        <span className="font-mono text-[10px] opacity-70">HTTP {p.httpStatus}</span>
+                                      )}
+                                      <span className="text-[10px] font-semibold">fail</span>
+                                      {canExpand && (
+                                        <ChevronRight className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                      )}
+                                    </>
+                                  )}
+                                </span>
+                              </button>
+
+                              {/* Expanded diagnostics */}
+                              {isExpanded && p.status === 'failed' && (
+                                <div className="mx-2 mb-2 p-2.5 rounded-lg border border-rose-200 dark:border-rose-800/60 bg-white dark:bg-slate-950 space-y-2 text-[11px] text-left">
+                                  {p.message && (
+                                    <div>
+                                      <div className="font-bold text-slate-500 dark:text-slate-400 mb-0.5 uppercase tracking-wide text-[9px]">Error</div>
+                                      <div className="text-slate-700 dark:text-slate-300 leading-relaxed">{p.message}</div>
+                                    </div>
+                                  )}
+                                  {p.payloadSent && (
+                                    <div>
+                                      <div className="font-bold text-slate-500 dark:text-slate-400 mb-0.5 uppercase tracking-wide text-[9px]">Payload we POSTed</div>
+                                      <pre className="font-mono text-[10.5px] bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed">
+{JSON.stringify(p.payloadSent, null, 2)}
+                                      </pre>
+                                    </div>
+                                  )}
+                                  {p.responsePreview && (
+                                    <div>
+                                      <div className="font-bold text-slate-500 dark:text-slate-400 mb-0.5 uppercase tracking-wide text-[9px]">Server response preview</div>
+                                      <pre className="font-mono text-[10.5px] bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed max-h-32">
+{p.responsePreview}
+                                      </pre>
+                                    </div>
+                                  )}
+                                  {p.payloadSent && p.endpoint && (
+                                    <div className="pt-1 flex gap-2">
+                                      <button
+                                        onClick={async () => {
+                                          const bodyJson = JSON.stringify(p.payloadSent);
+                                          const curl = `curl -X POST '${p.endpoint}' \\\n  -H 'Authorization: <YOUR_JWT>' \\\n  -H 'Content-Type: application/json' \\\n  -d '${bodyJson.replace(/'/g, "'\\''")}'`;
+                                          try {
+                                            await navigator.clipboard.writeText(curl);
+                                            toast.success('Copied curl to clipboard. Paste `<YOUR_JWT>` and run to replay.');
+                                          } catch {
+                                            toast.error('Could not copy to clipboard');
+                                          }
+                                        }}
+                                        className="text-[10px] font-semibold px-2 py-1 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
+                                      >
+                                        Copy as curl
+                                      </button>
+                                      <button
+                                        onClick={async () => {
+                                          try {
+                                            await navigator.clipboard.writeText(JSON.stringify(p.payloadSent, null, 2));
+                                            toast.success('Payload copied to clipboard');
+                                          } catch { toast.error('Could not copy'); }
+                                        }}
+                                        className="text-[10px] font-semibold px-2 py-1 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
+                                      >
+                                        Copy payload
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()
+              )}
+
+              {crmLastSync && !crmSyncActive && (
+                <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 rounded-lg p-2.5 text-left text-[12px] text-emerald-800 dark:text-emerald-200 space-y-0.5">
+                  <div className="font-semibold">
+                    Last sync: {crmLastSync.pushed} pushed{crmLastSync.failed > 0 ? `, ${crmLastSync.failed} failed` : ''}
+                  </div>
+                  <div className="text-[11px] text-emerald-700 dark:text-emerald-300/70">
+                    {new Date(crmLastSync.at).toLocaleString()}
+                  </div>
+                </div>
+              )}
+
               <div className="flex gap-2 pt-2">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
+                <Button
+                  variant="outline"
+                  size="sm"
                   disabled={isCrmLoading}
-                  onClick={() => {
-                    setIsCrmLoading(true);
-                    setTimeout(() => {
-                      setIsCrmLoading(false);
-                      toast.success('CRM Database has been fully synchronized with current GTM Waves.');
-                    }, 1200);
-                  }}
+                  onClick={handleTriggerCrmSync}
                   className="flex-1 text-xs gap-1.5 h-9"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isCrmLoading ? 'animate-spin' : ''}`} /> Trigger Daily Sync
+                  <RefreshCw className={`w-3.5 h-3.5 ${isCrmLoading ? 'animate-spin' : ''}`} />
+                  {isCrmLoading ? 'Syncing…' : 'Push Accounts Now'}
                 </Button>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={() => {
-                    setCrmConnected('none');
-                    setCrmStep(1);
-                    setIsCrmOpen(false);
-                    toast.info('CRM Integration disconnected.');
-                  }}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleDisconnectCrm}
                   className="text-xs text-red-500 dark:text-red-400 hover:text-red-655 hover:bg-red-50 h-9"
                 >
-                  Disconnect API
+                  Disconnect
                 </Button>
               </div>
             </div>
@@ -3532,33 +3896,52 @@ export function Dashboard({
                   <span className="text-xs font-medium text-slate-500 dark:text-slate-300">Integrating secure systems</span>
                 </div>
 
-                {selectedCrmType === 'salesforce' && (
+                {(selectedCrmType === 'salesforce' || selectedCrmType === 'prospectaccel') && (
                   <div className="space-y-1">
-                    <label className="text-[13px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wide">Salesforce Instance URL</label>
-                    <input 
-                      type="text" 
-                      value={crmUrl} 
-                      onChange={(e) => setCrmUrl(e.target.value)} 
-                      placeholder="https://yourcompany.my.salesforce.com" 
+                    <label className="text-[13px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wide">
+                      {selectedCrmType === 'salesforce' ? 'Salesforce Instance URL' : 'CRM Receive-Data Endpoint'}
+                    </label>
+                    <input
+                      type="text"
+                      value={crmUrl}
+                      onChange={(e) => setCrmUrl(e.target.value)}
+                      placeholder={selectedCrmType === 'salesforce'
+                        ? 'https://yourcompany.my.salesforce.com'
+                        : 'https://your-crm.example.com/api/receive-data/'}
                       className="w-full h-9 px-3 text-xs rounded-lg border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20"
                     />
                   </div>
                 )}
 
                 <div className="space-y-1">
-                  <label className="text-[13px] font-bold text-slate-655 uppercase tracking-wide">API Personal Token / secrets</label>
-                  <input 
-                    type="password" 
-                    value={crmApiKey} 
-                    onChange={(e) => setCrmApiKey(e.target.value)} 
-                    placeholder={selectedCrmType === 'hubspot' ? 'pat-na1-xxxx-xxxx-xxxx-xxxx' : selectedCrmType === 'prospectaccel' ? 'pa-live-xxxx-xxxx-xxxx' : 'Enter access token...'} 
+                  <label className="text-[13px] font-bold text-slate-655 uppercase tracking-wide">
+                    {selectedCrmType === 'prospectaccel' ? 'JWT Signing Secret (HS256)' : 'API Personal Token / secret'}
+                  </label>
+                  <input
+                    type="password"
+                    value={crmApiKey}
+                    onChange={(e) => setCrmApiKey(e.target.value)}
+                    placeholder={
+                      selectedCrmType === 'hubspot' ? 'pat-na1-xxxx-xxxx-xxxx-xxxx' :
+                      selectedCrmType === 'prospectaccel' ? 'Shared HS256 secret from your CRM' :
+                      'Enter access token...'
+                    }
                     className="w-full h-9 px-3 text-xs rounded-lg border border-slate-205 outline-none focus:ring-2 focus:ring-indigo-500/20"
                   />
+                  {selectedCrmType === 'prospectaccel' && (
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500 leading-relaxed pt-1">
+                      This is the shared secret your <code className="font-mono">receive-data</code> view uses to verify signed JWTs. Never commit it to source control.
+                    </p>
+                  )}
                 </div>
 
                 <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-lg p-3 text-[12px] text-slate-500 dark:text-slate-300 leading-normal flex items-start gap-2">
                   <CloudLightning className="w-4 h-4 text-amber-500 dark:text-amber-400 shrink-0 mt-0.5" />
-                  <span>Your credentials are encrypted inside standard secure client-side storage sessions and sent over TLS.</span>
+                  <span>
+                    {selectedCrmType === 'prospectaccel'
+                      ? 'The secret is stored server-side only. The browser holds a random session ID — never the raw secret.'
+                      : 'Your credentials are encrypted inside standard secure client-side storage sessions and sent over TLS.'}
+                  </span>
                 </div>
               </div>
 

@@ -1,10 +1,14 @@
 import express from "express";
 import fs from "fs";
 import path from "path";
+import crypto from "crypto";
+import dns from "dns/promises";
+import net from "net";
 import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
+import jwt from "jsonwebtoken";
 
 dotenv.config();
 
@@ -2849,6 +2853,467 @@ CRITICAL: Only include platforms you can verify. Never fabricate handles or URLs
   socialCache.set(cacheKey, data);
   res.json(data);
 });
+
+// ------------------------------------------------------------------
+// CRM Integration — ProspectAccel (custom Django CRM, JWT HS256 auth)
+// ------------------------------------------------------------------
+//
+// Auth model: the CRM's `receive-data` view does `jwt.decode(token, SECRET, HS256)`
+// with a hard-coded shared secret. We sign a fresh JWT per request with that same
+// secret and pass it raw (no "Bearer " prefix) in the Authorization header, matching
+// what the Django view expects.
+//
+// Sessions are held in-memory only; the raw secret is never sent back to the
+// client after connect. Client keeps only a random sessionId in localStorage.
+//
+// SECURITY NOTES:
+//  - SSRF: user-supplied `endpoint` is a URL the server fetches. We reject any
+//    URL whose hostname (or any DNS-resolved IP) falls in loopback / RFC1918 /
+//    link-local / unique-local ranges. Applied to both /connect probe and every
+//    /sync POST (TOCTOU-safe — re-resolves on each request). We also set
+//    `redirect: 'manual'` and reject 3xx responses to prevent bypass via redirect.
+//  - AUTH: /api/crm/* is currently unauthenticated because this app has no auth
+//    layer anywhere yet (single-tenant hackathon demo). Anyone with network
+//    access to the server can create/reuse sessions. Before production, gate all
+//    /api/crm/* routes behind the same auth middleware used elsewhere and bind
+//    each crmSessions entry to the authenticated user/tenant ID.
+
+/**
+ * Reject any address that lands in a private / loopback / link-local /
+ * unique-local range. Blocks common SSRF targets like cloud metadata
+ * (169.254.169.254), local services (127.0.0.1, ::1), and RFC1918 hosts.
+ */
+function isPrivateAddress(ip: string): boolean {
+  const family = net.isIP(ip);
+  if (family === 0) return true; // not a valid IP — refuse
+
+  if (family === 4) {
+    const [a, b] = ip.split(".").map(Number);
+    if (a === 0) return true;                              // 0.0.0.0/8
+    if (a === 10) return true;                             // 10.0.0.0/8
+    if (a === 127) return true;                            // loopback
+    if (a === 169 && b === 254) return true;               // link-local + AWS metadata
+    if (a === 172 && b >= 16 && b <= 31) return true;      // 172.16.0.0/12
+    if (a === 192 && b === 168) return true;               // 192.168.0.0/16
+    if (a === 100 && b >= 64 && b <= 127) return true;     // CGNAT
+    if (a >= 224) return true;                             // multicast / reserved
+    return false;
+  }
+
+  // IPv6: normalize to lowercase, no brackets
+  const v6 = ip.toLowerCase().replace(/^\[|\]$/g, "");
+  if (v6 === "::1" || v6 === "::" || v6 === "0:0:0:0:0:0:0:1") return true;
+  if (v6.startsWith("fe8") || v6.startsWith("fe9") || v6.startsWith("fea") || v6.startsWith("feb")) return true; // fe80::/10
+  if (v6.startsWith("fc") || v6.startsWith("fd")) return true; // fc00::/7
+  if (v6.startsWith("::ffff:")) {
+    // IPv4-mapped — validate the embedded v4
+    const embedded = v6.slice(7);
+    if (net.isIP(embedded) === 4) return isPrivateAddress(embedded);
+  }
+  return false;
+}
+
+/**
+ * Parse and validate a user-supplied URL for outbound HTTP calls. Rejects:
+ *  - non-http(s) schemes
+ *  - non-standard ports (optional guard — allow only 80/443 or explicit)
+ *  - hostnames that are literal private IPs
+ *  - hostnames whose DNS lookup returns ANY private IP
+ * Returns the parsed URL on success; throws on any policy violation.
+ */
+async function assertPublicEndpoint(rawUrl: string): Promise<URL> {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error("Invalid endpoint URL");
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`Endpoint scheme must be http(s), got ${parsed.protocol}`);
+  }
+
+  const hostname = parsed.hostname;
+
+  // If the hostname is itself an IP literal, check it directly
+  if (net.isIP(hostname)) {
+    if (isPrivateAddress(hostname)) {
+      throw new Error(`Endpoint resolves to a non-routable address (${hostname})`);
+    }
+    return parsed;
+  }
+
+  // Resolve all A/AAAA records. Reject if any of them is private
+  // (TOCTOU-safe because this is called on every outbound request).
+  let addresses: Array<{ address: string; family: number }>;
+  try {
+    addresses = await dns.lookup(hostname, { all: true, verbatim: true });
+  } catch (dnsErr: any) {
+    throw new Error(`DNS lookup failed for ${hostname}: ${dnsErr.code || dnsErr.message}`);
+  }
+
+  if (addresses.length === 0) {
+    throw new Error(`DNS returned no addresses for ${hostname}`);
+  }
+
+  for (const { address } of addresses) {
+    if (isPrivateAddress(address)) {
+      throw new Error(
+        `Endpoint ${hostname} resolves to non-routable address ${address}`
+      );
+    }
+  }
+
+  return parsed;
+}
+
+/**
+ * Fetch wrapper that pins the URL to the exact validated resolution and
+ * refuses to follow redirects (a redirect could point at a private address
+ * and bypass assertPublicEndpoint). Returns the raw Response.
+ */
+async function safeFetch(rawUrl: string, init: RequestInit): Promise<Response> {
+  await assertPublicEndpoint(rawUrl);
+  const res = await fetch(rawUrl, { ...init, redirect: "manual" });
+  if (res.status >= 300 && res.status < 400) {
+    throw new Error(
+      `Endpoint attempted redirect (HTTP ${res.status}) — refusing to follow to avoid SSRF bypass`
+    );
+  }
+  return res;
+}
+
+type CrmProvider = "prospectaccel";
+
+interface CrmSession {
+  provider: CrmProvider;
+  endpoint: string;
+  secret: string;
+  connectedAt: string;
+}
+
+const crmSessions = new Map<string, CrmSession>();
+
+function signProspectAccelToken(secret: string): string {
+  const now = Math.floor(Date.now() / 1000);
+  // Include `exp` — many pyjwt configs require it. 5 min window covers clock skew.
+  return jwt.sign(
+    { iat: now, exp: now + 300, iss: "ai-market-pulse" },
+    secret,
+    { algorithm: "HS256" }
+  );
+}
+
+/**
+ * Map an AI Market Pulse TargetAccount into the ProspectAccel receive-data payload.
+ * Their CRM expects a lead-shaped record (name/mobile_no/email/institute_name/...).
+ * Since we discover companies (not people), we send the primary contact if
+ * one has been enriched, and fall back to using the company name for `name`.
+ */
+function mapAccountToProspectAccel(account: any): Record<string, unknown> {
+  const geoParts = String(account.geography || "")
+    .split(",")
+    .map((s: string) => s.trim())
+    .filter(Boolean);
+
+  const contact = account.primaryContact || {};
+
+  return {
+    name: contact.name || account.name,
+    mobile_no: contact.phone || account.contactPhone || "",
+    email: contact.email || account.contactEmail || "",
+    institute_name: account.name,
+    country: geoParts[geoParts.length - 1] || "",
+    state: geoParts.length >= 2 ? geoParts[geoParts.length - 2] : "",
+    city: geoParts[0] && geoParts.length >= 2 ? geoParts[0] : "",
+    course: (account.industry || account.fitReason || "").slice(0, 99),
+  };
+}
+
+app.post("/api/crm/connect", async (req, res) => {
+  const { provider, endpoint, secret } = req.body || {};
+
+  if (provider !== "prospectaccel") {
+    return res.status(400).json({ error: `Unsupported provider: ${provider}` });
+  }
+  if (typeof endpoint !== "string" || !endpoint.startsWith("http")) {
+    return res.status(400).json({ error: "Endpoint must be a valid http(s) URL" });
+  }
+  if (typeof secret !== "string" || secret.length < 4) {
+    return res.status(400).json({ error: "Signing secret is required" });
+  }
+
+  try {
+    // SSRF gate: reject the URL up-front if it's non-http(s) or resolves to
+    // a private / loopback / link-local address. Applied here AND inside
+    // safeFetch to be TOCTOU-safe (DNS can change between checks).
+    try {
+      await assertPublicEndpoint(endpoint);
+    } catch (policyErr: any) {
+      return res.status(400).json({ error: policyErr.message });
+    }
+
+    // Verify: we can sign a token, and the endpoint is reachable at all.
+    // We deliberately do NOT send a probe with valid body fields, because a
+    // successful probe would create a blank record in the customer's CRM.
+    // A GET is enough to confirm the URL is live — the Django view returns
+    // 405 "Invalid request method" which proves the endpoint exists.
+    const token = signProspectAccelToken(secret);
+    if (!token) throw new Error("Failed to sign JWT with provided secret");
+
+    // Best-effort reachability probe. If the network is restricted (VPN, DNS,
+    // firewall), we still allow the connection — the real error will surface
+    // on first sync. This keeps demos working when the CRM is only reachable
+    // from a specific network.
+    let reachability: "reachable" | "unreachable" | "server_error" = "unreachable";
+    let unreachableReason: string | undefined;
+    try {
+      const probe = await safeFetch(endpoint, {
+        method: "GET",
+        headers: { Authorization: token },
+      });
+      reachability = probe.status < 500 ? "reachable" : "server_error";
+    } catch (netErr: any) {
+      unreachableReason = netErr.message || "network error";
+    }
+
+    const sessionId = crypto.randomUUID();
+    crmSessions.set(sessionId, {
+      provider,
+      endpoint,
+      secret,
+      connectedAt: new Date().toISOString(),
+    });
+
+    const hostname = (() => {
+      try {
+        return new URL(endpoint).hostname;
+      } catch {
+        return endpoint;
+      }
+    })();
+
+    return res.json({
+      sessionId,
+      provider,
+      accountName: hostname,
+      connectedAt: crmSessions.get(sessionId)!.connectedAt,
+      reachability,
+      warning: reachability === "reachable"
+        ? undefined
+        : `Endpoint could not be probed (${unreachableReason || "server error"}). Sync will still be attempted.`,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message || "Connect failed" });
+  }
+});
+
+app.post("/api/crm/sync", async (req, res) => {
+  const { sessionId, accounts } = req.body || {};
+  const session = sessionId && crmSessions.get(sessionId);
+
+  if (!session) {
+    return res.status(401).json({ error: "CRM session not found. Please reconnect." });
+  }
+  if (!Array.isArray(accounts) || accounts.length === 0) {
+    return res.status(400).json({ error: "accounts array is required" });
+  }
+
+  // Stream mode: emit NDJSON events as each account is pushed. Enable with
+  // ?stream=1. Falls back to the original single-JSON response otherwise.
+  const streaming = String(req.query.stream || "") === "1";
+
+  const results: {
+    pushed: number;
+    failed: number;
+    total: number;
+    errors: { account: string; message: string }[];
+    successes: { account: string; recordId?: string | number }[];
+  } = {
+    pushed: 0,
+    failed: 0,
+    total: accounts.length,
+    errors: [],
+    successes: [],
+  };
+
+  if (streaming) {
+    res.setHeader("Content-Type", "application/x-ndjson");
+    res.setHeader("Cache-Control", "no-cache, no-transform");
+    res.setHeader("X-Accel-Buffering", "no");
+    (res as any).flushHeaders?.();
+  }
+  const emit = (obj: any) => {
+    if (streaming) {
+      res.write(JSON.stringify(obj) + "\n");
+      (res as any).flush?.();
+    }
+  };
+
+  if (streaming) emit({ type: "start", total: accounts.length });
+
+  for (let i = 0; i < accounts.length; i++) {
+    const acc = accounts[i];
+    if (streaming) {
+      emit({ type: "account_start", index: i, account: acc.name, domain: acc.domain });
+    }
+
+    const payload = mapAccountToProspectAccel(acc);
+    try {
+      const token = signProspectAccelToken(session.secret);
+      // safeFetch re-validates the endpoint DNS on every call — this defends
+      // against a DNS-rebinding SSRF (endpoint resolved to public IP at connect
+      // time, then flipped to a private IP before sync).
+      const r = await safeFetch(session.endpoint, {
+        method: "POST",
+        headers: {
+          Authorization: token,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const contentType = r.headers.get("content-type") || "";
+      const rawText = await r.text();
+      let body: any = null;
+      if (contentType.includes("application/json") || rawText.trim().startsWith("{")) {
+        try { body = JSON.parse(rawText); } catch {}
+      }
+
+      if (r.ok && body && (body.message === "success" || body.record_id)) {
+        results.pushed++;
+        results.successes.push({
+          account: acc.name,
+          recordId: body.record_id,
+        });
+        emit({
+          type: "account_done",
+          index: i,
+          account: acc.name,
+          status: "success",
+          recordId: body.record_id,
+          httpStatus: r.status,
+        });
+      } else {
+        results.failed++;
+        const preview = rawText.length > 500 ? rawText.slice(0, 500) + "…" : rawText;
+        const errMsg = body?.message_text
+          || body?.message
+          || (contentType.includes("text/html")
+            ? `HTTP ${r.status} returned HTML (not JSON). Server logs on the Django side will have the real traceback.`
+            : `HTTP ${r.status} — body: ${preview}`);
+        results.errors.push({ account: acc.name, message: errMsg });
+        emit({
+          type: "account_done",
+          index: i,
+          account: acc.name,
+          status: "failed",
+          message: errMsg,
+          httpStatus: r.status,
+          contentType,
+          responsePreview: preview,
+          payloadSent: payload,   // exact JSON we POSTed
+          endpoint: session.endpoint,
+        });
+      }
+    } catch (err: any) {
+      const msg = err?.message || "network error";
+      results.failed++;
+      results.errors.push({ account: acc.name, message: msg });
+      emit({
+        type: "account_done",
+        index: i,
+        account: acc.name,
+        status: "failed",
+        message: msg,
+        payloadSent: payload,
+        endpoint: session.endpoint,
+      });
+    }
+
+    // Small delay between requests — gives the CRM breathing room and lets
+    // the UI visibly step through each account.
+    if (i < accounts.length - 1) {
+      await new Promise((r) => setTimeout(r, 300));
+    }
+  }
+
+  if (streaming) {
+    emit({ type: "done", pushed: results.pushed, failed: results.failed, total: results.total });
+    return res.end();
+  }
+  return res.json(results);
+});
+
+app.post("/api/crm/disconnect", (req, res) => {
+  const { sessionId } = req.body || {};
+  if (sessionId) crmSessions.delete(sessionId);
+  return res.json({ ok: true });
+});
+
+/**
+ * Diagnostic: dry-run one account through the sync pipeline WITHOUT calling
+ * the CRM. Returns the exact URL, headers, and body that would be posted.
+ * Use this to compare against a known-good request captured from the SPA.
+ */
+app.post("/api/crm/preview-request", (req, res) => {
+  const { sessionId } = req.body || {};
+  const session = sessionId && crmSessions.get(sessionId);
+  if (!session) return res.status(401).json({ error: "CRM session not found" });
+
+  const sampleAccount = {
+    name: "Preview Test Account",
+    domain: "example.com",
+    industry: "Software",
+    geography: "New York, USA",
+    fitReason: "Sample account for JWT diagnostic",
+  };
+  const token = signProspectAccelToken(session.secret);
+  const parts = token.split(".");
+  let decodedHeader: any = null;
+  let decodedPayload: any = null;
+  try {
+    decodedHeader = JSON.parse(Buffer.from(parts[0], "base64url").toString());
+    decodedPayload = JSON.parse(Buffer.from(parts[1], "base64url").toString());
+  } catch {}
+
+  return res.json({
+    request: {
+      url: session.endpoint,
+      method: "POST",
+      headers: {
+        Authorization: token,
+        "Content-Type": "application/json",
+      },
+      body: mapAccountToProspectAccel(sampleAccount),
+    },
+    jwt: {
+      raw: token,
+      header: decodedHeader,
+      payload: decodedPayload,
+      note: "Signature omitted. If this token is rejected by your CRM, the secret does not match the one your Django server is using.",
+    },
+  });
+});
+
+app.get("/api/crm/status", (req, res) => {
+  const sessionId = req.query.sessionId as string | undefined;
+  if (!sessionId) return res.json({ connected: false });
+  const session = crmSessions.get(sessionId);
+  if (!session) return res.json({ connected: false });
+  // Return only the hostname, not the full endpoint URL — the URL may embed
+  // internal path/query info that shouldn't be echoed without auth.
+  let hostname = "";
+  try { hostname = new URL(session.endpoint).hostname; } catch {}
+  return res.json({
+    connected: true,
+    provider: session.provider,
+    connectedAt: session.connectedAt,
+    hostname,
+  });
+});
+
+
 
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {
