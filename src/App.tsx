@@ -172,7 +172,7 @@ export default function App() {
     toast.success("Saved report renamed successfully!");
   };
 
-  const analyzeBusiness = async (url: string) => {
+  const analyzeBusiness = async (url: string, accountCount: number = 10) => {
     setIsLoading(true);
     // Clear stale state from any previous analysis BEFORE the fetch. Otherwise,
     // when setAnalysis fires with the new blueprint, Dashboard mounts with the
@@ -201,9 +201,9 @@ export default function App() {
       } else {
         toast.success('Business logic mapped successfully');
       }
-      
-      // Auto-start discovery after business analysis
-      discoverAccounts(data);
+
+      // Auto-start discovery after business analysis with the user's picked count
+      discoverAccounts(data, accountCount);
     } catch (error: any) {
       // Discovery never runs on failure, so clear the pre-warm flag we set
       // above; otherwise the Dashboard would sit on skeletons forever.
@@ -214,15 +214,16 @@ export default function App() {
     }
   };
 
-  const discoverAccounts = async (businessData: BusinessAnalysis) => {
+  const discoverAccounts = async (businessData: BusinessAnalysis, accountCount: number = 10) => {
     setIsDiscovering(true);
     try {
       const response = await fetch('/api/discover-accounts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          businessContext: businessData, 
-          icp: businessData.icp 
+        body: JSON.stringify({
+          businessContext: businessData,
+          icp: businessData.icp,
+          accountCount,
         }),
       });
       
@@ -452,6 +453,12 @@ export default function App() {
             // freshest prev state. The stale-closure form (accounts.map(...)) would
             // let later calls stomp earlier ones and only the last would persist.
             setAccounts(prev => prev.map(a => a.id === acc.id ? acc : a));
+          }}
+          onAddAccount={(acc) => {
+            // Prepend so newly-added prospects appear at the top of the list.
+            // Guard against duplicate ids (e.g. rapid double-click) to keep the
+            // account map unique.
+            setAccounts(prev => (prev.some(a => a.id === acc.id) ? prev : [acc, ...prev]));
           }}
           onSaveReport={handleSaveReport}
           onUpdateReport={(updatedAnalysis, updatedAccounts) => {

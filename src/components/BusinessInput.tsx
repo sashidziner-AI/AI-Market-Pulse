@@ -16,14 +16,17 @@ const FEATURE_PILLS = [
   { icon: Zap,      label: 'Outreach ready',     color: 'text-amber-500' },
 ];
 
+const ACCOUNT_COUNT_PRESETS = [5, 10, 15, 25] as const;
+
 export function BusinessInput({
   onAnalyze,
   isLoading,
 }: {
-  onAnalyze: (url: string) => void;
+  onAnalyze: (url: string, accountCount: number) => void;
   isLoading: boolean;
 }) {
   const [url, setUrl] = useState('');
+  const [accountCount, setAccountCount] = useState<number>(10);
   const [stepIndex, setStepIndex] = useState(0);
 
   // Advance through loading steps on a timer while isLoading is true
@@ -43,7 +46,9 @@ export function BusinessInput({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (url && !isLoading) onAnalyze(url.startsWith('http') ? url : `https://${url}`);
+    if (url && !isLoading) {
+      onAnalyze(url.startsWith('http') ? url : `https://${url}`, accountCount);
+    }
   };
 
   const currentStep = LOADING_STEPS[stepIndex];
@@ -144,6 +149,22 @@ export function BusinessInput({
                   style={{ letterSpacing: '-0.01em' }}
                   autoFocus
                 />
+                {/* Count picker — how many accounts the AI should discover.
+                    Higher = slower & more OpenAI tokens; lower = quicker demo. */}
+                <label className="hidden sm:flex items-center gap-1.5 text-[11px] font-mono text-zinc-500 dark:text-zinc-400 select-none pl-2 border-l border-stone-200 dark:border-white/[0.08]">
+                  <span className="uppercase tracking-wider text-[10px] text-zinc-400 dark:text-zinc-500">Accounts</span>
+                  <select
+                    value={accountCount}
+                    onChange={(e) => setAccountCount(Number(e.target.value))}
+                    disabled={isLoading}
+                    className="bg-transparent outline-none font-mono text-[12px] text-zinc-800 dark:text-zinc-100 font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    title="How many target accounts to discover"
+                  >
+                    {ACCOUNT_COUNT_PRESETS.map(n => (
+                      <option key={n} value={n}>{n}</option>
+                    ))}
+                  </select>
+                </label>
                 <button
                   type="submit"
                   disabled={isLoading || !url}

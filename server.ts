@@ -1575,11 +1575,17 @@ Follow the depth and specificity of these examples for whatever industry the URL
 
 // 2. Discover accounts based on ICP
 app.post("/api/discover-accounts", async (req, res) => {
-  const { businessContext, icp } = req.body;
-  
-  const cacheKey = JSON.stringify({ 
-    businessName: businessContext?.businessName || '', 
-    icpTitle: icp?.title || '' 
+  const { businessContext, icp, accountCount } = req.body;
+  // Clamp the requested count into a sane range so a bogus client can't
+  // trigger a 100-account run. Default = 10 matches the frontend picker.
+  const requestedCount = Number.isFinite(accountCount) ? Number(accountCount) : 10;
+  const targetCount = Math.max(3, Math.min(30, Math.round(requestedCount)));
+
+  const cacheKey = JSON.stringify({
+    businessName: businessContext?.businessName || '',
+    icpTitle: icp?.title || '',
+    // Include count so a request for 15 doesn't get served a 5-account cache
+    count: targetCount,
   });
   
   if (discoveryCache.has(cacheKey)) {
@@ -1593,7 +1599,9 @@ app.post("/api/discover-accounts", async (req, res) => {
 Seller's business: ${JSON.stringify(businessContext)}
 Their ICP: ${JSON.stringify(icp)}
 
-STEP 1 — Search the web for 5-8 companies currently showing buying signals in the last 90 days:
+TARGET: return EXACTLY ${targetCount} verified target accounts. Do not return fewer.
+
+STEP 1 — Search the web for ${targetCount} companies currently showing buying signals in the last 90 days:
   • Recent funding (Series A/B/C, growth rounds)
   • Executive hiring for relevant roles
   • Job postings matching the seller's services
@@ -1602,7 +1610,7 @@ STEP 1 — Search the web for 5-8 companies currently showing buying signals in 
 
 STEP 2 — For each shortlisted company, verify its real domain via web_search.
 
-STEP 3 — Return at least 5 verified accounts. If you cannot find enough via web_search, supplement with well-known companies from your training data (mark those signals conservatively).
+STEP 3 — Return the full list of ${targetCount} verified accounts. If web_search doesn't surface enough live candidates, supplement with well-known companies from your training data (mark those signals conservatively) to reach ${targetCount}. Do NOT skip accounts to save effort.
 
 FEW-SHOT EXAMPLE — the SHAPE and DEPTH of a great entry:
 
@@ -1640,6 +1648,10 @@ Follow the GOOD pattern for every account.`;
 
     const schema = {
       type: Type.ARRAY,
+      // Floor + ceiling matching the clamped targetCount so the provider will
+      // reject an under-filled response and force the model to keep generating.
+      minItems: targetCount,
+      maxItems: targetCount,
       items: {
         type: Type.OBJECT,
         properties: {
@@ -3988,22 +4000,75 @@ app.get("/api/voice-call/:callId", (req, res) => {
 });
 
 // ------------------------------------------------------------------
-// Google Maps — Places Text Search for the AccountDetail side panel
+// Google Maps — Related companies (nearby competitors) lookup
 // ------------------------------------------------------------------
 //
-// POST /api/maps/places  { name, geography?, domain? }
-//   → { place: { name, formattedAddress, phone?, rating?, ratingsCount?,
-//                openNow?, weekdayHours?, mapEmbedUrl, lat, lng, placeId }, cached }
+// POST /api/maps/places  { name, geography?, domain?, keyword?, count? }
+//   →  { primary: {...place data for the selected account...},
+//        related: [{ name, address, rating, ratingsCount, phone, website,
+//                    distanceMeters, distanceLabel, mapsUrl, placeId }, ...] }
 //
-// Two-step lookup so we get contact + hours (Text Search doesn't return them
-// in the light response):
-//   1. Text Search → best-match place_id
-//   2. Place Details (fields=…) → phone, hours, rating count, geometry
-//
-// If GOOGLE_MAPS_API_KEY is missing we short-circuit with 503 so the client
-// can render a clear "add key to .env" state instead of a generic error.
+// The panel is a lead-discovery surface: it locates the SELECTED account on
+// Google Maps to anchor the geo search, then finds OTHER nearby businesses
+// offering the same service so the user can prospect adjacent leads without
+// leaving the app. The selected company itself is filtered from `related`.
 const mapsCache = new Map<string, { at: number; payload: any }>();
 const MAPS_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h — Places data changes slowly
+
+// Haversine distance in metres between two lat/lng pairs.
+function haversineMeters(a: {lat: number, lng: number}, b: {lat: number, lng: number}): number {
+  const R = 6371000;
+  const toRad = (x: number) => (x * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat);
+  const dLng = toRad(b.lng - a.lng);
+  const s1 = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s1)));
+}
+
+function formatDistance(m: number | null): string | null {
+  if (m == null || !Number.isFinite(m)) return null;
+  if (m < 1000) return `${Math.round(m)} m`;
+  const km = m / 1000;
+  return km < 10 ? `${km.toFixed(1)} km` : `${Math.round(km)} km`;
+}
+
+function normalizeDomainForMatch(v?: string): string {
+  return String(v || "")
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .split("/")[0];
+}
+
+function normalizeNameForMatch(v?: string): string {
+  return String(v || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+async function fetchPlaceDetails(placeId: string, apiKey: string): Promise<any | null> {
+  const url = new URL("https://maps.googleapis.com/maps/api/place/details/json");
+  url.searchParams.set("place_id", placeId);
+  url.searchParams.set(
+    "fields",
+    [
+      "name",
+      "formatted_address",
+      "formatted_phone_number",
+      "international_phone_number",
+      "website",
+      "rating",
+      "user_ratings_total",
+      "opening_hours",
+      "geometry",
+      "url",
+      "types",
+    ].join(",")
+  );
+  url.searchParams.set("key", apiKey);
+  const res = await fetch(url.toString());
+  if (!res.ok) return null;
+  const json: any = await res.json();
+  return json.status === "OK" ? json.result : null;
+}
 
 app.post("/api/maps/places", async (req, res) => {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
@@ -4014,17 +4079,26 @@ app.post("/api/maps/places", async (req, res) => {
     });
   }
 
-  const { name, geography, domain } = (req.body || {}) as {
+  const { name, geography, domain, keyword, count } = (req.body || {}) as {
     name?: string;
     geography?: string;
     domain?: string;
+    keyword?: string;
+    count?: number;
   };
   if (!name || typeof name !== "string") {
     return res.status(400).json({ error: "name is required" });
   }
 
-  const query = [name, geography].filter(Boolean).join(" ").trim();
-  const cacheKey = query.toLowerCase();
+  const relatedCount = Math.max(3, Math.min(15, Number.isFinite(count) ? Number(count) : 8));
+  const primaryQuery = [name, geography].filter(Boolean).join(" ").trim();
+  const searchKeyword = (keyword || "").trim();
+  const cacheKey = JSON.stringify({
+    p: primaryQuery.toLowerCase(),
+    k: searchKeyword.toLowerCase(),
+    n: relatedCount,
+    d: normalizeDomainForMatch(domain),
+  });
   const now = Date.now();
   const cached = mapsCache.get(cacheKey);
   if (cached && now - cached.at < MAPS_CACHE_TTL_MS) {
@@ -4032,92 +4106,152 @@ app.post("/api/maps/places", async (req, res) => {
   }
 
   try {
-    // Step 1: Text Search
-    const searchUrl = new URL("https://maps.googleapis.com/maps/api/place/textsearch/json");
-    searchUrl.searchParams.set("query", query);
-    searchUrl.searchParams.set("key", apiKey);
-    const searchRes = await fetch(searchUrl.toString());
-    if (!searchRes.ok) {
-      throw new Error(`Text Search HTTP ${searchRes.status}`);
+    // ── Step 1: Locate the primary company via Text Search ────────────────
+    const primarySearchUrl = new URL("https://maps.googleapis.com/maps/api/place/textsearch/json");
+    primarySearchUrl.searchParams.set("query", primaryQuery);
+    primarySearchUrl.searchParams.set("key", apiKey);
+    const primaryRes = await fetch(primarySearchUrl.toString());
+    if (!primaryRes.ok) throw new Error(`Text Search HTTP ${primaryRes.status}`);
+    const primaryData: any = await primaryRes.json();
+    if (primaryData.status !== "OK" && primaryData.status !== "ZERO_RESULTS") {
+      throw new Error(`Text Search: ${primaryData.status}${primaryData.error_message ? ` — ${primaryData.error_message}` : ""}`);
     }
-    const searchData: any = await searchRes.json();
-    if (searchData.status !== "OK" && searchData.status !== "ZERO_RESULTS") {
-      throw new Error(`Text Search: ${searchData.status}${searchData.error_message ? ` — ${searchData.error_message}` : ""}`);
-    }
-
-    // Prefer a result whose website matches the account domain when we have one.
-    const results: any[] = Array.isArray(searchData.results) ? searchData.results : [];
-    let match: any = results[0];
-    if (domain && results.length > 0) {
-      const normalized = String(domain).toLowerCase().replace(/^www\./, "");
-      const websiteMatch = results.find(r => {
-        const w = String(r.website || "").toLowerCase();
-        return w.includes(normalized);
-      });
-      if (websiteMatch) match = websiteMatch;
+    const primaryResults: any[] = Array.isArray(primaryData.results) ? primaryData.results : [];
+    const normDomain = normalizeDomainForMatch(domain);
+    let primaryMatch: any = primaryResults[0];
+    if (normDomain && primaryResults.length > 0) {
+      const websiteMatch = primaryResults.find(r => normalizeDomainForMatch(r.website).includes(normDomain));
+      if (websiteMatch) primaryMatch = websiteMatch;
     }
 
-    if (!match) {
-      const payload = { place: null, query, cached: false };
-      mapsCache.set(cacheKey, { at: now, payload });
-      return res.json(payload);
+    let primaryDetails: any = null;
+    if (primaryMatch?.place_id) {
+      primaryDetails = await fetchPlaceDetails(primaryMatch.place_id, apiKey);
     }
+    const primaryMerged = { ...(primaryMatch || {}), ...(primaryDetails || {}) };
+    const primaryLat = primaryMerged?.geometry?.location?.lat;
+    const primaryLng = primaryMerged?.geometry?.location?.lng;
+    const primaryPayload = primaryMatch ? {
+      name: primaryMerged.name || name,
+      formattedAddress: primaryMerged.formatted_address || null,
+      phone: primaryMerged.formatted_phone_number || primaryMerged.international_phone_number || null,
+      website: primaryMerged.website || null,
+      rating: primaryMerged.rating ?? null,
+      ratingsCount: primaryMerged.user_ratings_total ?? null,
+      lat: typeof primaryLat === "number" ? primaryLat : null,
+      lng: typeof primaryLng === "number" ? primaryLng : null,
+      placeId: primaryMerged.place_id || null,
+      mapsUrl: primaryMerged.url || null,
+    } : null;
 
-    // Step 2: Place Details for phone + hours (Text Search omits these)
-    let details: any = null;
-    if (match.place_id) {
-      const detailsUrl = new URL("https://maps.googleapis.com/maps/api/place/details/json");
-      detailsUrl.searchParams.set("place_id", match.place_id);
-      detailsUrl.searchParams.set(
-        "fields",
-        [
-          "name",
-          "formatted_address",
-          "formatted_phone_number",
-          "international_phone_number",
-          "website",
-          "rating",
-          "user_ratings_total",
-          "opening_hours",
-          "geometry",
-          "url",
-        ].join(",")
-      );
-      detailsUrl.searchParams.set("key", apiKey);
-      const dRes = await fetch(detailsUrl.toString());
-      if (dRes.ok) {
-        const dJson: any = await dRes.json();
-        if (dJson.status === "OK") details = dJson.result;
+    // Filter set to exclude the primary from `related` — match on placeId,
+    // domain, and normalized name so competitors don't include the seed.
+    const excludePlaceIds = new Set<string>();
+    if (primaryPayload?.placeId) excludePlaceIds.add(primaryPayload.placeId);
+    const excludeDomains = new Set<string>();
+    if (normDomain) excludeDomains.add(normDomain);
+    if (primaryPayload?.website) excludeDomains.add(normalizeDomainForMatch(primaryPayload.website));
+    const excludeName = normalizeNameForMatch(primaryPayload?.name || name);
+
+    // ── Step 2: Find nearby similar-service businesses ─────────────────────
+    // Prefer Nearby Search (rank by prominence around primary's coords) when
+    // we have lat/lng; otherwise fall back to a keyword-only Text Search.
+    let related: any[] = [];
+    if (primaryPayload?.lat != null && primaryPayload?.lng != null && searchKeyword) {
+      const nearbyUrl = new URL("https://maps.googleapis.com/maps/api/place/nearbysearch/json");
+      nearbyUrl.searchParams.set("location", `${primaryPayload.lat},${primaryPayload.lng}`);
+      nearbyUrl.searchParams.set("radius", "50000"); // 50 km
+      nearbyUrl.searchParams.set("keyword", searchKeyword);
+      nearbyUrl.searchParams.set("key", apiKey);
+      const nearbyRes = await fetch(nearbyUrl.toString());
+      if (nearbyRes.ok) {
+        const nearbyJson: any = await nearbyRes.json();
+        if (nearbyJson.status === "OK" && Array.isArray(nearbyJson.results)) {
+          related = nearbyJson.results;
+        }
+      }
+    }
+    if (related.length === 0) {
+      // Fallback: keyword-based Text Search using geography as location hint.
+      const fallbackQuery = [searchKeyword || name, geography].filter(Boolean).join(" ").trim();
+      if (fallbackQuery) {
+        const url = new URL("https://maps.googleapis.com/maps/api/place/textsearch/json");
+        url.searchParams.set("query", fallbackQuery);
+        url.searchParams.set("key", apiKey);
+        const r = await fetch(url.toString());
+        if (r.ok) {
+          const j: any = await r.json();
+          if (j.status === "OK" && Array.isArray(j.results)) related = j.results;
+        }
       }
     }
 
-    const merged = { ...match, ...(details || {}) };
-    const lat = merged?.geometry?.location?.lat;
-    const lng = merged?.geometry?.location?.lng;
-    // The Maps Embed API uses a different endpoint but the same key. If the
-    // Embed API isn't enabled on the key, the iframe simply won't load — the
-    // panel falls back to just the metadata.
-    const mapEmbedUrl = merged.place_id
-      ? `https://www.google.com/maps/embed/v1/place?key=${encodeURIComponent(apiKey)}&q=place_id:${encodeURIComponent(merged.place_id)}`
-      : null;
+    // ── Step 3: Filter out the primary + enrich the top candidates ────────
+    const filtered = related.filter(r => {
+      if (r.place_id && excludePlaceIds.has(r.place_id)) return false;
+      const rn = normalizeNameForMatch(r.name);
+      if (rn && rn === excludeName) return false;
+      return true;
+    });
+
+    // Cheap initial ranking so we only pull Place Details for the best ones
+    // (Details is a paid, per-call endpoint — cap the fan-out).
+    const initialRanked = filtered
+      .map(r => ({
+        raw: r,
+        rating: typeof r.rating === "number" ? r.rating : 0,
+        ratings: typeof r.user_ratings_total === "number" ? r.user_ratings_total : 0,
+      }))
+      .sort((a, b) => (b.rating * Math.log2(1 + b.ratings)) - (a.rating * Math.log2(1 + a.ratings)))
+      .slice(0, relatedCount);
+
+    const enriched = await Promise.all(
+      initialRanked.map(async ({ raw }) => {
+        const det = raw.place_id ? await fetchPlaceDetails(raw.place_id, apiKey) : null;
+        const m = { ...raw, ...(det || {}) };
+        const rw = normalizeDomainForMatch(m.website);
+        if (rw && excludeDomains.has(rw)) return null; // domain match with primary — drop
+        const lat = m?.geometry?.location?.lat;
+        const lng = m?.geometry?.location?.lng;
+        const distanceMeters =
+          primaryPayload?.lat != null && primaryPayload?.lng != null && typeof lat === "number" && typeof lng === "number"
+            ? haversineMeters({lat: primaryPayload.lat, lng: primaryPayload.lng}, {lat, lng})
+            : null;
+        return {
+          name: m.name || raw.name || "Unnamed business",
+          formattedAddress: m.formatted_address || raw.formatted_address || raw.vicinity || null,
+          phone: m.formatted_phone_number || m.international_phone_number || null,
+          website: m.website || null,
+          rating: m.rating ?? raw.rating ?? null,
+          ratingsCount: m.user_ratings_total ?? raw.user_ratings_total ?? null,
+          lat: typeof lat === "number" ? lat : null,
+          lng: typeof lng === "number" ? lng : null,
+          placeId: m.place_id || raw.place_id || null,
+          mapsUrl: m.url || null,
+          distanceMeters,
+          distanceLabel: formatDistance(distanceMeters),
+        };
+      })
+    );
+
+    // Final ranking: rating × log2(1 + reviews) − distance penalty.
+    const finalRelated = enriched
+      .filter((x): x is NonNullable<typeof x> => x != null)
+      .map(x => {
+        const rating = x.rating ?? 0;
+        const reviews = x.ratingsCount ?? 0;
+        const distKm = x.distanceMeters ? x.distanceMeters / 1000 : 0;
+        const distancePenalty = distKm * 0.05; // 0.05 per km — modest weight
+        const score = rating * Math.log2(1 + reviews) - distancePenalty;
+        return { ...x, __score: score };
+      })
+      .sort((a, b) => b.__score - a.__score)
+      .map(({ __score, ...rest }) => rest);
 
     const payload = {
-      place: {
-        name: merged.name || name,
-        formattedAddress: merged.formatted_address || null,
-        phone: merged.formatted_phone_number || merged.international_phone_number || null,
-        website: merged.website || null,
-        rating: merged.rating ?? null,
-        ratingsCount: merged.user_ratings_total ?? null,
-        openNow: merged.opening_hours?.open_now ?? null,
-        weekdayHours: Array.isArray(merged.opening_hours?.weekday_text) ? merged.opening_hours.weekday_text : null,
-        lat: typeof lat === "number" ? lat : null,
-        lng: typeof lng === "number" ? lng : null,
-        placeId: merged.place_id || null,
-        mapEmbedUrl,
-        mapsUrl: merged.url || null,
-      },
-      query,
+      primary: primaryPayload,
+      related: finalRelated,
+      keyword: searchKeyword || null,
       cached: false,
     };
     mapsCache.set(cacheKey, { at: now, payload });

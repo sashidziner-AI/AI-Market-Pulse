@@ -130,6 +130,7 @@ interface DashboardProps {
   onAnalyzeAccount: (id: string) => void;
   onRefreshDiscovery: () => void;
   onUpdateAccount?: (account: TargetAccount) => void;
+  onAddAccount?: (account: TargetAccount) => void;
   onSaveReport?: (name: string, customAnalysis?: BusinessAnalysis, customAccounts?: TargetAccount[]) => string;
   onUpdateReport?: (updatedAnalysis: BusinessAnalysis, updatedAccounts: TargetAccount[]) => void;
   onUpdateReportMeta?: (id: string, name: string) => void;
@@ -158,6 +159,7 @@ export function Dashboard({
   onAnalyzeAccount,
   onRefreshDiscovery,
   onUpdateAccount,
+  onAddAccount,
   onSaveReport,
   onUpdateReport,
   onUpdateReportMeta,
@@ -1530,10 +1532,10 @@ export function Dashboard({
                       ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-200 hover:bg-emerald-500/20'
                       : 'border-white/[0.08] hover:bg-white/[0.06] text-zinc-300 hover:text-zinc-100 bg-transparent'
                   }`}
-                  title="Toggle Google Maps side panel"
+                  title="Find similar businesses near the selected account"
                 >
                   <MapPin className={`w-3.5 h-3.5 ${isMapsPanelOpen ? 'text-emerald-300' : 'text-zinc-400'}`} />
-                  <span>Maps</span>
+                  <span>Related Companies</span>
                 </Button>
               )}
               {onUpdateReport && (
@@ -3914,13 +3916,52 @@ export function Dashboard({
         )}
       </AnimatePresence>
 
-      {/* Google Maps side panel */}
-      <MapsPanel
-        account={mapAccountId ? evaluatedAccounts.find(a => a.id === mapAccountId) || null : null}
-        open={isMapsPanelOpen}
-        onClose={() => setIsMapsPanelOpen(false)}
-        searchGeneration={mapsSearchGeneration}
-      />
+      {/* Related-companies side panel — locates the selected account on Google
+          Maps, then finds nearby businesses offering the same service so the
+          user can prospect adjacent leads. */}
+      {(() => {
+        const mapAcc = mapAccountId ? evaluatedAccounts.find(a => a.id === mapAccountId) || null : null;
+        // Build the service keyword from the most specific source available:
+        //   1. account.industry (if the AI populated it per-account)
+        //   2. seller's ICP target industry (from the initial analysis)
+        //   3. first 6 words of account description as a last-ditch heuristic
+        const derivedKeyword =
+          mapAcc?.industry?.trim()
+          || analysis?.targetIndustries?.[0]?.trim()
+          || (mapAcc?.description || '').split(/\s+/).slice(0, 6).join(' ')
+          || '';
+
+        return (
+          <MapsPanel
+            account={mapAcc}
+            open={isMapsPanelOpen}
+            onClose={() => setIsMapsPanelOpen(false)}
+            searchGeneration={mapsSearchGeneration}
+            keyword={derivedKeyword}
+            onAddToPipeline={(payload) => {
+              if (!onAddAccount) return;
+              // Insert the Maps-discovered business as a fresh TargetAccount
+              // with sensible starting scores; user can run analyze-account
+              // later to enrich it fully with AI intelligence.
+              const newAcc: TargetAccount = {
+                id: `maps-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+                name: payload.name,
+                domain: payload.domain || '',
+                description: payload.address ? `Discovered via Google Maps · ${payload.address}` : 'Discovered via Google Maps',
+                fitReason: mapAcc ? `Similar service provider near ${mapAcc.name}` : 'Discovered via Google Maps side panel',
+                signals: payload.address ? [`Located at ${payload.address}`] : [],
+                fitScore: 60,
+                timingScore: 50,
+                priorityIndex: 55,
+                priorityFlag: 'Standard Follow-up',
+                outreachAngle: 'Introductory outreach — enrich with a fresh analyze-account run.',
+                status: 'new',
+              };
+              onAddAccount(newAcc);
+            }}
+          />
+        );
+      })()}
 
       {/* AI Voice Call modal */}
       <AnimatePresence>
