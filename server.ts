@@ -2420,6 +2420,49 @@ function pickHunterPersonForRole(hunterData: any, role: string) {
   return emails.find((e) => e.linkedin) || emails[0] || null;
 }
 
+// Normalize whatever the enrichment provider (Hunter, Apollo, etc.) hands
+// back into a real, clickable LinkedIn URL. Common issues we've seen:
+//   - "in/john-doe"          → needs the domain prefix
+//   - "linkedin.com/in/x"    → needs the scheme
+//   - "www.linkedin.com/..." → needs the scheme
+//   - Empty / null           → return "" so caller falls back to a search URL
+//   - A search results URL   → return "" so caller can construct a cleaner one
+// Anything that doesn't look like /in/<slug> or /pub/<slug> is treated as
+// invalid and cleared; the caller will fall through to the search URL.
+function normalizeLinkedinProfileUrl(raw?: string | null): string {
+  if (!raw || typeof raw !== "string") return "";
+  let v = raw.trim();
+  if (!v) return "";
+
+  // Reject inbound search / feed URLs — they redirect to login on LinkedIn.
+  if (v.includes("/search/") || v.includes("/feed/") || v.includes("/redir")) return "";
+
+  // Strip protocol so we can pattern-match consistently.
+  v = v.replace(/^https?:\/\//i, "").replace(/^www\./i, "");
+
+  // If it's a bare profile slug like "in/johndoe" attach the host.
+  if (v.startsWith("in/") || v.startsWith("pub/") || v.startsWith("company/")) {
+    v = `linkedin.com/${v}`;
+  }
+  // Must be a linkedin.com URL and reference /in/, /pub/, or /company/.
+  if (!v.startsWith("linkedin.com/")) return "";
+  const path = v.slice("linkedin.com/".length);
+  if (!/^(in|pub|company)\/[A-Za-z0-9._%-]+/.test(path)) return "";
+
+  return `https://www.linkedin.com/${path.split("?")[0].replace(/\/+$/, "")}/`;
+}
+
+// LinkedIn's own /search/results/people/ endpoint bounces unauthenticated
+// visitors to a login wall, and even a well-formed /in/{slug} URL renders a
+// mini-auth prompt for signed-out users. Route through a Google search
+// filtered to LinkedIn profile pages instead — the user gets real,
+// clickable profile results (with names, titles, snippets) that survive
+// the auth wall.
+function buildLinkedinPeopleSearchUrl(keywords: string): string {
+  const q = `site:linkedin.com/in ${keywords}`;
+  return `https://www.google.com/search?q=${encodeURIComponent(q)}`;
+}
+
 async function enrichWithHunter(role: string, company: string, domain?: string) {
   if (!domain) {
     throw new Error("Hunter Domain Search requires a domain");
@@ -2437,7 +2480,7 @@ async function enrichWithHunter(role: string, company: string, domain?: string) 
   return {
     name: name || "Unnamed Contact",
     title: person.position || role,
-    linkedinUrl: person.linkedin || "",
+    linkedinUrl: normalizeLinkedinProfileUrl(person.linkedin),
     isFallback: false,
   };
 }
@@ -2453,10 +2496,12 @@ app.post("/api/enrich-stakeholder", async (req, res) => {
     return res.json(enrichmentCache.get(cacheKey));
   }
 
-  const searchUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(role + " " + company)}&origin=GLOBAL_SEARCH_HEADER`;
+  const searchUrl = buildLinkedinPeopleSearchUrl(`${role} ${company}`);
 
   try {
     const enriched = await enrichWithHunter(role, company, domain);
+    // If Hunter's LinkedIn URL was empty, malformed, or a search page, fall
+    // back to a clean role+company search URL instead of shipping garbage.
     if (!enriched.linkedinUrl) {
       enriched.linkedinUrl = searchUrl;
     }

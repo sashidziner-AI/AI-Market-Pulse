@@ -202,9 +202,11 @@ export function getInferredStakeholderDetails(role: string, company: string): In
   // Avatar colored by role-key so names/visuals perfectly align
   const avatarBg = colors[(companyHash + offset) % colors.length];
   
-  // Search LinkedIn by role + company (real query) rather than the inferred display name,
-  // which is synthesized locally and will return zero results on LinkedIn.
-  const linkedinUrl = `https://www.linkedin.com/search/results/people/?keywords=${encodeURIComponent(role + " " + company)}&origin=GLOBAL_SEARCH_HEADER`;
+  // Route the fallback "Search LinkedIn" through Google with a site:
+  // filter — LinkedIn's native search results page redirects unauthenticated
+  // visitors to a login wall, so we'd never actually see profiles otherwise.
+  // Google returns clickable LinkedIn profile snippets that work signed-out.
+  const linkedinUrl = `https://www.google.com/search?q=${encodeURIComponent(`site:linkedin.com/in ${role} ${company}`)}`;
   
   const estimatedYoe = ((companyHash + offset) % 12) + 8; // 8 to 19 years of experience
 
@@ -290,8 +292,23 @@ export function StakeholderLinkedinCard({ role, company, domain, compact = false
 
   const displayName = enriched?.name || details.name;
   const initials = displayName.split(' ').map(n => n[0]).join('').slice(0, 2);
-  const linkedinHref = enriched?.linkedinUrl || details.linkedinUrl;
-  const isReal = Boolean(enriched);
+  // Guard against malformed URLs bleeding through from Hunter/other providers
+  // (e.g. "linkedin.com/in/…" missing the scheme or a search-page URL). If the
+  // enriched value doesn't look like a real profile, fall back to the search.
+  const looksLikeProfileUrl = (u: string | undefined) => {
+    if (!u) return false;
+    try {
+      const parsed = new URL(u);
+      return parsed.hostname.endsWith('linkedin.com')
+        && /^\/(in|pub|company)\/[^/]+/.test(parsed.pathname)
+        && !parsed.pathname.startsWith('/search/');
+    } catch {
+      return false;
+    }
+  };
+  const enrichedProfileUrl = looksLikeProfileUrl(enriched?.linkedinUrl) ? enriched!.linkedinUrl : '';
+  const linkedinHref = enrichedProfileUrl || details.linkedinUrl;
+  const isReal = Boolean(enriched && enrichedProfileUrl);
   const tooltip = isReal
     ? `Open ${displayName}'s LinkedIn profile in a new tab`
     : `Search LinkedIn for ${role} at ${company} (illustrative name — the search finds real people in this role)`;
