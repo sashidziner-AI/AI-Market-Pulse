@@ -6,7 +6,7 @@ import {
   Lightbulb, AlertCircle, Copy, Check,
   ArrowUpRight, ArrowLeft, Info, Clock, TrendingUp, AlertTriangle,
   Network, GitBranch, ShieldAlert, Sparkles, Sliders, SlidersHorizontal, Target,
-  ExternalLink, Globe, Activity, RefreshCw, User, Briefcase, TrendingDown
+  ExternalLink, Globe, Activity, RefreshCw, User, Briefcase, TrendingDown, ChevronRight, Download
 } from 'lucide-react';
 import { FaLinkedin, FaYoutube, FaXTwitter, FaInstagram, FaFacebook } from 'react-icons/fa6';
 import { Button } from '@/components/ui/button';
@@ -46,19 +46,15 @@ export function SourceCitation({ citation, inlineLabel, isSignal = false }: { ci
   };
 
   return (
-    <div className={`mt-3 p-3 rounded-lg border text-left font-sans text-xs ${isInferred ? 'bg-amber-50/10 dark:bg-amber-950/40 border-amber-200/40 dark:border-amber-800/60' : 'bg-slate-50/40 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700/50'}`}>
-      {/* Top badges & core metrics */}
+    <div className={`mt-3 p-3 rounded-lg border text-left font-sans text-xs ${isInferred ? 'bg-amber-50/10 dark:bg-amber-950/40 border-amber-200/40 dark:border-amber-800/60' : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700/50'}`}>
+      {/* Top row — just the tier badge and confidence chip, no source name here.
+          The source name is promoted to its own prominent row above the inline
+          label below so it never gets squeezed / hidden on long titles. */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-dashed border-slate-200 dark:border-slate-700/60 pb-2 mb-2">
-        <div className="flex items-center gap-1.5 flex-wrap">
-          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border uppercase tracking-normal ${tierColors.bg}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${tierColors.dot}`} />
-            {tierColors.label}
-          </span>
-          <span className="text-slate-300 font-normal select-none">•</span>
-          <span className="text-slate-700 dark:text-slate-300 font-bold text-[12px]">
-            {sourceName}
-          </span>
-        </div>
+        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border uppercase tracking-normal ${tierColors.bg}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${tierColors.dot}`} />
+          {tierColors.label}
+        </span>
 
         {confidenceScore !== undefined && (
           <div className="flex items-center gap-1">
@@ -74,35 +70,48 @@ export function SourceCitation({ citation, inlineLabel, isSignal = false }: { ci
       <div className="flex items-start gap-1.5 text-[12px] leading-relaxed text-slate-600 dark:text-slate-300">
         <Info className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${isInferred ? 'text-amber-500 dark:text-amber-400 animate-pulse' : 'text-slate-450'}`} />
         <div className="flex-1 space-y-1">
+          {/* Source name — its own row, always visible, wraps freely. */}
+          <div className="flex items-baseline gap-1.5 flex-wrap">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Source:</span>
+            <span className="text-[15px] font-bold text-slate-800 dark:text-slate-100 leading-snug break-words">
+              {sourceName}
+            </span>
+          </div>
           <div>{inlineLabel || 'Intelligence gathered and authenticated on'} <span className="font-bold text-slate-700 dark:text-slate-300">{dateRetrieved}</span>.</div>
-          
+
           {isInferred ? (
-            <div className="mt-1 font-semibold text-amber-800 dark:text-amber-200 flex flex-wrap gap-1 items-center bg-amber-50/60 dark:bg-amber-950/40 p-1.5 rounded border border-amber-100/50 dark:border-amber-800/50">
+            <div className="mt-1 font-semibold text-amber-800 dark:text-amber-200 flex flex-wrap gap-1 items-center bg-amber-50/60 dark:bg-amber-950/40 py-1.5 pr-1.5 pl-0 rounded border border-amber-100/50 dark:border-amber-800/50">
               <span className="font-bold text-[10px] uppercase tracking-normal bg-amber-200 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 px-1 rounded-sm select-none">Inferred claim warning</span>
-              <span>This claim depends entirely on tertiary public feedback or indirect inference, and should not be treated as a verified fact.</span>
+              <span>
+                {citation.verificationNote
+                  || 'This claim depends entirely on tertiary public feedback or indirect inference, and should not be treated as a verified fact.'}
+              </span>
             </div>
           ) : (
-            <div className="mt-1 font-semibold text-emerald-800 dark:text-emerald-200 flex flex-wrap gap-1 items-center bg-emerald-50/40 dark:bg-emerald-950/40 p-1 rounded">
-              <span className="font-bold text-[10px] uppercase tracking-normal bg-emerald-100 dark:bg-emerald-900/40 text-emerald-900 dark:text-emerald-200 px-1 rounded-sm select-none">Verified Fact</span>
-              <span>This intelligence is verified from official, high-quality public filings or first-party job posts.</span>
+            <div className="mt-1 font-semibold text-emerald-800 dark:text-emerald-200 flex flex-wrap gap-1 items-center bg-emerald-50/40 dark:bg-emerald-950/40 py-1 pr-1 pl-0 rounded">
+              <span className="font-bold text-[10px] uppercase tracking-normal bg-emerald-100 dark:bg-emerald-900/40 text-emerald-900 dark:text-emerald-200 px-1 rounded-sm select-none">AI Verified Fact</span>
+              <span>
+                {citation.verificationNote
+                  || 'This intelligence is verified from official, high-quality public filings or first-party job posts.'}
+              </span>
+            </div>
+          )}
+
+          {url && (
+            <div className="mt-1 text-left">
+              <a
+                href={url}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="inline-flex items-center gap-1 text-[11px] font-bold uppercase text-indigo-600 dark:text-indigo-300 hover:text-indigo-700 hover:underline transition-all tracking-normal"
+              >
+                Go to Source Document
+                <ExternalLink className="w-2.5 h-2.5" />
+              </a>
             </div>
           )}
         </div>
       </div>
-
-      {url && (
-        <div className="mt-2 text-right">
-          <a
-            href={url}
-            target="_blank"
-            rel="noreferrer noopener"
-            className="inline-flex items-center gap-1 text-[11px] font-bold uppercase text-indigo-600 dark:text-indigo-300 hover:text-indigo-700 hover:underline transition-all tracking-normal"
-          >
-            Go to Source Document
-            <ExternalLink className="w-2.5 h-2.5" />
-          </a>
-        </div>
-      )}
     </div>
   );
 }
@@ -441,7 +450,11 @@ export function AccountDetail({
   isCrmLoading = false,
 }: AccountDetailProps) {
   const [copied, setCopied] = React.useState<string | null>(null);
-  
+
+  // Ref on the scrollable content wrapper so we can rasterize it to PDF.
+  const reportContentRef = React.useRef<HTMLDivElement | null>(null);
+  const [isExportingPdf, setIsExportingPdf] = React.useState(false);
+
   // Interactive account property editors state variables
   const [isEditing, setIsEditing] = React.useState(false);
   const [editName, setEditName] = React.useState(account.name);
@@ -459,6 +472,106 @@ export function AccountDetail({
     setEditFitScore(account.fitScore || 75);
     setIsEditing(false);
   }, [account]);
+
+  // Rasterize the report content into a multi-page A4 PDF and trigger a
+  // download. Uses html2canvas-pro so the PDF matches what's on screen
+  // exactly (including dark mode + Tailwind v4 oklch colors).
+  const handleDownloadPdf = async () => {
+    const node = reportContentRef.current;
+    if (!node) {
+      toast.error('Report content not ready. Please try again.');
+      return;
+    }
+    setIsExportingPdf(true);
+
+    // html2canvas can force reflows on the source page. Snapshot the scroll
+    // position and any active-element focus so we can restore them after the
+    // capture completes, preventing the "UI jumped" feel some users hit.
+    const scrollX = window.scrollX;
+    const scrollY = window.scrollY;
+    const activeElement = document.activeElement as HTMLElement | null;
+
+    try {
+      const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
+        import('jspdf'),
+        import('html2canvas-pro'),
+      ]);
+      const isDark = document.documentElement.classList.contains('dark');
+
+      // Rasterize the source at its exact desktop-design width so column
+      // layouts don't collapse to mobile/single-column during capture.
+      const captureWidth = Math.max(node.scrollWidth, 1152);
+
+      const canvas = await html2canvas(node, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: isDark ? '#0f172a' : '#ffffff',
+        logging: false,
+        width: captureWidth,
+        windowWidth: captureWidth,
+        onclone: (clonedDoc) => {
+          const style = clonedDoc.createElement('style');
+          style.textContent = `
+            * { animation: none !important; transition: none !important; }
+            [data-motion-anim], [data-framer-appear-id] { transform: none !important; opacity: 1 !important; }
+          `;
+          clonedDoc.head.appendChild(style);
+        },
+      });
+
+      // A4 landscape — width closer to the layout's natural design width so
+      // content isn't squished vertically. 842 × 595 pt at 72dpi.
+      const pdf = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'a4' });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+
+      // Slice the canvas into page-sized chunks and add each as its own image.
+      // This avoids cutting text mid-line by rendering exactly what fits on
+      // each page as a separate raster.
+      const canvasPageHeight = Math.floor((canvas.width * pageHeight) / pageWidth);
+      let renderedHeight = 0;
+      let pageIndex = 0;
+      while (renderedHeight < canvas.height) {
+        const sliceHeight = Math.min(canvasPageHeight, canvas.height - renderedHeight);
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = sliceHeight;
+        const ctx = pageCanvas.getContext('2d');
+        if (!ctx) throw new Error('Canvas 2d context unavailable');
+        ctx.fillStyle = isDark ? '#0f172a' : '#ffffff';
+        ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+        ctx.drawImage(canvas, 0, renderedHeight, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
+        const sliceData = pageCanvas.toDataURL('image/png');
+        if (pageIndex > 0) pdf.addPage();
+        const imgHeightOnPage = (sliceHeight * pageWidth) / canvas.width;
+        pdf.addImage(sliceData, 'PNG', 0, 0, pageWidth, imgHeightOnPage, undefined, 'FAST');
+        renderedHeight += sliceHeight;
+        pageIndex += 1;
+      }
+
+      const safeName = (account.name || 'account')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '')
+        .slice(0, 60) || 'account';
+      const stamp = new Date().toISOString().slice(0, 10);
+      pdf.save(`${safeName}-market-pulse-${stamp}.pdf`);
+      toast.success('Report downloaded.');
+    } catch (err: any) {
+      toast.error(`PDF export failed: ${err.message || 'unknown error'}`);
+    } finally {
+      setIsExportingPdf(false);
+
+      // Restore scroll and focus that html2canvas may have moved during
+      // its clone/measure pass. Nudging window with a resize event forces
+      // any responsive components (Recharts, etc.) to re-measure.
+      window.scrollTo(scrollX, scrollY);
+      if (activeElement && typeof activeElement.focus === 'function') {
+        try { activeElement.focus({ preventScroll: true }); } catch { /* noop */ }
+      }
+      window.dispatchEvent(new Event('resize'));
+    }
+  };
 
   // Social signals state — lazy-fetched on mount once per account
   const [socialLoading, setSocialLoading] = React.useState(false);
@@ -528,7 +641,7 @@ export function AccountDetail({
           </span>
         </div>
       </header>
-      <div className="max-w-6xl mx-auto bg-white dark:bg-slate-900 shadow-sm">
+      <div ref={reportContentRef} className="max-w-6xl mx-auto bg-white dark:bg-slate-900 shadow-sm">
       <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-800">
         <div className="flex items-center gap-4 min-w-0 flex-1">
           <div className="w-12 h-12 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 flex items-center justify-center text-indigo-600 dark:text-indigo-300 font-bold text-xl shrink-0">
@@ -617,14 +730,16 @@ export function AccountDetail({
                 </Button>
               </div>
             ) : (
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={() => setIsEditing(true)}
-                className="h-8 text-xs font-bold gap-1 text-slate-650 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:text-indigo-605 hover:bg-slate-50"
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDownloadPdf}
+                disabled={isExportingPdf}
+                title="Download this account report as a PDF"
+                className="h-8 text-xs font-bold gap-1.5 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:text-indigo-600 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
               >
-                <SlidersHorizontal className="w-3.5 h-3.5" />
-                <span>Edit Info</span>
+                <Download className={`w-3.5 h-3.5 ${isExportingPdf ? 'animate-pulse' : ''}`} />
+                <span>{isExportingPdf ? 'Preparing PDF…' : 'Download PDF'}</span>
               </Button>
             )
           )}
@@ -694,8 +809,8 @@ export function AccountDetail({
           {/* Executive Summary */}
           <section className="space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
+              <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />
                 Evidence-Based Fit Intel
               </h3>
               {isEditing ? (
@@ -751,7 +866,7 @@ export function AccountDetail({
                 {account.description && (
                   <p className="text-xs text-slate-500 dark:text-slate-300 italic px-1 font-normal leading-relaxed text-left">{account.description}</p>
                 )}
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-sm leading-relaxed whitespace-pre-wrap text-left font-sans">
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 text-slate-700 dark:text-slate-300 text-sm leading-relaxed whitespace-pre-wrap text-left font-sans shadow-md">
                   {analysis?.rationale || account.fitReason}
                   
                   <SourceCitation 
@@ -771,11 +886,11 @@ export function AccountDetail({
           </section>
 
           {/* Industry Calibration Controls board */}
-          <section className="space-y-4 bg-indigo-50/20 dark:bg-indigo-950/40 p-5 rounded-2xl border border-indigo-100 dark:border-indigo-800/50 shadow-2xs text-left">
+          <section className="space-y-4 bg-indigo-50/20 dark:bg-indigo-950/40 p-5 rounded-2xl border border-indigo-100 dark:border-indigo-800/50 shadow-md text-left">
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                  <Sliders className="w-4 h-4 text-indigo-600 dark:text-indigo-300" />
+                <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <Sliders className="w-5 h-5 text-indigo-600 dark:text-indigo-300" />
                   Industry-Specific Buying Intent Calibration
                 </h3>
                 {account.forcedSectorModel ? (
@@ -853,27 +968,27 @@ export function AccountDetail({
           </section>
 
           {/* Social Signals — tabbed per platform */}
-          <section className="space-y-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs text-left">
+          <section className="space-y-2.5 bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-md text-left">
             {/* Header */}
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <h3 className="text-[15px] font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
                 <Globe className="w-4 h-4 text-indigo-600 dark:text-indigo-300" />
                 Social Signals
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60">
+                <span className="text-[9.5px] font-semibold px-1.5 py-0 rounded-full bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60">
                   Past 15 days
                 </span>
               </h3>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5">
                 {socialLoading && (
-                  <span className="text-[11px] text-indigo-500 dark:text-indigo-400 font-mono animate-pulse">Scanning…</span>
+                  <span className="text-[10px] text-indigo-500 dark:text-indigo-400 font-mono animate-pulse">Scanning…</span>
                 )}
                 {socialData?.isFallback && !socialLoading && (
-                  <Badge variant="outline" className="text-[11px] text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800/60 bg-amber-50/50 dark:bg-amber-950/30">
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800/60 bg-amber-50/50 dark:bg-amber-950/30">
                     Simulated
                   </Badge>
                 )}
                 {socialData && !socialData.isFallback && !socialLoading && (
-                  <Badge variant="outline" className="text-[11px] text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60">
+                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60">
                     Live
                   </Badge>
                 )}
@@ -896,9 +1011,9 @@ export function AccountDetail({
                         })
                         .catch(() => setSocialLoading(false));
                     }}
-                    className="p-1 rounded-lg text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                    className="p-0.5 rounded-md text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" />
+                    <RefreshCw className="w-3 h-3" />
                   </button>
                 )}
               </div>
@@ -906,18 +1021,18 @@ export function AccountDetail({
 
             {/* Body */}
             {socialLoading ? (
-              <div className="flex flex-col items-center gap-3 py-8 text-slate-400 dark:text-slate-500">
-                <div className="w-7 h-7 border-2 border-slate-200 dark:border-slate-700 border-t-indigo-500 rounded-full animate-spin" />
-                <p className="text-[13px] font-medium">Scanning social media presence…</p>
+              <div className="flex flex-col items-center gap-2 py-5 text-slate-400 dark:text-slate-500">
+                <div className="w-5 h-5 border-2 border-slate-200 dark:border-slate-700 border-t-indigo-500 rounded-full animate-spin" />
+                <p className="text-[12px] font-medium">Scanning social media presence…</p>
               </div>
             ) : !socialData || socialData.platforms.length === 0 ? (
-              <div className="text-center py-6 text-slate-400 dark:text-slate-500 text-[13px] font-medium">
+              <div className="text-center py-4 text-slate-400 dark:text-slate-500 text-[12px] font-medium">
                 No verified social presence found for this account.
               </div>
             ) : (
               <Tabs defaultValue={socialData.platforms[0]?.platform} className="w-full">
                 {/* Tab triggers — one per platform with post count badge */}
-                <TabsList className="w-full flex h-auto p-1 bg-slate-100 dark:bg-slate-800 rounded-xl gap-1 mb-4">
+                <TabsList className="w-full flex h-auto p-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg gap-0.5 mb-2.5">
                   {socialData.platforms.map((p) => {
                     const pm = SOCIAL_META[p.platform] ?? SOCIAL_META.linkedin;
                     const TabIcon = pm.Icon;
@@ -926,16 +1041,16 @@ export function AccountDetail({
                       <TabsTrigger
                         key={p.platform}
                         value={p.platform}
-                        className="flex-1 flex items-center justify-center gap-1.5 text-[12px] font-semibold py-1.5 rounded-lg data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all"
+                        className="flex-1 flex items-center justify-center gap-1 text-[13px] font-semibold py-1 rounded-md data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all"
                       >
-                        <TabIcon className={`w-3.5 h-3.5 shrink-0 ${pm.tabDot}`} />
+                        <TabIcon className={`w-3 h-3 shrink-0 ${pm.tabDot}`} />
                         <span className="hidden sm:inline">{pm.label}</span>
                         {postCount15d > 0 ? (
-                          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 hidden md:inline">
+                          <span className="text-[9px] font-bold px-1 py-0 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 hidden md:inline">
                             {postCount15d}
                           </span>
                         ) : (
-                          <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 hidden md:inline">—</span>
+                          <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 hidden md:inline">—</span>
                         )}
                       </TabsTrigger>
                     );
@@ -975,11 +1090,15 @@ export function AccountDetail({
             </div>
           )}
 
+          {/* Two-column row: Adaptive Feedback (left) + Prioritization (right).
+              Stacks on smaller screens (< lg), side-by-side from lg upward. */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+
           {/* Outreach Loop & Adaptive Feedback Outcomes Console */}
-          <section className="space-y-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-xs text-left">
+          <section className="space-y-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-md text-left h-full">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                <Target className="w-4 h-4 text-indigo-600 dark:text-indigo-300" />
+              <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <Target className="w-5 h-5 text-indigo-600 dark:text-indigo-300" />
                 Adaptive Feedback & Outreach Outcomes
               </h3>
               {account.outreachOutcome ? (
@@ -1119,7 +1238,7 @@ export function AccountDetail({
           </section>
 
           {/* Outreach Priority & Timing Analytics */}
-          <section className="space-y-3.5 bg-slate-50/50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-xs">
+          <section className="space-y-3.5 bg-slate-50/50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-md h-full">
             <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-300 uppercase tracking-wide flex items-center gap-1.5">
               <Clock className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
               Prioritization & Outreach Timing Intel
@@ -1154,18 +1273,50 @@ export function AccountDetail({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-150 dark:border-slate-700 text-center">
-                      <div className="text-[11px] uppercase font-bold text-slate-400">ICP Fit Score</div>
-                      <div className="text-lg font-bold text-slate-800 dark:text-slate-200 font-mono mt-0.5">{info.fitScore}%</div>
+                  {/* Stat strip — same visual language as AccountCard so the
+                      metrics feel consistent across list and detail views. */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className={`rounded-lg px-2.5 py-2 bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.07] border-l-[3px] ${
+                      account.isDisqualified ? 'border-l-red-400'
+                      : info.fitScore >= 80 ? 'border-l-emerald-400'
+                      : info.fitScore >= 60 ? 'border-l-amber-400'
+                      : 'border-l-slate-300 dark:border-l-zinc-600'
+                    }`}>
+                      <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500">ICP Fit Score</div>
+                      <div className={`text-[15px] font-semibold font-mono leading-tight mt-0.5 ${
+                        account.isDisqualified ? 'text-red-600 dark:text-red-300'
+                        : info.fitScore >= 80 ? 'text-emerald-600 dark:text-emerald-300'
+                        : info.fitScore >= 60 ? 'text-amber-600 dark:text-amber-300'
+                        : 'text-slate-500 dark:text-zinc-400'
+                      }`}>{info.fitScore}%</div>
                     </div>
-                    <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-150 dark:border-slate-700 text-center">
-                      <div className="text-[11px] uppercase font-bold text-slate-400">Timing Score</div>
-                      <div className="text-lg font-bold text-slate-800 dark:text-slate-200 font-mono mt-0.5">{info.timingScore}%</div>
+                    <div className={`rounded-lg px-2.5 py-2 bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.07] border-l-[3px] ${
+                      account.isDisqualified ? 'border-l-red-400'
+                      : info.timingScore >= 80 ? 'border-l-rose-400'
+                      : info.timingScore >= 60 ? 'border-l-amber-400'
+                      : 'border-l-purple-400'
+                    }`}>
+                      <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500">Timing Score</div>
+                      <div className={`text-[15px] font-semibold font-mono leading-tight mt-0.5 ${
+                        account.isDisqualified ? 'text-red-600 dark:text-red-300'
+                        : info.timingScore >= 80 ? 'text-rose-600 dark:text-rose-300'
+                        : info.timingScore >= 60 ? 'text-amber-600 dark:text-amber-300'
+                        : 'text-purple-600 dark:text-purple-300'
+                      }`}>{info.timingScore}%</div>
                     </div>
-                    <div className="p-3 bg-white dark:bg-slate-900 rounded-lg border border-slate-150 dark:border-slate-700 text-center">
-                      <div className="text-[11px] uppercase font-bold text-slate-400">Priority Index</div>
-                      <div className="text-lg font-semibold text-indigo-700 dark:text-indigo-300 font-mono mt-0.5" title="(Fit + Timing) / 2">{info.priorityIndex}</div>
+                    <div className={`rounded-lg px-2.5 py-2 bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.07] border-l-[3px] ${
+                      account.isDisqualified ? 'border-l-red-400'
+                      : info.priorityIndex >= 80 ? 'border-l-rose-400'
+                      : info.priorityIndex >= 60 ? 'border-l-amber-400'
+                      : 'border-l-indigo-400'
+                    }`} title="(Fit + Timing) / 2">
+                      <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500">Priority Index</div>
+                      <div className={`text-[15px] font-semibold font-mono leading-tight mt-0.5 ${
+                        account.isDisqualified ? 'text-red-600 dark:text-red-300'
+                        : info.priorityIndex >= 80 ? 'text-rose-600 dark:text-rose-300'
+                        : info.priorityIndex >= 60 ? 'text-amber-600 dark:text-amber-300'
+                        : 'text-indigo-600 dark:text-indigo-300'
+                      }`}>{info.priorityIndex}</div>
                     </div>
                   </div>
 
@@ -1185,16 +1336,20 @@ export function AccountDetail({
             })()}
           </section>
 
+          </div>
+          {/* /Two-column row */}
+
           {/* Buying Signals with Live Freshness Tuning */}
-          <section className="space-y-4 bg-slate-50/60 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-2xs">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 dark:border-slate-700/60 pb-3">
-              <div className="text-left">
-                <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                  <TrendingUp className="w-4 h-4 text-indigo-500 dark:text-indigo-400" />
+          <section className="space-y-4 bg-slate-50/60 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-md">
+            {/* Header — title, plain-language explainer, and overall freshness. */}
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 border-b border-slate-200 dark:border-slate-700/60 pb-3">
+              <div className="text-left space-y-1">
+                <h3 className="text-base font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                  <TrendingUp className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
                   Signal Freshness tuning & Decay Board
                 </h3>
-                <p className="text-[13px] text-slate-500 dark:text-slate-300 font-medium leading-relaxed">
-                  Decay factor: <span className="font-bold text-emerald-650 dark:text-emerald-300">100% at 0-90 days</span>, linear decay, <span className="font-bold text-red-650 dark:text-red-300">0% at 180+ days</span>.
+                <p className="text-[13px] text-slate-600 dark:text-slate-300 leading-relaxed">
+                  Every buying signal is worth less the older it gets. Drag the age slider on any signal to see how its weight changes — and how that shifts the account's overall intent score.
                 </p>
               </div>
               <div className="shrink-0 text-right">
@@ -1203,9 +1358,25 @@ export function AccountDetail({
                   info.freshnessLabel === 'AGING' ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200/60 dark:border-amber-800/60' :
                   'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-300 dark:border-slate-700'
                 }`}>
-                  {info.freshnessLabel} : {info.freshnessScore}%
+                  Overall {info.freshnessLabel}: {info.freshnessScore}%
                 </Badge>
               </div>
+            </div>
+
+            {/* Legend row — quick key for the three freshness bands. */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11.5px] text-slate-600 dark:text-slate-300">
+              <span className="inline-flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                <strong>Fresh</strong> <span className="text-slate-500 dark:text-slate-400">(0–90 days · counts 100%)</span>
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-amber-500" />
+                <strong>Decaying</strong> <span className="text-slate-500 dark:text-slate-400">(90–180 days · drops linearly)</span>
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-slate-400" />
+                <strong>Stale</strong> <span className="text-slate-500 dark:text-slate-400">(180+ days · counts 0%)</span>
+              </span>
             </div>
 
             {/* Recommendations or warnings */}
@@ -1231,83 +1402,106 @@ export function AccountDetail({
             {/* List of signals with sliders */}
             <div className="space-y-4">
               {info.resolvedSignals.map((sig, sIdx) => {
-                let sigBadgeColor = "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-105 text-emerald-805";
-                if (sig.freshnessWeight >= 0.8) {
-                  sigBadgeColor = "bg-emerald-50 dark:bg-emerald-950/40 border-emerald-100 dark:border-emerald-800/50 text-emerald-700 dark:text-emerald-300";
-                } else if (sig.freshnessWeight > 0) {
-                  sigBadgeColor = "bg-amber-50 dark:bg-amber-950/40 border-amber-100 dark:border-amber-800/50 text-amber-700 dark:text-amber-300";
-                } else {
-                  sigBadgeColor = "bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300";
-                }
+                // Freshness pill color tracks the same 3 bands the legend explains.
+                const freshnessBand: 'fresh' | 'decaying' | 'stale' =
+                  sig.freshnessWeight >= 0.99 ? 'fresh'
+                  : sig.freshnessWeight > 0 ? 'decaying'
+                  : 'stale';
+                const bandStyles = {
+                  fresh:    { pill: 'bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60 text-emerald-700 dark:text-emerald-300', dot: 'bg-emerald-500', label: 'Fresh' },
+                  decaying: { pill: 'bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/60 text-amber-700 dark:text-amber-300', dot: 'bg-amber-500', label: 'Decaying' },
+                  stale:    { pill: 'bg-slate-100 dark:bg-slate-800 border-slate-300 dark:border-slate-700 text-slate-600 dark:text-slate-300', dot: 'bg-slate-400', label: 'Stale' },
+                }[freshnessBand];
+
+                const finalIntent = Math.round(sig.calibratedWeight * 100);
+                const sectorLabel = sig.multiplier > 1.0
+                  ? 'boost'
+                  : sig.multiplier < 1.0 ? 'penalty' : 'neutral';
+                const sectorTone = sig.multiplier > 1.0
+                  ? 'text-emerald-600 dark:text-emerald-300'
+                  : sig.multiplier < 1.0 ? 'text-amber-600 dark:text-amber-300'
+                  : 'text-slate-600 dark:text-slate-300';
+                const intentTone = finalIntent >= 80
+                  ? 'text-emerald-600 dark:text-emerald-300'
+                  : finalIntent >= 40 ? 'text-amber-600 dark:text-amber-300'
+                  : 'text-slate-500 dark:text-slate-400';
+                const intentPlainMeaning = finalIntent >= 80
+                  ? 'Strong buying-intent signal — factor into outreach now.'
+                  : finalIntent >= 40 ? 'Moderate signal — supports outreach but not on its own.'
+                  : 'Weak signal — too old or off-sector to move priority.';
 
                 return (
                   <div key={sig.id || sIdx} className="p-4 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl hover:shadow-xs transition-all space-y-3">
+                    {/* Row 1: signal text + freshness state pill */}
                     <div className="flex items-start justify-between gap-3 text-left">
                       <div className="space-y-1 min-w-0 flex-1">
-                        <span className="text-xs font-bold text-slate-800 dark:text-slate-200 leading-relaxed block overflow-hidden text-ellipsis">
+                        <span className="text-[13px] font-semibold text-slate-800 dark:text-slate-100 leading-snug block">
                           {sig.text}
                         </span>
-                        {/* Signal Category Badge */}
-                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                          <span className="px-2 py-0.5 rounded text-[11px] font-semibold uppercase text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-150 dark:border-indigo-800/50">
-                            {sig.categoryLabel}
-                          </span>
-                          {sig.multiplier > 1.0 ? (
-                            <span className="text-[11px] font-bold text-emerald-650 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded border border-emerald-100 dark:border-emerald-800/50">
-                              {sig.multiplier.toFixed(2)}x Calibration Boost
-                            </span>
-                          ) : sig.multiplier < 1.0 ? (
-                            <span className="text-[11px] font-bold text-amber-650 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 px-1.5 py-0.5 rounded border border-amber-100 dark:border-amber-800/50">
-                              {sig.multiplier.toFixed(2)}x Runway Penalty
-                            </span>
-                          ) : (
-                            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 px-1.5 py-0.5 rounded border border-slate-150 dark:border-slate-700">
-                              1.00x Base Par
-                            </span>
-                          )}
-                        </div>
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0 rounded text-[10px] font-semibold uppercase tracking-wide text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-150 dark:border-indigo-800/50">
+                          {sig.categoryLabel}
+                        </span>
                       </div>
-                      <span className={`text-[11px] uppercase tracking-normal font-semibold px-2 py-0.5 rounded border ${sigBadgeColor} shrink-0`}>
-                        {sig.ageDays <= 90 ? 'Fresh (100%)' : sig.ageDays <= 180 ? `Decaying (${Math.round(sig.freshnessWeight*100)}%)` : 'Stale (0%)'}
+                      <span className={`inline-flex items-center gap-1 text-[11px] uppercase tracking-normal font-semibold px-2 py-0.5 rounded border shrink-0 ${bandStyles.pill}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full ${bandStyles.dot}`} />
+                        {bandStyles.label}
                       </span>
                     </div>
 
-                    {/* Sector norm explanation */}
-                    <div className="text-[12px] leading-relaxed text-slate-600 dark:text-slate-300 bg-slate-50/80 dark:bg-slate-800/50 border border-slate-150 dark:border-slate-700 p-3 rounded-lg text-left font-medium">
-                      💡 <strong className="text-slate-800 dark:text-slate-200 font-bold uppercase text-[11px] tracking-wide inline-block mr-1">Interpretation:</strong>{sig.sectorRationale}
+                    {/* Row 2: the three math values, clearly labeled — Freshness × Sector = Intent */}
+                    <div className="grid grid-cols-[1fr_auto_1fr_auto_1fr] items-center gap-1.5">
+                      <MetricBox
+                        label="Age freshness"
+                        value={`${Math.round(sig.freshnessWeight * 100)}%`}
+                        hint={sig.ageDays <= 90 ? 'still full weight' : sig.ageDays <= 180 ? 'decaying with age' : 'past shelf life'}
+                        tone={bandStyles.label === 'Fresh' ? 'text-emerald-600 dark:text-emerald-300' : bandStyles.label === 'Decaying' ? 'text-amber-600 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}
+                      />
+                      <span className="text-slate-400 font-mono text-sm select-none">×</span>
+                      <MetricBox
+                        label="Sector weight"
+                        value={`${sig.multiplier.toFixed(2)}×`}
+                        hint={sectorLabel === 'boost' ? 'high-signal category for this sector' : sectorLabel === 'penalty' ? 'low-signal category for this sector' : 'neutral fit'}
+                        tone={sectorTone}
+                      />
+                      <span className="text-slate-400 font-mono text-sm select-none">=</span>
+                      <MetricBox
+                        label="Final intent"
+                        value={`${finalIntent}%`}
+                        hint="how much this signal moves priority"
+                        tone={intentTone}
+                        emphasized
+                      />
                     </div>
 
-                    {/* Signal Citation */}
-                    {sig.citation && (
-                      <SourceCitation 
-                        citation={sig.citation} 
-                        inlineLabel="Intent signal retrieved on" 
-                        isSignal={true}
-                      />
-                    )}
+                    {/* Row 3: plain-language meaning of the final intent value */}
+                    <div className="text-[12.5px] leading-relaxed text-slate-700 dark:text-slate-200 bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 p-3 rounded-lg text-left">
+                      <strong className="text-slate-500 dark:text-slate-400 uppercase text-[10px] tracking-wider font-bold block mb-0.5">What this means</strong>
+                      {intentPlainMeaning}
+                      {sig.sectorRationale && (
+                        <span className="block mt-1 text-[12px] text-slate-500 dark:text-slate-300">
+                          <span className="font-semibold">Sector context: </span>{sig.sectorRationale}
+                        </span>
+                      )}
+                    </div>
 
-                    <div className="space-y-2">
-                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 text-[12px] text-slate-500 dark:text-slate-300">
-                        <span className="flex items-center gap-1 font-semibold">
-                          <Clock className="w-3.5 h-3.5 text-indigo-400 dark:text-indigo-300" />
-                          Age: <strong className="text-slate-700 dark:text-slate-300 font-mono font-bold">{sig.ageDays} days ago</strong>
-                        </span>
-                        <span className="font-mono text-[11px]">
-                          calibrated: <strong className="text-indigo-600 dark:text-indigo-300 font-semibold">{Math.round(sig.freshnessWeight * 100)}% fresh</strong> × <strong className="text-slate-600 dark:text-slate-300 font-semibold">{sig.multiplier.toFixed(2)}x sector weight</strong> = <strong className="text-indigo-650 dark:text-indigo-300 font-bold">{Math.round(sig.calibratedWeight * 100)}% intent</strong>
-                        </span>
+                    {/* Row 4: age slider with labeled tick marks so the scale is obvious */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between text-[11px] text-slate-500 dark:text-slate-400">
+                        <span className="font-semibold text-slate-700 dark:text-slate-200">Signal age: <span className="font-mono">{sig.ageDays} days</span></span>
+                        <span className="text-[10.5px]">← drag to test how aging changes the score</span>
                       </div>
-                      <input 
-                        type="range" 
-                        min="0" 
-                        max="250" 
+                      <input
+                        type="range"
+                        min="0"
+                        max="250"
                         step="5"
-                        value={sig.ageDays} 
+                        value={sig.ageDays}
                         onChange={(e) => {
                           const newAge = Number(e.target.value);
-                          const updatedSignals = resolvedSignals.map((item, i) => 
+                          const updatedSignals = resolvedSignals.map((item, i) =>
                             i === sIdx ? { ...item, ageDays: newAge } : item
                           );
-                          
+
                           if (onUpdateAccount) {
                             onUpdateAccount({
                               ...account,
@@ -1316,10 +1510,33 @@ export function AccountDetail({
                             });
                           }
                         }}
-                        className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                        className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-600"
                         id={`sig-slider-${sig.id || sIdx}`}
                       />
+                      <div className="flex justify-between text-[10px] font-mono text-slate-400 dark:text-slate-500 px-0.5">
+                        <span>0d</span>
+                        <span className="text-emerald-500 dark:text-emerald-400">90d</span>
+                        <span className="text-amber-500 dark:text-amber-400">180d</span>
+                        <span>250d</span>
+                      </div>
                     </div>
+
+                    {/* Row 5: source (collapsed by default so it doesn't dominate) */}
+                    {sig.citation && (
+                      <details className="group">
+                        <summary className="cursor-pointer text-[11.5px] font-semibold text-indigo-600 dark:text-indigo-300 hover:underline select-none inline-flex items-center gap-1">
+                          <ChevronRight className="w-3 h-3 transition-transform group-open:rotate-90" />
+                          Where did this signal come from?
+                        </summary>
+                        <div className="pt-1">
+                          <SourceCitation
+                            citation={sig.citation}
+                            inlineLabel="Intent signal retrieved on"
+                            isSignal={true}
+                          />
+                        </div>
+                      </details>
+                    )}
                   </div>
                 );
               })}
@@ -1328,11 +1545,13 @@ export function AccountDetail({
             {/* Add New Detected Signal Form */}
             <div className="border-t border-slate-200 dark:border-slate-700/80 pt-4 space-y-3 text-left">
               <div>
-                <span className="text-[12px] uppercase font-bold text-slate-450 tracking-normal flex items-center gap-1">
-                  <Sparkles className="w-3.5 h-3.5 text-indigo-505 animate-pulse" />
-                  Monitor/Detect Live Buying Signal
+                <span className="text-[13px] font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-500 animate-pulse" />
+                  Add a new signal you just caught
                 </span>
-                <p className="text-[12px] text-slate-500 dark:text-slate-300 mt-0.5">Capture real-time intent events in the environment. Triggers automatic, instant recalculations of the account index scores.</p>
+                <p className="text-[12px] text-slate-500 dark:text-slate-300 mt-0.5">
+                  Type it below and click Detect. It's added at 0 days old (freshness 100%) and the account's overall intent score updates instantly.
+                </p>
               </div>
 
               <div className="flex flex-col sm:flex-row gap-2">
@@ -1841,6 +2060,35 @@ function fmtNum(n: number): string {
   return n.toString();
 }
 
+// Reused by the Signal Freshness card's Freshness × Sector = Intent strip.
+// Each box shows a labeled numeric value with a plain-english hint below,
+// so the whole formula reads left-to-right without needing a legend.
+function MetricBox({
+  label,
+  value,
+  hint,
+  tone,
+  emphasized = false,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  tone: string;
+  emphasized?: boolean;
+}) {
+  return (
+    <div className={`rounded-lg px-2 py-1.5 border text-center ${
+      emphasized
+        ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800/60'
+        : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700'
+    }`}>
+      <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-slate-500 truncate">{label}</div>
+      <div className={`text-[15px] font-semibold font-mono leading-tight mt-0.5 ${tone}`}>{value}</div>
+      <div className="text-[10px] text-slate-500 dark:text-slate-400 leading-tight mt-0.5">{hint}</div>
+    </div>
+  );
+}
+
 // Renders the "already in CRM" state: shows the existing CRM record (owner,
 // lead status, opportunity stage, last activity) plus diff-vs-research and
 // refresh actions.
@@ -2043,86 +2291,86 @@ function SocialPlatformCard({ platform }: { platform: SocialPlatformData; key?: 
   };
 
   return (
-    <div className="rounded-xl border border-slate-200 dark:border-slate-700/80 bg-slate-50/40 dark:bg-slate-800/30 overflow-hidden">
+    <div className="rounded-lg border border-slate-200 dark:border-slate-700/80 bg-slate-50/40 dark:bg-slate-800/30 overflow-hidden">
       {/* Platform header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700/60 bg-white/60 dark:bg-slate-900/60">
-        <div className="flex items-center gap-2.5">
-          <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-bold border ${meta.chipClass}`}>
-            <Icon className={`w-3.5 h-3.5 ${meta.iconClass}`} />
+      <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200 dark:border-slate-700/60 bg-white/60 dark:bg-slate-900/60">
+        <div className="flex items-center gap-2">
+          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[13px] font-bold border ${meta.chipClass}`}>
+            <Icon className={`w-3 h-3 ${meta.iconClass}`} />
             {meta.label}
           </span>
           <a
             href={platform.url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-[12px] font-mono text-indigo-600 dark:text-indigo-300 hover:underline truncate max-w-[160px]"
+            className="text-[13px] font-mono text-indigo-600 dark:text-indigo-300 hover:underline truncate max-w-[140px]"
           >
             {platform.handle}
           </a>
         </div>
-        <div className="flex items-center gap-2 shrink-0 flex-wrap">
+        <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
           {platform.followerEstimate !== undefined && platform.followerEstimate > 0 && (
-            <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
-              {fmtNum(platform.followerEstimate)} {isYouTube ? 'subscribers' : 'followers'}
+            <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400">
+              {fmtNum(platform.followerEstimate)} {isYouTube ? 'subs' : 'followers'}
             </span>
           )}
           {isYouTube && platform.postCount !== undefined && platform.postCount > 0 && (
-            <span className="text-[11px] font-mono text-slate-400 dark:text-slate-500">
+            <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500">
               {platform.postCount.toLocaleString()} videos
             </span>
           )}
-          <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full border capitalize ${cadenceBadge[platform.postingCadence] ?? cadenceBadge.monthly}`}>
+          <span className={`text-[10px] font-bold px-1.5 py-0 rounded-full border capitalize ${cadenceBadge[platform.postingCadence] ?? cadenceBadge.monthly}`}>
             {platform.postingCadence}
           </span>
         </div>
       </div>
 
-      <div className="p-4 space-y-3">
+      <div className="p-2.5 space-y-2">
         {/* Recent posts */}
         {platform.recentPosts.length === 0 ? (
-          <div className="flex items-center justify-center gap-2 py-5 text-[12.5px] text-slate-400 dark:text-slate-500 font-medium">
-            <span className="w-5 h-5 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[11px]">—</span>
+          <div className="flex items-center justify-center gap-1.5 py-3 text-[11.5px] text-slate-400 dark:text-slate-500 font-medium">
+            <span className="w-4 h-4 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-[10px]">—</span>
             No activity in the past 15 days
           </div>
         ) : (
-          <div className="space-y-2">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">{isYouTube ? 'Recent Videos' : 'Recent Posts'}</div>
+          <div className="space-y-1.5">
+            <div className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">{isYouTube ? 'Recent Videos' : 'Recent Posts'}</div>
             {platform.recentPosts.map((post, i) => (
-              <div key={i} className="flex gap-2.5 bg-white dark:bg-slate-900/60 rounded-lg p-2.5 border border-slate-100 dark:border-slate-700/60">
-                <div className="mt-1.5 shrink-0">
-                  <span className={`block w-2 h-2 rounded-full ${engagementDot[post.engagementTier] ?? engagementDot.low}`} title={`${post.engagementTier} engagement`} />
+              <div key={i} className="flex gap-2 bg-white dark:bg-slate-900/60 rounded-md p-2 border border-slate-100 dark:border-slate-700/60">
+                <div className="mt-1 shrink-0">
+                  <span className={`block w-1.5 h-1.5 rounded-full ${engagementDot[post.engagementTier] ?? engagementDot.low}`} title={`${post.engagementTier} engagement`} />
                 </div>
-                <div className="min-w-0 flex-1 space-y-1.5">
-                  <p className="text-[12.5px] leading-relaxed text-slate-700 dark:text-slate-300">{post.summary}</p>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border capitalize ${topicBadge[post.topic] ?? topicBadge.other}`}>
+                <div className="min-w-0 flex-1 space-y-1">
+                  <p className="text-[11.5px] leading-snug text-slate-700 dark:text-slate-300">{post.summary}</p>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className={`text-[9.5px] font-bold px-1 py-0 rounded border capitalize ${topicBadge[post.topic] ?? topicBadge.other}`}>
                       {post.topic}
                     </span>
-                    <span className="text-[11px] text-slate-400 dark:text-slate-500 font-mono">{post.date}</span>
+                    <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">{post.date}</span>
                     {/* YouTube real metrics */}
                     {post.viewCount !== undefined && post.viewCount > 0 && (
-                      <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                      <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1 py-0 rounded">
                         👁 {fmtNum(post.viewCount)}
                       </span>
                     )}
                     {post.likeCount !== undefined && post.likeCount > 0 && (
-                      <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                      <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1 py-0 rounded">
                         👍 {fmtNum(post.likeCount)}
                       </span>
                     )}
                     {post.retweetCount !== undefined && post.retweetCount > 0 && (
-                      <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                      <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1 py-0 rounded">
                         🔁 {fmtNum(post.retweetCount)}
                       </span>
                     )}
                     {post.commentCount !== undefined && post.commentCount > 0 && (
-                      <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                      <span className="text-[10px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-1 py-0 rounded">
                         💬 {fmtNum(post.commentCount)}
                       </span>
                     )}
                     {post.url && (
-                      <a href={post.url} target="_blank" rel="noopener noreferrer" className="text-[11px] text-indigo-500 dark:text-indigo-400 hover:underline flex items-center gap-0.5 font-medium">
-                        {isYouTube ? 'Watch' : 'View post'} <ExternalLink className="w-2.5 h-2.5" />
+                      <a href={post.url} target="_blank" rel="noopener noreferrer" className="text-[10px] text-indigo-500 dark:text-indigo-400 hover:underline flex items-center gap-0.5 font-medium">
+                        {isYouTube ? 'Watch' : 'View'} <ExternalLink className="w-2 h-2" />
                       </a>
                     )}
                   </div>
@@ -2134,11 +2382,11 @@ function SocialPlatformCard({ platform }: { platform: SocialPlatformData; key?: 
 
         {/* GTM Signals — always shown even when no posts in window */}
         {platform.signals.length > 0 && (
-          <div className="space-y-1.5 pt-1 border-t border-slate-100 dark:border-slate-700/50">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Buying Intent Signals</div>
+          <div className="space-y-1 pt-1 border-t border-slate-100 dark:border-slate-700/50">
+            <div className="text-[9.5px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500">Buying Intent Signals</div>
             {platform.signals.map((signal, i) => (
-              <div key={i} className="flex items-start gap-1.5 text-[12px] text-slate-700 dark:text-slate-300">
-                <Activity className="w-3 h-3 mt-0.5 text-indigo-500 dark:text-indigo-400 shrink-0" />
+              <div key={i} className="flex items-start gap-1 text-[13px] text-slate-700 dark:text-slate-300">
+                <Activity className="w-2.5 h-2.5 mt-0.5 text-indigo-500 dark:text-indigo-400 shrink-0" />
                 <span>{signal}</span>
               </div>
             ))}

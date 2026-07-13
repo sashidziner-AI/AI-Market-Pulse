@@ -4,13 +4,14 @@ import { motion, AnimatePresence } from 'motion/react';
 import { AccountCard, getAccountPriorityInfo } from './AccountCard';
 import { AccountDetail } from './AccountDetail';
 import { VoiceCallModal } from './VoiceCallModal';
+import { MapsPanel } from './MapsPanel';
 import type { VoiceCallState } from '../types';
 import {
-  BarChart3, Users, Zap, Briefcase, 
+  BarChart3, Users, Zap, Briefcase,
   Search, Filter, Plus, FileUp, Download, Play, LayoutGrid, List,
   LayoutDashboard, ListTodo, Radar, Network,
   ChevronDown, ChevronRight, Bell, Database, RefreshCw, CheckCircle2, CloudLightning, ArrowRight, ArrowLeft,
-  Clock, TrendingUp, AlertTriangle, Lightbulb, Compass, Sparkles, FolderOpen, Sliders, Pencil, Trash2, X, BookOpen
+  Clock, TrendingUp, AlertTriangle, Lightbulb, Compass, Sparkles, FolderOpen, Sliders, Pencil, Trash2, X, BookOpen, MapPin
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -174,6 +175,46 @@ export function Dashboard({
 
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [voiceCallAccountId, setVoiceCallAccountId] = useState<string | null>(null);
+
+  // Maps side-panel state:
+  //   mapAccountId — which account's Places data is currently displayed.
+  //   isMapsPanelOpen — whether the panel is visible.
+  //   mapsSearchGeneration — bumped whenever the discovery/account list changes
+  //     so MapsPanel invalidates any in-flight fetches and re-queries.
+  const [mapAccountId, setMapAccountId] = useState<string | null>(null);
+  const [isMapsPanelOpen, setIsMapsPanelOpen] = useState(false);
+  const [mapsSearchGeneration, setMapsSearchGeneration] = useState(0);
+
+  // Track whether the CURRENT mapAccountId still exists in the accounts list
+  // AND whether the discovery generation (represented by the concatenation of
+  // account ids) has changed. When discovery reruns and the ids shift, we
+  // bump mapsSearchGeneration and auto-select the first account so the panel
+  // is never blank after a fresh search.
+  const accountsSignature = React.useMemo(
+    () => accounts.map(a => a.id).join('|'),
+    [accounts]
+  );
+  const prevSignatureRef = React.useRef<string>('');
+  React.useEffect(() => {
+    if (accountsSignature === prevSignatureRef.current) return;
+    prevSignatureRef.current = accountsSignature;
+    setMapsSearchGeneration(g => g + 1);
+    // If the currently-shown map account was removed OR no account is
+    // selected yet, fall back to the first account so the panel stays alive.
+    const stillExists = mapAccountId && accounts.some(a => a.id === mapAccountId);
+    if (!stillExists && accounts.length > 0) {
+      setMapAccountId(accounts[0].id);
+    }
+  }, [accountsSignature, accounts, mapAccountId]);
+
+  // Keep the Maps panel synchronized with whichever account the user opens
+  // in AccountDetail. This way clicking through cards while the panel is open
+  // updates the map in real time, with no manual "refresh" step.
+  React.useEffect(() => {
+    if (selectedAccountId && isMapsPanelOpen) {
+      setMapAccountId(selectedAccountId);
+    }
+  }, [selectedAccountId, isMapsPanelOpen]);
   const [uploadedFile, setUploadedFile] = useState<{ name: string; content?: string } | null>(null);
   const [activeTab, setActiveTab] = useState<'recommendations' | 'pipeline' | 'clusters' | 'partner-pathways'>('recommendations');
   const [channelPartners, setChannelPartners] = useState<SellerChannelPartner[]>(() => {
@@ -1166,6 +1207,11 @@ export function Dashboard({
               account.signals?.some(s => s.toLowerCase().includes('funding') || s.toLowerCase().includes('series') || s.toLowerCase().includes('raised') || s.toLowerCase().includes('acquired') || s.toLowerCase().includes('expansion'));
             return hasFundingKeyword;
           }
+          if (filter === 'InCrm') {
+            // "In CRM" = account has been successfully pushed and stamped with
+            // crmSyncedAt (source of truth), regardless of provider.
+            return !!account.crmSyncedAt;
+          }
           if (filter === 'Excludes') {
             return !account.isDisqualified;
           }
@@ -1464,6 +1510,30 @@ export function Dashboard({
                 >
                   <BookOpen className="w-3.5 h-3.5 text-zinc-400" />
                   <span>Show Reports</span>
+                </Button>
+              )}
+              {accounts.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setIsMapsPanelOpen(open => !open);
+                    // If opening for the first time and no map account is picked,
+                    // default to the first discovered account so the panel is
+                    // never blank on toggle.
+                    if (!mapAccountId && accounts.length > 0) {
+                      setMapAccountId(accounts[0].id);
+                    }
+                  }}
+                  className={`h-8 text-[13px] font-bold gap-1 px-3 rounded-lg border cursor-pointer shrink-0 transition-all ${
+                    isMapsPanelOpen
+                      ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-200 hover:bg-emerald-500/20'
+                      : 'border-white/[0.08] hover:bg-white/[0.06] text-zinc-300 hover:text-zinc-100 bg-transparent'
+                  }`}
+                  title="Toggle Google Maps side panel"
+                >
+                  <MapPin className={`w-3.5 h-3.5 ${isMapsPanelOpen ? 'text-emerald-300' : 'text-zinc-400'}`} />
+                  <span>Maps</span>
                 </Button>
               )}
               {onUpdateReport && (
@@ -2650,6 +2720,7 @@ export function Dashboard({
                     { key: '70', label: 'Score 70+' },
                     { key: 'Enterprise', label: 'Enterprise' },
                     { key: 'Funding', label: 'Recent Funding' },
+                    { key: 'InCrm', label: 'In CRM' },
                     { key: 'Excludes', label: 'Excludes ✗', tone: 'red' },
                   ];
                   const activeCount = selectedFilters.length;
@@ -3842,6 +3913,14 @@ export function Dashboard({
           />
         )}
       </AnimatePresence>
+
+      {/* Google Maps side panel */}
+      <MapsPanel
+        account={mapAccountId ? evaluatedAccounts.find(a => a.id === mapAccountId) || null : null}
+        open={isMapsPanelOpen}
+        onClose={() => setIsMapsPanelOpen(false)}
+        searchGeneration={mapsSearchGeneration}
+      />
 
       {/* AI Voice Call modal */}
       <AnimatePresence>

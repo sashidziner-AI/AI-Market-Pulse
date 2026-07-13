@@ -20,6 +20,10 @@ export interface IntelCitation {
   url?: string;
   isInferred?: boolean;
   confidenceScore?: number; // e.g., 65
+  // AI-generated one-liner describing WHY this source qualifies as verified /
+  // inferred for this specific account. When omitted the SourceCitation
+  // component falls back to a generic hardcoded explainer.
+  verificationNote?: string;
 }
 
 export interface AccountSignal {
