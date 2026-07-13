@@ -4,9 +4,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import {
   X, ShieldCheck, Mail, Linkedin, Users,
   Lightbulb, AlertCircle, Copy, Check,
-  ArrowUpRight, Info, Clock, TrendingUp, AlertTriangle,
+  ArrowUpRight, ArrowLeft, Info, Clock, TrendingUp, AlertTriangle,
   Network, GitBranch, ShieldAlert, Sparkles, Sliders, SlidersHorizontal, Target,
-  ExternalLink, Globe, Activity, RefreshCw
+  ExternalLink, Globe, Activity, RefreshCw, User, Briefcase, TrendingDown
 } from 'lucide-react';
 import { FaLinkedin, FaYoutube, FaXTwitter, FaInstagram, FaFacebook } from 'react-icons/fa6';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,7 @@ import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { getAccountPriorityInfo, getOrInitializeSignals, AccountSignal } from './AccountCard';
 import { toast } from 'sonner';
+import * as crmMirror from '../utils/crmMirror';
 
 export function SourceCitation({ citation, inlineLabel, isSignal = false }: { citation?: IntelCitation; inlineLabel?: string; isSignal?: boolean }) {
   if (!citation) return null;
@@ -420,9 +421,25 @@ interface AccountDetailProps {
   account: TargetAccount;
   onClose: () => void;
   onUpdateAccount?: (account: TargetAccount) => void;
+  onSyncToCrm?: (account: TargetAccount) => Promise<void> | void;
+  onRefreshCrmStatus?: (account: TargetAccount) => void;
+  onUpdateCrmRecord?: (account: TargetAccount) => void;
+  crmConnected?: boolean;
+  crmProviderName?: string;
+  isCrmLoading?: boolean;
 }
 
-export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDetailProps) {
+export function AccountDetail({
+  account,
+  onClose,
+  onUpdateAccount,
+  onSyncToCrm,
+  onRefreshCrmStatus,
+  onUpdateCrmRecord,
+  crmConnected = false,
+  crmProviderName = 'your CRM',
+  isCrmLoading = false,
+}: AccountDetailProps) {
   const [copied, setCopied] = React.useState<string | null>(null);
   
   // Interactive account property editors state variables
@@ -485,11 +502,33 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
 
   return (
     <motion.div
-      initial={{ x: '100%' }}
-      animate={{ x: 0 }}
-      exit={{ x: '100%' }}
-      className="fixed inset-y-0 right-0 w-full max-w-2xl bg-white dark:bg-slate-900 shadow-2xl z-50 flex flex-col border-l border-slate-200 dark:border-slate-700"
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 12 }}
+      transition={{ duration: 0.22, ease: 'easeOut' }}
+      className="fixed inset-0 z-50 bg-slate-50 dark:bg-slate-950 overflow-y-auto"
     >
+      <header className="sticky top-0 z-20 bg-[#2A2A2B] border-b border-white/[0.06] backdrop-blur-md font-sans select-none">
+        <div className="max-w-6xl mx-auto h-14 px-6 md:px-8 flex items-center gap-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="gap-1.5 text-xs text-zinc-300 hover:text-white hover:bg-white/[0.06] px-2.5 py-1 h-8 rounded-lg border border-white/[0.08] cursor-pointer"
+            onClick={onClose}
+            title="Back to accounts"
+          >
+            <ArrowLeft className="w-3.5 h-3.5 text-zinc-300" />
+            <span>Back</span>
+          </Button>
+          <h2 className="font-semibold text-zinc-100 text-sm md:text-base lg:text-lg tracking-tight truncate">
+            {account.name}
+          </h2>
+          <span className="text-zinc-500 text-xs font-mono truncate hidden sm:inline">
+            {account.domain}
+          </span>
+        </div>
+      </header>
+      <div className="max-w-6xl mx-auto bg-white dark:bg-slate-900 shadow-sm">
       <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-800">
         <div className="flex items-center gap-4 min-w-0 flex-1">
           <div className="w-12 h-12 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 flex items-center justify-center text-indigo-600 dark:text-indigo-300 font-bold text-xl shrink-0">
@@ -589,13 +628,10 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
               </Button>
             )
           )}
-          <Button variant="ghost" size="icon" onClick={onClose} className="rounded-full h-8 w-8">
-            <X className="w-5 h-5 text-slate-500 dark:text-slate-300" />
-          </Button>
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto min-h-0 scrollbar-thin scrollbar-thumb-slate-200">
+      <div>
         <div className="p-6 space-y-8">
           {/* Live streaming progress — visible while /api/analyze-account is running */}
           {account.analysisProgress && !analysis && (
@@ -1737,9 +1773,63 @@ export function AccountDetail({ account, onClose, onUpdateAccount }: AccountDeta
       </div>
       
       <div className="p-6 border-t border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/50">
-        <Button className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-sm shadow-indigo-200">
-          Sync to CRM (Salesforce/Hubspot)
-        </Button>
+        {account.crmSyncedAt ? (
+          <CrmRecordPanel
+            account={account}
+            crmProviderName={crmProviderName}
+            onRefreshCrmStatus={onRefreshCrmStatus}
+            onUpdateCrmRecord={onUpdateCrmRecord}
+          />
+        ) : !crmConnected ? (
+          <Button
+            disabled
+            className="w-full h-12 bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-xl cursor-not-allowed"
+            title="Connect a CRM from the top-right menu first"
+          >
+            Connect a CRM to enable push
+          </Button>
+        ) : account.isDisqualified ? (
+          <Button
+            disabled
+            className="w-full h-12 bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-xl cursor-not-allowed"
+          >
+            Disqualified accounts cannot be pushed
+          </Button>
+        ) : (
+          <div className="space-y-2">
+            <Button
+              onClick={() => onSyncToCrm?.(account)}
+              disabled={isCrmLoading || !onSyncToCrm}
+              className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-sm shadow-indigo-200 disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              {isCrmLoading ? 'Pushing…' : `Push this account to ${crmProviderName}`}
+            </Button>
+            {onUpdateAccount && (
+              <button
+                type="button"
+                onClick={() => {
+                  const existingId = window.prompt(
+                    `If this account already exists in ${crmProviderName} (e.g. from earlier testing), enter its record ID to mark it synced and prevent duplicate pushes.\n\nLeave blank to mark as synced without an ID.`,
+                    ''
+                  );
+                  if (existingId === null) return; // user cancelled
+                  onUpdateAccount({
+                    ...account,
+                    crmSyncedAt: new Date().toISOString(),
+                    crmRecordId: existingId.trim() || 'manual',
+                    crmProvider: 'prospectaccel',
+                  });
+                  toast.success('Marked as already in CRM. Push flow will now skip this account.');
+                }}
+                className="w-full text-[11.5px] text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 underline underline-offset-2 py-1 cursor-pointer"
+                title="Use this if the account is already in the CRM from earlier testing (before duplicate protection existed)."
+              >
+                Mark as already in CRM (don't push)
+              </button>
+            )}
+          </div>
+        )}
+      </div>
       </div>
     </motion.div>
   );
@@ -1749,6 +1839,165 @@ function fmtNum(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return n.toString();
+}
+
+// Renders the "already in CRM" state: shows the existing CRM record (owner,
+// lead status, opportunity stage, last activity) plus diff-vs-research and
+// refresh actions.
+function CrmRecordPanel({
+  account,
+  crmProviderName,
+  onRefreshCrmStatus,
+  onUpdateCrmRecord,
+}: {
+  account: TargetAccount;
+  crmProviderName: string;
+  onRefreshCrmStatus?: (a: TargetAccount) => void;
+  onUpdateCrmRecord?: (a: TargetAccount) => void;
+}) {
+  const record = account.crmRecord;
+  const diffs = record ? crmMirror.diffAccount(account, record) : [];
+  const hasDiffs = diffs.length > 0;
+
+  const statusTone = (status?: string) => {
+    if (status === 'Qualified') return 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60';
+    if (status === 'Unqualified') return 'text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/60';
+    if (status === 'Working' || status === 'Contacted') return 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 border-amber-200 dark:border-amber-800/60';
+    if (status === 'Nurturing') return 'text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800/60';
+    return 'text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700';
+  };
+
+  const stageTone = (stage?: string) => {
+    if (stage === 'Closed Won') return 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60';
+    if (stage === 'Closed Lost') return 'text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/60';
+    if (stage === 'Proposal' || stage === 'Negotiation') return 'text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-950/40 border-orange-200 dark:border-orange-800/60';
+    if (stage === 'Qualification' || stage === 'Prospecting') return 'text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800/60';
+    return 'text-slate-700 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700';
+  };
+
+  return (
+    <div className="w-full rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/50 dark:bg-emerald-950/20 p-4 space-y-3">
+      {/* Header row */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-2 text-emerald-800 dark:text-emerald-200">
+          <Check className="w-4 h-4" />
+          <span className="text-sm font-semibold">Already in {crmProviderName}</span>
+          {account.crmRecordId != null && (
+            <span className="text-emerald-700/80 dark:text-emerald-300/80 text-xs font-mono">
+              #{account.crmRecordId}
+            </span>
+          )}
+        </div>
+        {onRefreshCrmStatus && (
+          <button
+            type="button"
+            onClick={() => onRefreshCrmStatus(account)}
+            className="inline-flex items-center gap-1 text-[11.5px] text-emerald-700 dark:text-emerald-300 hover:text-emerald-900 dark:hover:text-emerald-100 underline underline-offset-2 cursor-pointer"
+            title="Re-pull the latest CRM status"
+          >
+            <RefreshCw className="w-3 h-3" />
+            Refresh status
+          </button>
+        )}
+      </div>
+
+      {record ? (
+        <>
+          {/* Three-up: owner, lead status, opportunity stage */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <div className="rounded-lg border border-emerald-200/70 dark:border-emerald-800/40 bg-white dark:bg-slate-900/60 px-3 py-2">
+              <div className="flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                <User className="w-3 h-3" />
+                Account owner
+              </div>
+              <div className="text-sm font-semibold text-slate-900 dark:text-slate-100 mt-1 truncate" title={record.owner}>
+                {record.owner}
+              </div>
+            </div>
+            <div className="rounded-lg border border-emerald-200/70 dark:border-emerald-800/40 bg-white dark:bg-slate-900/60 px-3 py-2">
+              <div className="flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                <Activity className="w-3 h-3" />
+                Lead status
+              </div>
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11.5px] font-semibold border mt-1 ${statusTone(record.leadStatus)}`}>
+                {record.leadStatus}
+              </span>
+            </div>
+            <div className="rounded-lg border border-emerald-200/70 dark:border-emerald-800/40 bg-white dark:bg-slate-900/60 px-3 py-2">
+              <div className="flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                <Briefcase className="w-3 h-3" />
+                Opportunity stage
+              </div>
+              <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[11.5px] font-semibold border mt-1 ${stageTone(record.opportunityStage)}`}>
+                {record.opportunityStage}
+              </span>
+            </div>
+          </div>
+
+          {/* Diff callout when research disagrees with CRM */}
+          {hasDiffs && onUpdateCrmRecord && (
+            <div className="rounded-lg border border-amber-300 dark:border-amber-700/60 bg-amber-50 dark:bg-amber-950/30 p-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[12px] font-semibold text-amber-800 dark:text-amber-200">
+                    Research disagrees with CRM on {diffs.length} field{diffs.length === 1 ? '' : 's'}
+                  </div>
+                  <ul className="mt-1.5 space-y-1 text-[11px] text-amber-800 dark:text-amber-200">
+                    {diffs.slice(0, 3).map((d, i) => (
+                      <li key={i} className="font-mono">
+                        <span className="font-semibold">{d.field}:</span>
+                        <span className="mx-1 line-through opacity-70">{d.crmValue || '—'}</span>
+                        <ArrowUpRight className="w-3 h-3 inline mx-0.5" />
+                        <span className="font-semibold">{d.researchValue || '—'}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <Button
+                    onClick={() => onUpdateCrmRecord(account)}
+                    className="mt-2 h-8 text-[11.5px] bg-amber-600 hover:bg-amber-700 text-white gap-1 px-3"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    Update CRM with latest research
+                  </Button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Activity timeline (last 3) */}
+          {record.activities.length > 0 && (
+            <div className="border-t border-emerald-200/60 dark:border-emerald-800/40 pt-2">
+              <div className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                Recent activity
+              </div>
+              <ul className="space-y-1">
+                {record.activities.slice(-3).reverse().map(a => (
+                  <li key={a.id} className="flex items-start gap-2 text-[11.5px]">
+                    <TrendingUp className="w-3 h-3 text-slate-400 dark:text-slate-500 mt-0.5 shrink-0" />
+                    <span className="text-slate-700 dark:text-slate-300 flex-1 min-w-0 truncate" title={a.summary}>
+                      {a.summary}
+                    </span>
+                    <span className="text-slate-400 dark:text-slate-500 font-mono text-[10px] shrink-0">
+                      {new Date(a.at).toLocaleDateString()}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          <div className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
+            Last activity {new Date(record.lastActivityAt).toLocaleString()}
+          </div>
+        </>
+      ) : (
+        <div className="text-[12px] text-slate-600 dark:text-slate-400">
+          Marked as synced, but no CRM record snapshot is cached locally. Click Refresh to pull the latest status.
+        </div>
+      )}
+    </div>
+  );
 }
 
 const SOCIAL_META: Record<string, {

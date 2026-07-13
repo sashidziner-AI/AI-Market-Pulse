@@ -85,6 +85,101 @@ export interface TargetAccount {
   forcedSectorModel?: 'SaaS' | 'Manufacturing' | 'Fintech' | 'Biotech' | 'AEC' | 'General';
   pathway?: PathwayAssessment;
   socialActivity?: SocialActivity;
+  voiceCall?: VoiceCallState;
+  // Sync tracking — set after a successful push to the connected CRM.
+  // Presence of crmSyncedAt is the source-of-truth "already synced" flag; the
+  // record id is stored for future de-dupe / update flows.
+  crmSyncedAt?: string;
+  crmRecordId?: string | number;
+  crmProvider?: string;
+  // Cached snapshot of the CRM record hydrated on push / refresh / match.
+  crmRecord?: CRMRecord;
+}
+
+export type CRMLeadStatus =
+  | 'New'
+  | 'Contacted'
+  | 'Working'
+  | 'Nurturing'
+  | 'Qualified'
+  | 'Unqualified';
+
+export type CRMOpportunityStage =
+  | 'None'
+  | 'Prospecting'
+  | 'Qualification'
+  | 'Proposal'
+  | 'Negotiation'
+  | 'Closed Won'
+  | 'Closed Lost';
+
+export interface CRMActivity {
+  id: string;
+  type: 'note' | 'email' | 'call' | 'meeting' | 'stage_change' | 'sync';
+  summary: string;
+  at: string; // ISO
+  actor?: string;
+}
+
+export interface CRMRecord {
+  id: string | number;
+  provider: string;
+  name: string;
+  domain?: string;
+  email?: string;
+  mobile?: string;
+  linkedin?: string;
+  course?: string;
+  owner: string;
+  leadStatus: CRMLeadStatus;
+  opportunityStage: CRMOpportunityStage;
+  lastActivityAt: string; // ISO
+  createdAt: string;
+  updatedAt: string;
+  activities: CRMActivity[];
+}
+
+export type VoiceCallStatus =
+  | 'queued'
+  | 'ringing'
+  | 'in_progress'
+  | 'completed'
+  | 'failed'
+  | 'no_answer'
+  | 'voicemail';
+
+export type VoiceCallScript = 'discovery' | 'follow_up' | 'demo_booking';
+
+export type VoiceCallOutcome =
+  | 'interested'
+  | 'not_interested'
+  | 'meeting_booked'
+  | 'callback_requested'
+  | 'voicemail'
+  | 'no_answer'
+  | 'do_not_call';
+
+export interface VoiceCallTranscriptLine {
+  speaker: 'ai' | 'human';
+  text: string;
+  timestamp: string;
+}
+
+export interface VoiceCallState {
+  callId: string;
+  status: VoiceCallStatus;
+  script: VoiceCallScript;
+  contactName: string;
+  phoneNumber: string;
+  startedAt: string;
+  endedAt?: string;
+  durationSec?: number;
+  transcript: VoiceCallTranscriptLine[];
+  summary?: string;
+  outcome?: VoiceCallOutcome;
+  recordingUrl?: string;
+  cost?: number;
+  errorMessage?: string;
 }
 
 export interface ObjectionCounterNarrative {

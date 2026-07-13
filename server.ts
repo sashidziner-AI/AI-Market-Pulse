@@ -3313,7 +3313,665 @@ app.get("/api/crm/status", (req, res) => {
   });
 });
 
+// ------------------------------------------------------------------
+// AI Voice Call — Vapi.ai integration
+// ------------------------------------------------------------------
+//
+// Flow:
+//   POST /api/voice-call/start        → creates Vapi call, returns callId + tells UI to poll/subscribe
+//   POST /api/voice-call/webhook      → Vapi posts status + transcript events here, we update in-memory log
+//   GET  /api/voice-call/:callId      → returns current status + transcript + outcome
+//
+// Server-side call state lives in `voiceCalls` (Map, in-memory). Not persisted —
+// call history is written back to the client via GET polling, and the client
+// stores completed calls under account.voiceCall.
 
+type VoiceCallStatusInternal =
+  | "queued"
+  | "ringing"
+  | "in_progress"
+  | "completed"
+  | "failed"
+  | "no_answer"
+  | "voicemail";
+
+interface VoiceCallRecord {
+  callId: string;
+  vapiCallId?: string;
+  accountId: string;
+  accountName: string;
+  script: string;
+  contactName: string;
+  phoneNumber: string;
+  status: VoiceCallStatusInternal;
+  startedAt: string;
+  endedAt?: string;
+  durationSec?: number;
+  transcript: { speaker: "ai" | "human"; text: string; timestamp: string }[];
+  summary?: string;
+  outcome?: string;
+  recordingUrl?: string;
+  cost?: number;
+  errorMessage?: string;
+  // Per-call access token — required to GET the call record. Random UUID,
+  // handed back to the caller at /start time, held in the browser only.
+  // Mitigates IDOR since callId is not enough on its own.
+  accessToken: string;
+}
+
+const voiceCalls = new Map<string, VoiceCallRecord>();
+const vapiCallIdIndex = new Map<string, string>(); // vapiCallId -> our callId
+
+// SECURITY NOTES for /api/voice-call/*:
+//  - AUTH: no application-wide auth layer exists yet (same as /api/crm/*).
+//    Adding auth only here would create an inconsistent model. In production,
+//    all voice-call routes MUST be gated behind session auth + a per-user call
+//    quota. For now we mitigate the highest-risk sub-issues in-scope:
+//      * Prompt injection: sanitize account-context fields before splicing.
+//      * Toll fraud: global daily call quota + premium-rate phone blocklist.
+//      * Concurrent-call cap: prevents runaway loops.
+//      * Signature: mandate HMAC on webhook, gate GET behind per-call token.
+//  - PROMPT INJECTION: fitReason/signals/industry come from req.body — an
+//    attacker could stuff "IGNORE PREVIOUS INSTRUCTIONS…" into fitReason to
+//    hijack the AI on a live call. We length-cap and strip control chars.
+//  - WEBHOOK: Vapi HMAC-signs webhook bodies. We require a signature match
+//    unless VAPI_WEBHOOK_ALLOW_UNSIGNED=true is explicitly set (dev only).
+
+interface CallQuotaBucket { day: string; count: number; }
+const callQuota: CallQuotaBucket = { day: "", count: 0 };
+const DAILY_CALL_QUOTA = Number(process.env.VOICE_CALL_DAILY_QUOTA || 50);
+const MAX_CONCURRENT_CALLS = Number(process.env.VOICE_CALL_MAX_CONCURRENT || 5);
+
+// E.164 prefixes commonly associated with premium-rate / toll-fraud abuse.
+// Not exhaustive — production should use a maintained blocklist library.
+const BLOCKED_PHONE_PREFIXES = [
+  "+1900", "+1976",            // US premium rate
+  "+1809", "+1876", "+1758",   // Common Caribbean toll traps
+  "+882", "+883",              // International Networks
+  "+979",                      // International premium rate
+];
+
+/**
+ * Sanitize a caller-supplied string before splicing into the LLM system prompt.
+ * Strips control chars/newlines, hard-caps length, removes common prompt
+ * injection sentinels. Purely mitigation — not a substitute for treating LLM
+ * output as untrusted.
+ */
+function sanitizePromptField(raw: unknown, maxLen: number): string {
+  if (typeof raw !== "string") return "";
+  return raw
+    .replace(/[ -]/g, " ")           // control chars & newlines
+    .replace(/```/g, "")                                // code fences
+    .replace(/(?:ignore|disregard)\s+(?:previous|prior|above|all)\s+(?:instructions?|prompts?|rules?)/gi, "[REDACTED]")
+    .replace(/system\s*:/gi, "sys:")
+    .replace(/<\|.*?\|>/g, "")                          // chat template markers
+    .slice(0, maxLen)
+    .trim();
+}
+
+function checkAndReserveCallQuota(): { ok: true } | { ok: false; error: string } {
+  const today = new Date().toISOString().slice(0, 10);
+  if (callQuota.day !== today) { callQuota.day = today; callQuota.count = 0; }
+  if (callQuota.count >= DAILY_CALL_QUOTA) {
+    return { ok: false, error: `Daily voice-call quota reached (${DAILY_CALL_QUOTA} calls/day). Adjust VOICE_CALL_DAILY_QUOTA in .env.` };
+  }
+  const inProgress = Array.from(voiceCalls.values()).filter(
+    r => r.status === "queued" || r.status === "ringing" || r.status === "in_progress"
+  ).length;
+  if (inProgress >= MAX_CONCURRENT_CALLS) {
+    return { ok: false, error: `Too many concurrent calls in progress (${inProgress}/${MAX_CONCURRENT_CALLS}). Wait for calls to finish.` };
+  }
+  callQuota.count++;
+  return { ok: true };
+}
+
+function isBlockedPhone(e164: string): boolean {
+  return BLOCKED_PHONE_PREFIXES.some(p => e164.startsWith(p));
+}
+
+// Per-IP sliding-window rate limiter for /api/voice-call/session.
+// Since there's no auth, this is our proxy for per-user throttling and
+// limits how quickly a single caller can burn OpenAI Realtime credits.
+const SESSION_RATE_WINDOW_MS = 60 * 60 * 1000;                              // 1 hour
+const SESSION_RATE_MAX = Number(process.env.VOICE_CALL_SESSION_RATE_PER_IP || 10);
+const sessionRateBuckets = new Map<string, number[]>();
+
+function checkSessionRateLimit(ip: string): { ok: true } | { ok: false; retryAfterSec: number } {
+  const now = Date.now();
+  const cutoff = now - SESSION_RATE_WINDOW_MS;
+  const bucket = (sessionRateBuckets.get(ip) || []).filter(t => t > cutoff);
+  if (bucket.length >= SESSION_RATE_MAX) {
+    const oldest = bucket[0];
+    const retryAfterSec = Math.max(1, Math.ceil((oldest + SESSION_RATE_WINDOW_MS - now) / 1000));
+    sessionRateBuckets.set(ip, bucket);
+    return { ok: false, retryAfterSec };
+  }
+  bucket.push(now);
+  sessionRateBuckets.set(ip, bucket);
+  return { ok: true };
+}
+
+/**
+ * Basic origin check: reject cross-origin abuse where an attacker embeds our
+ * endpoint from an unrelated page to mint OpenAI credits. Allowlist is the
+ * configured APP_URL plus any explicit VOICE_CALL_EXTRA_ORIGINS entries.
+ */
+function isAllowedOrigin(origin: string | undefined, host: string | undefined): boolean {
+  if (!origin) {
+    // Requests from tools like curl/PowerShell won't send Origin. Accept
+    // only when running locally (no risk of drive-by browser attack).
+    return host === "localhost:3000" || host === "127.0.0.1:3000";
+  }
+  const configured = new Set<string>([
+    process.env.APP_URL || "",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+  ]);
+  for (const extra of (process.env.VOICE_CALL_EXTRA_ORIGINS || "").split(",")) {
+    const trimmed = extra.trim();
+    if (trimmed) configured.add(trimmed);
+  }
+  configured.delete("");
+  try {
+    const parsed = new URL(origin);
+    for (const c of configured) {
+      const p = new URL(c);
+      if (p.origin === parsed.origin) return true;
+    }
+  } catch { /* invalid Origin header */ }
+  return false;
+}
+
+function clientIp(req: express.Request): string {
+  const fwd = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  return fwd || req.socket.remoteAddress || "unknown";
+}
+
+/**
+ * Verify a Vapi webhook signature. Vapi sends HMAC-SHA256 of the raw body
+ * in `x-vapi-signature`. We do a timing-safe comparison against a secret held
+ * in VAPI_WEBHOOK_SECRET. If the secret is unset, we refuse unless
+ * VAPI_WEBHOOK_ALLOW_UNSIGNED=true is set (dev-only escape hatch).
+ */
+function verifyVapiWebhookSignature(rawBody: Buffer, headerSig: string | undefined): { ok: true } | { ok: false; error: string } {
+  const secret = process.env.VAPI_WEBHOOK_SECRET;
+  const allowUnsigned = process.env.VAPI_WEBHOOK_ALLOW_UNSIGNED === "true";
+
+  if (!secret) {
+    if (allowUnsigned) return { ok: true };
+    return { ok: false, error: "VAPI_WEBHOOK_SECRET is not configured (set VAPI_WEBHOOK_ALLOW_UNSIGNED=true for local dev only)" };
+  }
+  if (!headerSig) return { ok: false, error: "missing x-vapi-signature header" };
+
+  // Header may be a hex string, or prefixed like "sha256=abc123". Normalize.
+  const providedHex = headerSig.replace(/^sha256=/i, "").trim().toLowerCase();
+  const expected = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
+  const providedBuf = Buffer.from(providedHex, "hex");
+  const expectedBuf = Buffer.from(expected, "hex");
+  if (providedBuf.length !== expectedBuf.length) return { ok: false, error: "signature length mismatch" };
+  if (!crypto.timingSafeEqual(providedBuf, expectedBuf)) return { ok: false, error: "signature verification failed" };
+  return { ok: true };
+}
+
+function buildVoiceCallSystemPrompt(script: string, ctx: {
+  accountName: string;
+  contactName: string;
+  sellerName: string;
+  sellerValueProp?: string;
+  fitReason?: string;
+  signals?: string[];
+  industry?: string;
+}): string {
+  const goal = script === "discovery"
+    ? "Ask 3 discovery questions about their current situation, understand pain points, and book a 15-minute follow-up call."
+    : script === "demo_booking"
+    ? "Invite them to a live product tour. Offer 2 concrete time slots this week and next."
+    : "Confirm their interest from prior outreach and schedule a demo.";
+
+  return `
+You are Ava, a professional SDR calling on behalf of ${ctx.sellerName}.
+You are calling ${ctx.contactName} at ${ctx.accountName} (industry: ${ctx.industry || "unknown"}).
+
+Context you know about them:
+- Why we think they're a fit: ${ctx.fitReason || "General ICP match"}
+- Recent buying signals: ${(ctx.signals || []).slice(0, 3).join("; ") || "none observed"}
+- What we sell: ${ctx.sellerValueProp || "Our product"}
+
+YOUR CALL GOAL: ${goal}
+
+Voice + tone rules (STRICT):
+- Keep every response to 1–2 sentences. This is a phone call, not a chat.
+- Warm, curious, respectful. Sound human, not scripted.
+- Ask ONE question at a time. Wait for their answer.
+- Speak at conversational pace. Use short pauses.
+
+DISCLOSURE (REQUIRED — first sentence of your first message):
+Start with "Hi ${ctx.contactName}, this is Ava — I'm an AI assistant calling on behalf of ${ctx.sellerName}."
+Never deny being an AI. If asked "are you a real person" or "is this a bot", answer honestly.
+
+STOP CONDITIONS (end the call immediately if any of these):
+- They say "not interested", "remove me", "take me off your list", "stop calling", "do not call".
+  → Apologize once, confirm they'll be removed, and end the call politely.
+- They ask you to call back at a different time.
+  → Get the preferred time, confirm it, thank them, and end the call.
+- They express urgency about buying → tell them a human account executive will follow up within 24 hours, and end the call.
+
+Never make promises about pricing, contracts, or product roadmap. Redirect those to "I'll have an account executive follow up with those details."
+`.trim();
+}
+
+app.post("/api/voice-call/start", async (req, res) => {
+  const apiKey = process.env.VAPI_API_KEY;
+  const phoneNumberId = process.env.VAPI_PHONE_NUMBER_ID;
+  const webhookBase = process.env.VAPI_WEBHOOK_URL || process.env.APP_URL || "http://localhost:3000";
+
+  if (!apiKey || !phoneNumberId) {
+    return res.status(400).json({
+      error: "VAPI_API_KEY and VAPI_PHONE_NUMBER_ID must be set in .env",
+    });
+  }
+
+  const {
+    accountId,
+    accountName,
+    contactName,
+    phoneNumber,
+    script,
+    fitReason,
+    signals,
+    industry,
+    sellerName,
+    sellerValueProp,
+  } = req.body || {};
+
+  if (!accountId || !accountName || !contactName || !phoneNumber) {
+    return res.status(400).json({
+      error: "accountId, accountName, contactName, phoneNumber required",
+    });
+  }
+
+  // Normalize phone number to E.164 basic guard
+  const cleaned = String(phoneNumber).replace(/[^\d+]/g, "");
+  if (!cleaned.startsWith("+") || cleaned.length < 8) {
+    return res.status(400).json({
+      error: "Phone number must be E.164 format (e.g., +14155552671)",
+    });
+  }
+
+  // Toll-fraud / premium-rate guard.
+  if (isBlockedPhone(cleaned)) {
+    return res.status(403).json({
+      error: "Phone number matches a premium-rate / toll-fraud prefix and is blocked.",
+    });
+  }
+
+  // Quota + concurrency guard.
+  const quota = checkAndReserveCallQuota();
+  if (quota.ok === false) return res.status(429).json({ error: quota.error });
+
+  const callId = crypto.randomUUID();
+  const accessToken = crypto.randomUUID(); // returned to client, required on GET
+  const now = new Date().toISOString();
+
+  // Sanitize all user-supplied strings before splicing into the LLM prompt.
+  // Length caps: names ~64, industry ~64, fitReason ~400, each signal ~120,
+  // sellerName ~64, sellerValueProp ~300.
+  const safeAccountName   = sanitizePromptField(accountName, 120);
+  const safeContactName   = sanitizePromptField(contactName, 64);
+  const safeSellerName    = sanitizePromptField(sellerName, 64) || "our team";
+  const safeSellerValue   = sanitizePromptField(sellerValueProp, 300);
+  const safeFitReason     = sanitizePromptField(fitReason, 400);
+  const safeIndustry      = sanitizePromptField(industry, 64);
+  const safeSignals: string[] = Array.isArray(signals)
+    ? signals.slice(0, 5).map((s: unknown) => sanitizePromptField(s, 120)).filter(Boolean)
+    : [];
+
+  const record: VoiceCallRecord = {
+    callId,
+    accountId: String(accountId).slice(0, 128),
+    accountName: safeAccountName,
+    script: script || "discovery",
+    contactName: safeContactName,
+    phoneNumber: cleaned,
+    status: "queued",
+    startedAt: now,
+    transcript: [],
+    accessToken,
+  };
+  voiceCalls.set(callId, record);
+
+  const systemPrompt = buildVoiceCallSystemPrompt(record.script, {
+    accountName: safeAccountName,
+    contactName: safeContactName,
+    sellerName: safeSellerName,
+    sellerValueProp: safeSellerValue,
+    fitReason: safeFitReason,
+    signals: safeSignals,
+    industry: safeIndustry,
+  });
+
+  const firstMessage =
+    `Hi ${safeContactName}, this is Ava — I'm an AI assistant calling on behalf of ${safeSellerName}. ` +
+    `Do you have a quick minute to talk?`;
+
+  try {
+    const vapiRes = await fetch("https://api.vapi.ai/call", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        phoneNumberId,
+        customer: { number: cleaned, name: contactName },
+        assistant: {
+          model: {
+            provider: "openai",
+            model: "gpt-4o",
+            messages: [{ role: "system", content: systemPrompt }],
+            temperature: 0.6,
+          },
+          voice: { provider: "11labs", voiceId: "sarah" },
+          firstMessage,
+          transcriber: { provider: "deepgram", model: "nova-2", language: "en" },
+          endCallPhrases: ["goodbye", "have a good day", "bye now"],
+        },
+        server: { url: `${webhookBase}/api/voice-call/webhook` },
+        metadata: { callId, accountId },
+      }),
+    });
+
+    // Vapi may return plain text (e.g. "unauthorized") on auth failure — read
+    // raw body first, then try to parse. Never let JSON.parse blow up the route.
+    const vapiRawText = await vapiRes.text();
+    let vapiBody: any = null;
+    try { vapiBody = JSON.parse(vapiRawText); } catch { /* keep as text */ }
+
+    if (!vapiRes.ok) {
+      record.status = "failed";
+      const preview = vapiRawText.length > 200 ? vapiRawText.slice(0, 200) + "…" : vapiRawText;
+      record.errorMessage = vapiBody?.message
+        || (vapiRes.status === 401 ? "Vapi rejected the API key (401 unauthorized). Verify VAPI_API_KEY in .env."
+          : vapiRes.status === 403 ? "Vapi forbidden (403). Check that the phone number ID belongs to your account and outbound calling is enabled."
+          : vapiRes.status === 402 ? "Vapi payment required (402). Your account has no credit — top up at dashboard.vapi.ai."
+          : `Vapi HTTP ${vapiRes.status}: ${preview}`);
+      return res.status(502).json({ error: record.errorMessage, callId });
+    }
+    if (!vapiBody) {
+      record.status = "failed";
+      record.errorMessage = `Vapi returned non-JSON body: ${vapiRawText.slice(0, 200)}`;
+      return res.status(502).json({ error: record.errorMessage, callId });
+    }
+
+    record.vapiCallId = vapiBody.id;
+    if (vapiBody.id) vapiCallIdIndex.set(vapiBody.id, callId);
+    record.status = "ringing";
+
+    return res.json({
+      callId,
+      status: record.status,
+      accessToken, // Client must send this back on GET /:callId
+    });
+  } catch (err: any) {
+    record.status = "failed";
+    record.errorMessage = err?.message || "network error";
+    return res.status(502).json({ error: record.errorMessage, callId });
+  }
+});
+
+// Webhook uses a raw body parser (not the app-wide express.json) so we can
+// compute HMAC over the exact bytes Vapi signed. We JSON.parse manually after
+// signature verification passes.
+app.post(
+  "/api/voice-call/webhook",
+  express.raw({ type: "*/*", limit: "2mb" }),
+  async (req, res) => {
+    const rawBody: Buffer = Buffer.isBuffer(req.body) ? req.body : Buffer.from("");
+    const sigHeader = (req.headers["x-vapi-signature"] as string) || (req.headers["x-vapi-secret"] as string);
+
+    const verified = verifyVapiWebhookSignature(rawBody, sigHeader);
+    if (verified.ok === false) {
+      // Don't leak which check failed — return generic 401.
+      console.warn(`[voice-call/webhook] rejected: ${verified.error}`);
+      return res.status(401).json({ error: "unauthorized" });
+    }
+
+    let parsed: any = {};
+    try { parsed = JSON.parse(rawBody.toString("utf8") || "{}"); }
+    catch { return res.status(400).json({ error: "invalid json" }); }
+
+    // Vapi wraps events in { message: {...} }
+    const evt = parsed?.message || parsed;
+    const type = evt?.type;
+    // Trust vapiCallIdIndex over req-supplied metadata — the index was built
+    // by /start with the callId Vapi returned. Only fall back to metadata if
+    // the vapiCallId isn't in our index (fresh restart scenario), and even
+    // then require the callId to already exist in voiceCalls.
+    const vapiCallId = evt?.call?.id || evt?.callId;
+    let callId = vapiCallId ? vapiCallIdIndex.get(vapiCallId) : undefined;
+    if (!callId) {
+      const metaCallId = evt?.call?.metadata?.callId;
+      if (metaCallId && voiceCalls.has(metaCallId)) callId = metaCallId;
+    }
+    const rec = callId ? voiceCalls.get(callId) : undefined;
+
+  if (!rec) return res.status(200).json({ ok: true, ignored: true });
+
+  const nowIso = new Date().toISOString();
+
+  if (type === "status-update" || type === "call-status-update") {
+    const s = evt?.status || evt?.call?.status;
+    if (s === "in-progress") rec.status = "in_progress";
+    else if (s === "ended") rec.status = rec.status === "in_progress" ? "completed" : rec.status;
+    else if (s === "queued") rec.status = "queued";
+    else if (s === "ringing") rec.status = "ringing";
+  } else if (type === "transcript") {
+    const role = evt?.role || evt?.transcript?.role;
+    const text = evt?.transcript || evt?.transcriptText || evt?.text;
+    const speaker: "ai" | "human" = role === "assistant" || role === "bot" ? "ai" : "human";
+    if (typeof text === "string" && text.trim()) {
+      rec.transcript.push({ speaker, text: text.trim(), timestamp: nowIso });
+    }
+  } else if (type === "end-of-call-report" || type === "call-ended") {
+    rec.status = "completed";
+    rec.endedAt = nowIso;
+    rec.durationSec = evt?.durationSeconds ?? evt?.call?.duration ?? undefined;
+    rec.summary = evt?.summary || evt?.analysis?.summary;
+    rec.recordingUrl = evt?.recordingUrl || evt?.call?.recordingUrl;
+    rec.cost = evt?.cost;
+    // Try to infer outcome from Vapi's endedReason or summary
+    const reason = evt?.endedReason || evt?.call?.endedReason || "";
+    if (/voicemail/i.test(reason)) rec.outcome = "voicemail";
+    else if (/no.?answer|no-answer|customer-did-not-answer/i.test(reason)) rec.outcome = "no_answer";
+    else if (rec.summary && /interested|book|schedule|meeting/i.test(rec.summary)) rec.outcome = "interested";
+    else if (rec.summary && /not interested|remove/i.test(rec.summary)) rec.outcome = "not_interested";
+  } else if (type === "hang" || type === "call-failed") {
+    rec.status = "failed";
+    rec.endedAt = nowIso;
+    rec.errorMessage = evt?.reason || "call failed";
+  }
+
+    return res.status(200).json({ ok: true });
+  }
+);
+
+/**
+ * OpenAI Realtime API — browser-mic voice conversation (no telephony).
+ * Mints a short-lived ephemeral session token (client_secret) that the
+ * browser uses to open a direct WebRTC connection with OpenAI. The main
+ * OPENAI_API_KEY never leaves the server.
+ *
+ * Instructions (system prompt) are built here from sanitized account context.
+ * The client cannot modify the prompt post-issuance.
+ */
+app.post("/api/voice-call/session", async (req, res) => {
+  if (!process.env.OPENAI_API_KEY) {
+    return res.status(400).json({ error: "OPENAI_API_KEY is not configured" });
+  }
+
+  // SECURITY: /session mints tokens that map to real OpenAI Realtime cost.
+  // No app-wide auth layer exists yet (see CRM + voice-call SECURITY NOTES),
+  // so we harden the specific abuse surface in-scope:
+  //   * Origin allowlist: reject cross-origin drive-by requests.
+  //   * Per-IP sliding-window rate limit: bounds credit burn per source.
+  //   * Global concurrency cap: reused from phone flow.
+  //   * Global daily quota: reused from phone flow (checkAndReserveCallQuota).
+  // Full auth/per-user accounting is required before production.
+  const origin = req.headers.origin as string | undefined;
+  const host = req.headers.host as string | undefined;
+  if (!isAllowedOrigin(origin, host)) {
+    return res.status(403).json({ error: "cross-origin request refused" });
+  }
+
+  const ip = clientIp(req);
+  const rate = checkSessionRateLimit(ip);
+  if (rate.ok === false) {
+    res.setHeader("Retry-After", String(rate.retryAfterSec));
+    return res.status(429).json({
+      error: `Session rate limit hit (${SESSION_RATE_MAX}/hour per source). Retry in ${rate.retryAfterSec}s.`,
+    });
+  }
+
+  const {
+    accountId, accountName, contactName, script,
+    fitReason, signals, industry, sellerName, sellerValueProp,
+  } = req.body || {};
+
+  if (!accountId || !accountName) {
+    return res.status(400).json({ error: "accountId and accountName required" });
+  }
+
+  // Concurrency guard (reuse same in-memory counter as phone calls).
+  const inProgress = Array.from(voiceCalls.values()).filter(
+    r => r.status === "queued" || r.status === "ringing" || r.status === "in_progress"
+  ).length;
+  if (inProgress >= MAX_CONCURRENT_CALLS) {
+    return res.status(429).json({
+      error: `Too many concurrent conversations in progress (${inProgress}/${MAX_CONCURRENT_CALLS}). Wait for one to finish.`,
+    });
+  }
+
+  // Global daily quota (shared with phone-call flow).
+  const quota = checkAndReserveCallQuota();
+  if (quota.ok === false) {
+    return res.status(429).json({ error: quota.error });
+  }
+
+  const safeAccountName = sanitizePromptField(accountName, 120);
+  const safeContactName = sanitizePromptField(contactName, 64) || "there";
+  const safeSellerName  = sanitizePromptField(sellerName, 64) || "our team";
+  const safeSellerValue = sanitizePromptField(sellerValueProp, 300);
+  const safeFitReason   = sanitizePromptField(fitReason, 400);
+  const safeIndustry    = sanitizePromptField(industry, 64);
+  const safeSignals: string[] = Array.isArray(signals)
+    ? signals.slice(0, 5).map((s: unknown) => sanitizePromptField(s, 120)).filter(Boolean)
+    : [];
+
+  // Roleplay framing: the AI plays the SDR, the user (in the browser) plays
+  // the prospect. Good for demos + practice; the AI still discloses it's an AI.
+  const instructions = `
+You are Ava, a professional SDR calling on behalf of ${safeSellerName}.
+You are calling a prospect at ${safeAccountName}${safeContactName !== "there" ? ` (named ${safeContactName})` : ""} to explore fit.
+
+Context you know about them:
+- Industry: ${safeIndustry || "unknown"}
+- Why we think they're a fit: ${safeFitReason || "general ICP match"}
+- Recent buying signals: ${safeSignals.join("; ") || "none observed"}
+- What we sell: ${safeSellerValue || "our product"}
+
+YOUR CALL GOAL: ${
+    script === "demo_booking" ? "Invite them to a live product tour. Offer 2 concrete time slots."
+    : script === "follow_up" ? "Confirm interest from prior outreach and schedule a demo."
+    : "Ask 3 discovery questions about their current pain points, then book a 15-minute follow-up."
+  }
+
+Rules (STRICT):
+- Open with: "Hi ${safeContactName}, this is Ava — I'm an AI assistant calling on behalf of ${safeSellerName}. Do you have a quick minute?"
+- Keep responses to 1–2 sentences. This is a phone call, not a chat.
+- Ask ONE question at a time and wait for the answer.
+- Warm, curious, respectful tone. Sound human, not scripted.
+- If asked "are you AI" or "is this a bot" — answer yes honestly.
+- If they say "not interested", "remove me", "stop calling" — apologize once, confirm, and end the conversation.
+- Never promise pricing, contracts, or product roadmap. Redirect those to a human AE.
+`.trim();
+
+  try {
+    // OpenAI Realtime API (2026 shape). Endpoint is /v1/realtime/client_secrets;
+    // session config is nested under `session`. Voice lives under audio.output.
+    const oaRes = await fetch("https://api.openai.com/v1/realtime/client_secrets", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        session: {
+          type: "realtime",
+          model: "gpt-realtime",
+          instructions,
+          audio: {
+            output: { voice: "shimmer" },
+            input: {
+              transcription: { model: "whisper-1" },
+              turn_detection: { type: "server_vad", threshold: 0.5, silence_duration_ms: 500 },
+            },
+          },
+        },
+      }),
+    });
+
+    const raw = await oaRes.text();
+    let body: any = null;
+    try { body = JSON.parse(raw); } catch {}
+
+    if (!oaRes.ok) {
+      const preview = raw.length > 200 ? raw.slice(0, 200) + "…" : raw;
+      const msg = body?.error?.message
+        || (oaRes.status === 401 ? "OpenAI rejected the API key (401). Verify OPENAI_API_KEY in .env."
+          : oaRes.status === 403 ? "OpenAI Realtime API is not enabled for this key. Enable it in your OpenAI dashboard."
+          : oaRes.status === 429 ? "OpenAI rate limit hit. Wait a moment and try again."
+          : `OpenAI HTTP ${oaRes.status}: ${preview}`);
+      return res.status(502).json({ error: msg });
+    }
+    if (!body?.value) {
+      return res.status(502).json({ error: "OpenAI returned no client secret" });
+    }
+
+    // Only hand back the ephemeral token (ek_...) + expiry. The main
+    // OPENAI_API_KEY is never exposed to the browser. Token is short-lived
+    // and scoped to establishing one Realtime WebRTC connection.
+    return res.json({
+      clientSecret: body.value,
+      expiresAt: body.expires_at,
+      sessionId: body.session?.id,
+      model: body.session?.model || "gpt-realtime",
+    });
+  } catch (err: any) {
+    return res.status(502).json({ error: err?.message || "network error" });
+  }
+});
+
+app.get("/api/voice-call/:callId", (req, res) => {
+  const rec = voiceCalls.get(req.params.callId);
+  if (!rec) return res.status(404).json({ error: "call not found" });
+
+  // IDOR mitigation: require the per-call accessToken issued at /start time.
+  // callId alone is a UUID (unguessable) but tokens can leak in URLs/logs;
+  // requiring a second secret in a header raises the bar for accidental exposure.
+  const provided = (req.headers["x-call-token"] as string) || String(req.query.token || "");
+  if (!provided || provided.length !== rec.accessToken.length) {
+    return res.status(404).json({ error: "call not found" });
+  }
+  const providedBuf = Buffer.from(provided);
+  const expectedBuf = Buffer.from(rec.accessToken);
+  if (!crypto.timingSafeEqual(providedBuf, expectedBuf)) {
+    return res.status(404).json({ error: "call not found" });
+  }
+
+  // Never leak the accessToken back — the client already stored it at /start.
+  const { accessToken: _omit, ...safe } = rec;
+  return res.json(safe);
+});
 
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {

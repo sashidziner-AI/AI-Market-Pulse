@@ -1,7 +1,7 @@
 import React from 'react';
 import { TargetAccount, AccountSignal } from '../types';
 import { motion } from 'motion/react';
-import { ExternalLink, Eye, Send, Clock, AlertTriangle, Sliders, Trash2, UserCircle2 } from 'lucide-react';
+import { ExternalLink, Eye, Send, Clock, AlertTriangle, Sliders, Trash2, UserCircle2, PhoneCall, CheckCircle2 } from 'lucide-react';
 
 const dicebearUrl = (seed: string) =>
   `https://api.dicebear.com/9.x/lorelei/svg?seed=${encodeURIComponent(seed)}&backgroundColor=b6e3f4,ffdfbf,c0aede,d1d4f9&backgroundType=gradientLinear`;
@@ -22,6 +22,7 @@ interface AccountCardProps {
   targetRoles?: string[];
   onStatusChange?: (status: 'new' | 'viewed' | 'contacted') => void;
   onDelete?: (id: string, event: React.MouseEvent) => void;
+  onVoiceCall?: (account: TargetAccount) => void;
 }
 
 type PriorityTier = 'immediate' | 'nurture' | 'standard' | 'reresearch' | 'disqualified';
@@ -94,7 +95,7 @@ function getTierTheme(account: TargetAccount, info: ReturnType<typeof getAccount
   };
 }
 
-export function AccountCard({ account, onClick, targetRoles, onStatusChange, onDelete }: AccountCardProps) {
+export function AccountCard({ account, onClick, targetRoles, onStatusChange, onDelete, onVoiceCall }: AccountCardProps) {
   const info = getAccountPriorityInfo(account);
   const theme = getTierTheme(account, info);
 
@@ -253,20 +254,61 @@ export function AccountCard({ account, onClick, targetRoles, onStatusChange, onD
 
       {/* RIGHT BODY */}
       <div className="relative flex-1 min-w-0 flex flex-col p-4">
-        {/* Delete button — top-right corner */}
+        {/* Action row — top-right corner */}
+        <div className="absolute top-2 right-2 flex items-center gap-1 z-10">
+          {onVoiceCall && !account.isDisqualified && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                onVoiceCall(account);
+              }}
+              className={`w-7 h-7 p-0 rounded-md cursor-pointer transition ${
+                account.voiceCall?.status === 'completed'
+                  ? 'text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-500/10'
+                  : account.voiceCall && ['queued','ringing','in_progress'].includes(account.voiceCall.status)
+                  ? 'text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-500/10'
+                  : 'text-slate-400 hover:text-orange-600 dark:text-zinc-500 dark:hover:text-orange-400 hover:bg-orange-50/60 dark:hover:bg-orange-500/10'
+              }`}
+              title={
+                account.voiceCall?.status === 'completed' ? 'Call completed — review transcript' :
+                account.voiceCall && ['queued','ringing','in_progress'].includes(account.voiceCall.status) ? 'Call in progress' :
+                'Place AI voice call'
+              }
+            >
+              {account.voiceCall?.status === 'completed' ? (
+                <CheckCircle2 className="w-3.5 h-3.5" />
+              ) : (
+                <PhoneCall className={`w-3.5 h-3.5 ${
+                  account.voiceCall && ['queued','ringing','in_progress'].includes(account.voiceCall.status) ? 'animate-pulse' : ''
+                }`} />
+              )}
+            </Button>
+          )}
         {onDelete && (
           <Button
             variant="ghost"
             size="sm"
             onClick={(e) => onDelete(account.id, e)}
-            className="absolute top-2 right-2 text-slate-300 hover:text-red-500 dark:text-zinc-600 dark:hover:text-red-400 hover:bg-red-50/60 dark:hover:bg-red-500/10 w-7 h-7 p-0 rounded-md cursor-pointer z-10"
+            className="text-slate-300 hover:text-red-500 dark:text-zinc-600 dark:hover:text-red-400 hover:bg-red-50/60 dark:hover:bg-red-500/10 w-7 h-7 p-0 rounded-md cursor-pointer"
             title="Remove this account suggestion"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </Button>
         )}
+        </div>
         {/* Identity */}
         <div className="mb-3 pr-8">
+          {account.crmSyncedAt && (
+            <div
+              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9.5px] font-semibold uppercase tracking-normal bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-500/30 mb-1"
+              title={`Synced to CRM${account.crmRecordId != null ? ` · record #${account.crmRecordId}` : ''} on ${new Date(account.crmSyncedAt).toLocaleString()}`}
+            >
+              <span className="w-1 h-1 rounded-full bg-emerald-500" />
+              In CRM
+            </div>
+          )}
           <h3
             className="text-[17px] font-semibold leading-tight text-slate-900 dark:text-zinc-50 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate"
             style={{ letterSpacing: '-0.015em' }}

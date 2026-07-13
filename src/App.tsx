@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { BusinessInput } from './components/BusinessInput';
-import { Dashboard } from './components/Dashboard';
+import { Dashboard, getDefaultReportName } from './components/Dashboard';
 import { SavedReportsLibrary } from './components/SavedReportsLibrary';
 import { BusinessAnalysis, TargetAccount, DetailedAnalysis } from './types';
 import { Toaster, toast } from 'sonner';
@@ -88,6 +88,18 @@ export default function App() {
     }
   }, [activeReportId]);
 
+  // Debounced auto-save of the loaded saved-report draft when accounts change
+  // (e.g. after CRM sync marks accounts as synced). Debouncing collapses a
+  // burst of onUpdateAccount calls into a single report save.
+  useEffect(() => {
+    if (!activeReportId || !analysis || accounts.length === 0) return;
+    const t = setTimeout(() => {
+      handleSaveReport("", analysis, accounts);
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accounts, activeReportId]);
+
   const handleSaveReport = (name: string, customAnalysis?: BusinessAnalysis, customAccounts?: TargetAccount[]) => {
     const finalAnalysis = customAnalysis || analysis;
     const finalAccounts = customAccounts || accounts;
@@ -98,7 +110,15 @@ export default function App() {
     }
 
     const reportId = activeReportId || `report-${Date.now()}`;
-    const reportName = name || `Outreach Plan: ${finalAnalysis.businessName}`;
+    // Preserve the existing report's name when auto-updating (e.g. blueprint
+    // edits or account deletions call handleSaveReport with an empty name).
+    // Only fall back to the industry-derived default when creating a brand-new
+    // report and the caller didn't provide an explicit name.
+    const existingName = savedReports.find(r => r.id === reportId)?.name;
+    const reportName =
+      name?.trim() ||
+      existingName ||
+      getDefaultReportName(finalAnalysis);
 
     const newReport = {
       id: reportId,
@@ -154,16 +174,24 @@ export default function App() {
 
   const analyzeBusiness = async (url: string) => {
     setIsLoading(true);
+    // Clear stale state from any previous analysis BEFORE the fetch. Otherwise,
+    // when setAnalysis fires with the new blueprint, Dashboard mounts with the
+    // old accounts + old activeReportId briefly visible until discovery lands.
+    // Also flip on isDiscovering so the Dashboard shows skeletons immediately,
+    // covering the gap between "business analyzed" and "accounts populated".
+    setAccounts([]);
+    setActiveReportId(null);
+    setIsDiscovering(true);
     try {
       const response = await fetch('/api/analyze-business', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),
       });
-      
+
       const data = await response.json();
       if (data.error) throw new Error(data.error);
-      
+
       setAnalysis(data);
       if (data.isFallback) {
         toast.warning('OpenAI API quota exceeded or API Key is missing. Loaded high-fidelity simulated business blueprint.', {
@@ -177,6 +205,9 @@ export default function App() {
       // Auto-start discovery after business analysis
       discoverAccounts(data);
     } catch (error: any) {
+      // Discovery never runs on failure, so clear the pre-warm flag we set
+      // above; otherwise the Dashboard would sit on skeletons forever.
+      setIsDiscovering(false);
       toast.error('Failed to analyze business: ' + error.message);
     } finally {
       setIsLoading(false);
@@ -384,26 +415,31 @@ export default function App() {
         </header>
       )}
 
-      {/* Page Content Router */}
-      {!analysis ? (
-        activeLandingTab === 'analyze' ? (
-          <BusinessInput 
-            onAnalyze={analyzeBusiness} 
-            isLoading={isLoading} 
-          />
-        ) : (
-          <SavedReportsLibrary
-            savedReports={savedReports}
-            onLoadReport={handleLoadReport}
-            onDeleteReport={handleDeleteReport}
-            onUpdateReportMeta={handleUpdateReportMeta}
-            onNavigateToAnalyze={() => setActiveLandingTab('analyze')}
-          />
-        )
+      {/* Page Content Router.
+          Priority: an explicit "Show Reports" navigation (activeLandingTab
+          === 'saved-library') always wins so the library is reachable even
+          from an in-progress dashboard. Falls back to Dashboard when analysis
+          is loaded, else the analyze screen. */}
+      {activeLandingTab === 'saved-library' ? (
+        <SavedReportsLibrary
+          savedReports={savedReports}
+          onLoadReport={(id) => {
+            handleLoadReport(id);
+            setActiveLandingTab('analyze');
+          }}
+          onDeleteReport={handleDeleteReport}
+          onUpdateReportMeta={handleUpdateReportMeta}
+          onNavigateToAnalyze={() => setActiveLandingTab('analyze')}
+        />
+      ) : !analysis ? (
+        <BusinessInput
+          onAnalyze={analyzeBusiness}
+          isLoading={isLoading}
+        />
       ) : (
-        <Dashboard 
-          analysis={analysis} 
-          accounts={accounts} 
+        <Dashboard
+          analysis={analysis}
+          accounts={accounts}
           isDiscovering={isDiscovering}
           activeReportId={activeReportId}
           savedReports={savedReports}
@@ -411,12 +447,11 @@ export default function App() {
           onRefreshDiscovery={() => discoverAccounts(analysis)}
           onUpdateReportMeta={handleUpdateReportMeta}
           onUpdateAccount={(acc) => {
-            const updated = accounts.map(a => a.id === acc.id ? acc : a);
-            setAccounts(updated);
-            // Auto update saved report draft if currently reading a saved report
-            if (activeReportId) {
-              handleSaveReport("", analysis, updated);
-            }
+            // Functional setState so rapid consecutive updates (e.g. bulk CRM
+            // sync marking 5 accounts as synced in the same tick) each read the
+            // freshest prev state. The stale-closure form (accounts.map(...)) would
+            // let later calls stomp earlier ones and only the last would persist.
+            setAccounts(prev => prev.map(a => a.id === acc.id ? acc : a));
           }}
           onSaveReport={handleSaveReport}
           onUpdateReport={(updatedAnalysis, updatedAccounts) => {
@@ -424,6 +459,7 @@ export default function App() {
             setAccounts(updatedAccounts);
             handleSaveReport("", updatedAnalysis, updatedAccounts);
           }}
+          onShowSavedReports={() => setActiveLandingTab('saved-library')}
           onBack={() => {
             setAnalysis(null);
             setActiveReportId(null);

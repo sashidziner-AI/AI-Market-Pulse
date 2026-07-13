@@ -3,6 +3,8 @@ import { BusinessAnalysis, TargetAccount } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { AccountCard, getAccountPriorityInfo } from './AccountCard';
 import { AccountDetail } from './AccountDetail';
+import { VoiceCallModal } from './VoiceCallModal';
+import type { VoiceCallState } from '../types';
 import {
   BarChart3, Users, Zap, Briefcase, 
   Search, Filter, Plus, FileUp, Download, Play, LayoutGrid, List,
@@ -18,6 +20,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { computeWeightsRecalibration, SellerChannelPartner, DEFAULT_CHANNEL_PARTNERS, computePathwayAssessment } from '../utils/calibration';
+import * as crmMirror from '../utils/crmMirror';
 import { ThemeToggle } from './ThemeToggle';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 
@@ -129,10 +132,23 @@ interface DashboardProps {
   onSaveReport?: (name: string, customAnalysis?: BusinessAnalysis, customAccounts?: TargetAccount[]) => string;
   onUpdateReport?: (updatedAnalysis: BusinessAnalysis, updatedAccounts: TargetAccount[]) => void;
   onUpdateReportMeta?: (id: string, name: string) => void;
+  onShowSavedReports?: () => void;
   onBack?: () => void;
 }
 
-export function Dashboard({ 
+// Default name suggestion for a new saved report. Uses the ICP target
+// industry (up to the first two, joined) — e.g. "AEC Services" — falling
+// back to the seller's businessName only when no industries are known.
+export function getDefaultReportName(analysis: BusinessAnalysis | null | undefined): string {
+  if (!analysis) return '';
+  const industries = (analysis.targetIndustries || []).filter(Boolean);
+  if (industries.length > 0) {
+    return industries.slice(0, 2).join(' / ');
+  }
+  return analysis.businessName || '';
+}
+
+export function Dashboard({
   analysis, 
   accounts, 
   isDiscovering, 
@@ -144,6 +160,7 @@ export function Dashboard({
   onSaveReport,
   onUpdateReport,
   onUpdateReportMeta,
+  onShowSavedReports,
   onBack
 }: DashboardProps) {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
@@ -156,6 +173,7 @@ export function Dashboard({
   }, []);
 
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const [voiceCallAccountId, setVoiceCallAccountId] = useState<string | null>(null);
   const [uploadedFile, setUploadedFile] = useState<{ name: string; content?: string } | null>(null);
   const [activeTab, setActiveTab] = useState<'recommendations' | 'pipeline' | 'clusters' | 'partner-pathways'>('recommendations');
   const [channelPartners, setChannelPartners] = useState<SellerChannelPartner[]>(() => {
@@ -382,8 +400,9 @@ export function Dashboard({
   };
 
   const triggerSaveReportInitiation = () => {
-    // If active loaded report, find its current name. Otherwise default to GTM Outreach Plan: CompanyName
-    let currentName = `Outreach Plan: ${analysis.businessName}`;
+    // If active loaded report, find its current name. Otherwise derive the
+    // default from the ICP target industry (falling back to businessName).
+    let currentName = getDefaultReportName(analysis);
     if (activeReportId && savedReports.length > 0) {
       const match = savedReports.find(r => r.id === activeReportId);
       if (match) currentName = match.name;
@@ -655,80 +674,70 @@ export function Dashboard({
     }, 1500);
   };
 
-  const handleTriggerCrmSync = async () => {
-    if (crmConnected !== 'prospectaccel' || !crmSessionId) {
-      setIsCrmLoading(true);
-      setTimeout(() => {
-        setIsCrmLoading(false);
-        toast.success('CRM Database has been fully synchronized with current GTM Waves.');
-      }, 1200);
-      return;
+  // Run ONE pass over the given accounts against /api/crm/sync?stream=1.
+  // Returns which accounts succeeded and which failed. Also updates the
+  // progress panel and hydrates the CRM mirror + persists success markers
+  // as each successful event arrives. Throws only on unrecoverable transport
+  // errors (401/network) — per-account failures are returned in `failed`.
+  const runCrmSyncPass = async (
+    accountsToTry: TargetAccount[],
+    indexOffsets: Map<string, number>
+  ): Promise<{
+    succeeded: { account: TargetAccount; recordId: string | number | undefined }[];
+    failed: { account: TargetAccount; message: string }[];
+  }> => {
+    const succeeded: { account: TargetAccount; recordId: string | number | undefined }[] = [];
+    const failed: { account: TargetAccount; message: string }[] = [];
+
+    const res = await fetch('/api/crm/sync?stream=1', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: crmSessionId, accounts: accountsToTry }),
+    });
+
+    if (res.status === 401) {
+      localStorage.removeItem('gtm_crm_session');
+      setCrmSessionId(null);
+      setCrmConnected('none');
+      setIsCrmOpen(true);
+      throw new Error('AUTH_EXPIRED');
     }
-
-    const syncable = accounts.filter(a => !(a as any).isDisqualified);
-    if (syncable.length === 0) {
-      toast.error('No qualified accounts to sync. Adjust ICP exclusions and try again.');
-      return;
+    if (!res.ok) {
+      let data: any = {};
+      try { data = await res.json(); } catch {}
+      throw new Error(data.error || `Sync failed (HTTP ${res.status})`);
     }
+    if (!res.body) throw new Error('Stream not supported by browser');
 
-    setIsCrmLoading(true);
-    setCrmSyncActive(true);
-    // Seed progress list with all accounts pending — user sees the full plan
-    // upfront, then each row turns green/red as its turn comes.
-    setCrmSyncProgress(syncable.map((a: any) => ({
-      account: a.name,
-      domain: a.domain,
-      status: 'pending' as const,
-    })));
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
 
-    try {
-      const res = await fetch('/api/crm/sync?stream=1', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: crmSessionId, accounts: syncable }),
-      });
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
 
-      if (res.status === 401) {
-        localStorage.removeItem('gtm_crm_session');
-        setCrmSessionId(null);
-        setCrmConnected('none');
-        setIsCrmOpen(true);
-        toast.error('CRM session expired. Please reconnect.', { duration: 6000 });
-        return;
-      }
-      if (!res.ok) {
-        // Server may still return single JSON on error (e.g. 400 before stream started)
-        let data: any = {};
-        try { data = await res.json(); } catch {}
-        throw new Error(data.error || `Sync failed (HTTP ${res.status})`);
-      }
-      if (!res.body) throw new Error('Stream not supported by browser');
+      let idx: number;
+      while ((idx = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, idx).trim();
+        buffer = buffer.slice(idx + 1);
+        if (!line) continue;
+        let evt: any;
+        try { evt = JSON.parse(line); } catch { continue; }
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let finalPushed = 0;
-      let finalFailed = 0;
-      let firstError: string | undefined;
+        // `evt.index` is relative to `accountsToTry` (this pass), but the
+        // progress panel is keyed to the full toPush list — map through the
+        // caller-supplied offset table.
+        const local = accountsToTry[evt.index];
+        const panelIndex = local ? indexOffsets.get(local.id) : undefined;
 
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        let idx: number;
-        while ((idx = buffer.indexOf('\n')) !== -1) {
-          const line = buffer.slice(0, idx).trim();
-          buffer = buffer.slice(idx + 1);
-          if (!line) continue;
-          let evt: any;
-          try { evt = JSON.parse(line); } catch { continue; }
-
-          if (evt.type === 'account_start') {
-            setCrmSyncProgress(prev => prev.map((p, i) => i === evt.index ? { ...p, status: 'syncing' } : p));
-          } else if (evt.type === 'account_done') {
+        if (evt.type === 'account_start' && panelIndex != null) {
+          setCrmSyncProgress(prev => prev.map((p, i) => i === panelIndex ? { ...p, status: 'syncing' } : p));
+        } else if (evt.type === 'account_done' && local) {
+          if (panelIndex != null) {
             setCrmSyncProgress(prev => prev.map((p, i) =>
-              i === evt.index
+              i === panelIndex
                 ? {
                     ...p,
                     status: evt.status === 'success' ? 'success' : 'failed',
@@ -741,36 +750,255 @@ export function Dashboard({
                   }
                 : p
             ));
-            if (evt.status === 'failed' && !firstError) firstError = evt.message;
-          } else if (evt.type === 'done') {
-            finalPushed = evt.pushed;
-            finalFailed = evt.failed;
+          }
+          if (evt.status === 'success') {
+            // Persist sync marker + upsert into CRM mirror immediately so the
+            // UI reflects "In CRM" even before the whole batch completes.
+            if (onUpdateAccount) {
+              const record = crmMirror.upsert({
+                id: evt.recordId,
+                provider: 'prospectaccel',
+                name: local.name,
+                domain: local.domain,
+                course: (local.industry || local.fitReason || '').slice(0, 99),
+              });
+              onUpdateAccount({
+                ...local,
+                crmSyncedAt: new Date().toISOString(),
+                crmRecordId: record.id,
+                crmProvider: 'prospectaccel',
+                crmRecord: record,
+              });
+            }
+            succeeded.push({ account: local, recordId: evt.recordId });
+          } else {
+            failed.push({ account: local, message: evt.message || 'unknown error' });
           }
         }
       }
+    }
+
+    return { succeeded, failed };
+  };
+
+  // Shared push routine. Pushes every eligible account in ONE user action:
+  // - Streams the initial batch
+  // - Automatically retries any per-account failures up to MAX_ATTEMPTS times
+  // - Emits a single final toast reflecting the true end-state
+  // - Persists success markers + hydrates the CRM mirror as each success lands
+  //   so the Market Pulse UI reflects "In CRM" the moment it's true
+  const pushAccountsToCrm = async (
+    toPush: TargetAccount[],
+    opts?: { source?: 'bulk' | 'single'; skippedExistingCount?: number }
+  ) => {
+    if (crmConnected !== 'prospectaccel' || !crmSessionId) {
+      setIsCrmLoading(true);
+      setTimeout(() => {
+        setIsCrmLoading(false);
+        toast.success('CRM Database has been fully synchronized with current GTM Waves.');
+      }, 1200);
+      return;
+    }
+
+    if (toPush.length === 0) {
+      toast.error('Nothing to push — the selected accounts are already synced.');
+      return;
+    }
+
+    const MAX_ATTEMPTS = 3;
+    const BACKOFF_MS = [0, 800, 1800]; // between attempts 1→2 and 2→3
+
+    setIsCrmLoading(true);
+    setCrmSyncActive(true);
+    setCrmSyncProgress(toPush.map(a => ({
+      account: a.name,
+      domain: a.domain,
+      status: 'pending' as const,
+    })));
+
+    // Stable id → panel-index lookup so retry passes update the same rows.
+    const indexOffsets = new Map<string, number>();
+    toPush.forEach((a, i) => indexOffsets.set(a.id, i));
+
+    const succeededIds = new Set<string>();
+    let pending = [...toPush];
+    let lastError: string | undefined;
+    let attemptsUsed = 0;
+
+    try {
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS && pending.length > 0; attempt++) {
+        if (attempt > 1) {
+          await new Promise(r => setTimeout(r, BACKOFF_MS[attempt - 1] ?? 1000));
+          // Reset previously-failed rows to 'pending' so the panel shows the
+          // retry is happening rather than freezing on the failed state.
+          setCrmSyncProgress(prev => prev.map(p => {
+            const stillPending = pending.some(a => a.name === p.account && a.domain === p.domain);
+            return stillPending ? { ...p, status: 'pending', message: undefined } : p;
+          }));
+        }
+        attemptsUsed = attempt;
+
+        const { succeeded, failed } = await runCrmSyncPass(pending, indexOffsets);
+        succeeded.forEach(s => succeededIds.add(s.account.id));
+        pending = failed.map(f => f.account);
+        if (failed.length > 0) lastError = failed[failed.length - 1].message;
+      }
+
+      const succeededCount = succeededIds.size;
+      const failedCount = pending.length;
 
       setCrmLastSync({
-        pushed: finalPushed,
-        failed: finalFailed,
+        pushed: succeededCount,
+        failed: failedCount,
         at: new Date().toISOString(),
       });
 
-      if (finalFailed === 0) {
-        toast.success(`Synced ${finalPushed} of ${syncable.length} accounts to your CRM.`);
+      // Single final toast reflecting the true end-state — no interim noise.
+      const skipped = opts?.skippedExistingCount ?? 0;
+      if (failedCount === 0) {
+        if (opts?.source === 'single' && toPush.length === 1) {
+          toast.success(`${toPush[0].name} synced to CRM.`);
+        } else {
+          const skippedNote = skipped > 0 ? ` (${skipped} already existed)` : '';
+          const retryNote = attemptsUsed > 1 ? ` (recovered via ${attemptsUsed - 1} auto-retr${attemptsUsed - 1 === 1 ? 'y' : 'ies'})` : '';
+          toast.success(`Synced ${succeededCount} account${succeededCount === 1 ? '' : 's'} to your CRM${skippedNote}.${retryNote}`);
+        }
       } else {
-        toast.warning(
-          `Sync complete with issues: ${finalPushed} pushed, ${finalFailed} failed. First error: ${firstError || 'unknown'}`,
-          { duration: 8000 }
+        toast.error(
+          `Sync incomplete: ${succeededCount} synced, ${failedCount} failed after ${MAX_ATTEMPTS} attempts. Last error: ${lastError || 'unknown'}`,
+          { duration: 10000 }
         );
       }
     } catch (err: any) {
-      toast.error(`Sync failed: ${err.message}`);
+      if (err?.message === 'AUTH_EXPIRED') {
+        toast.error('CRM session expired. Please reconnect.', { duration: 6000 });
+      } else {
+        toast.error(`Sync failed: ${err.message}`);
+      }
     } finally {
       setIsCrmLoading(false);
-      // Keep progress visible for 30s so the user can review outcomes,
-      // then auto-clear. They can manually dismiss earlier via a button.
       setTimeout(() => setCrmSyncActive(false), 30000);
     }
+  };
+
+  // Check the CRM mirror before pushing. If a matching record already exists
+  // (by domain / email domain / name / linkedin), hydrate the account with the
+  // existing CRM data and skip the network push. Returns true if a match was
+  // found and applied — caller should not push this account.
+  const applyExistingCrmMatch = (account: TargetAccount): boolean => {
+    if (account.crmSyncedAt) return true;
+    const match = crmMirror.findMatch({
+      name: account.name,
+      domain: account.domain,
+    });
+    if (!match) return false;
+    if (onUpdateAccount) {
+      onUpdateAccount({
+        ...account,
+        crmSyncedAt: match.updatedAt,
+        crmRecordId: match.id,
+        crmProvider: match.provider,
+        crmRecord: match,
+      });
+    }
+    return true;
+  };
+
+  const handleTriggerCrmSync = async () => {
+    const eligible = accounts.filter(a => !a.isDisqualified);
+    const alreadySynced = eligible.filter(a => a.crmSyncedAt);
+    const notSynced = eligible.filter(a => !a.crmSyncedAt);
+
+    // Split notSynced into matched-in-mirror vs truly new.
+    const matchedInMirror: TargetAccount[] = [];
+    const toPush: TargetAccount[] = [];
+    for (const a of notSynced) {
+      const match = crmMirror.findMatch({ name: a.name, domain: a.domain });
+      if (match) {
+        matchedInMirror.push(a);
+        if (onUpdateAccount) {
+          onUpdateAccount({
+            ...a,
+            crmSyncedAt: match.updatedAt,
+            crmRecordId: match.id,
+            crmProvider: match.provider,
+            crmRecord: match,
+          });
+        }
+      } else {
+        toPush.push(a);
+      }
+    }
+
+    if (eligible.length === 0) {
+      toast.error('No qualified accounts to sync. Adjust ICP exclusions and try again.');
+      return;
+    }
+    if (toPush.length === 0) {
+      toast.info('No new records to sync. All matched accounts already exist in the CRM.');
+      return;
+    }
+    // Only the final consolidated toast from pushAccountsToCrm is shown.
+    const skippedExistingCount = alreadySynced.length + matchedInMirror.length;
+    await pushAccountsToCrm(toPush, { source: 'bulk', skippedExistingCount });
+  };
+
+  const handleSyncSingleAccount = async (account: TargetAccount) => {
+    if (account.crmSyncedAt) {
+      toast.info('This account has already been added to the CRM.');
+      return;
+    }
+    if (account.isDisqualified) {
+      toast.error('Disqualified accounts cannot be pushed to the CRM.');
+      return;
+    }
+    if (applyExistingCrmMatch(account)) {
+      toast.info(`${account.name} already exists in the CRM — record hydrated instead of pushed.`);
+      return;
+    }
+    await pushAccountsToCrm([account], { source: 'single' });
+  };
+
+  // Refresh CRM state for a single account by re-reading from the mirror.
+  const handleRefreshCrmStatus = (account: TargetAccount) => {
+    if (!account.crmRecordId) {
+      toast.info('This account has not been pushed to the CRM yet.');
+      return;
+    }
+    const fresh = crmMirror.refresh(account.crmRecordId);
+    if (!fresh) {
+      toast.warning('Record not found in CRM mirror — it may have been deleted.');
+      return;
+    }
+    if (onUpdateAccount) {
+      onUpdateAccount({
+        ...account,
+        crmSyncedAt: fresh.updatedAt,
+        crmRecord: fresh,
+      });
+    }
+    toast.success('CRM status refreshed.');
+  };
+
+  // Update CRM record with fresh research data from AI Market Pulse.
+  const handleUpdateCrmRecord = (account: TargetAccount) => {
+    if (!account.crmRecordId) {
+      toast.error('No CRM record to update.');
+      return;
+    }
+    const patched = crmMirror.patch(account.crmRecordId, crmMirror.toUpsertInput(account));
+    if (!patched) {
+      toast.error('Failed to update CRM record — not found.');
+      return;
+    }
+    if (onUpdateAccount) {
+      onUpdateAccount({
+        ...account,
+        crmSyncedAt: patched.updatedAt,
+        crmRecord: patched,
+      });
+    }
+    toast.success('CRM record updated with latest research.');
   };
 
   const handleDisconnectCrm = async () => {
@@ -1224,6 +1452,18 @@ export function Dashboard({
                 >
                   <FolderOpen className="w-3.5 h-3.5" />
                   <span>{activeReportId ? 'Save As' : 'Save Scope'}</span>
+                </Button>
+              )}
+              {activeReportId && onShowSavedReports && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onShowSavedReports}
+                  className="h-8 text-[13px] font-bold gap-1 px-3 rounded-lg border-white/[0.08] hover:bg-white/[0.06] text-zinc-300 hover:text-zinc-100 cursor-pointer bg-transparent shrink-0"
+                  title="Open the saved reports library"
+                >
+                  <BookOpen className="w-3.5 h-3.5 text-zinc-400" />
+                  <span>Show Reports</span>
                 </Button>
               )}
               {onUpdateReport && (
@@ -3391,6 +3631,7 @@ export function Dashboard({
                       targetRoles={analysis.icp.targetRoles}
                       onStatusChange={onUpdateAccount ? (newStatus) => onUpdateAccount({ ...account, status: newStatus }) : undefined}
                       onDelete={handleDeleteAccountDirectly}
+                      onVoiceCall={(acc) => setVoiceCallAccountId(acc.id)}
                       onClick={(acc) => {
                         onAnalyzeAccount(acc.id);
                         setSelectedAccountId(acc.id);
@@ -3588,21 +3829,38 @@ export function Dashboard({
 
       <AnimatePresence>
         {selectedAccountId && selectedAccount && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setSelectedAccountId(null)}
-              className="fixed inset-0 bg-slate-900/40 backdrop-blur-[2px] z-40 transition-opacity"
-            />
-            <AccountDetail
-              account={selectedAccount}
-              onClose={() => setSelectedAccountId(null)}
-              onUpdateAccount={onUpdateAccount}
-            />
-          </>
+          <AccountDetail
+            account={selectedAccount}
+            onClose={() => setSelectedAccountId(null)}
+            onUpdateAccount={onUpdateAccount}
+            onSyncToCrm={handleSyncSingleAccount}
+            onRefreshCrmStatus={handleRefreshCrmStatus}
+            onUpdateCrmRecord={handleUpdateCrmRecord}
+            crmConnected={crmConnected !== 'none'}
+            crmProviderName={getCrmName(crmConnected)}
+            isCrmLoading={isCrmLoading}
+          />
         )}
+      </AnimatePresence>
+
+      {/* AI Voice Call modal */}
+      <AnimatePresence>
+        {voiceCallAccountId && (() => {
+          const acc = evaluatedAccounts.find(a => a.id === voiceCallAccountId);
+          if (!acc) return null;
+          return (
+            <VoiceCallModal
+              account={acc}
+              sellerContext={analysis}
+              onClose={() => setVoiceCallAccountId(null)}
+              onCallCompleted={(accountId, call: VoiceCallState) => {
+                if (onUpdateAccount) {
+                  onUpdateAccount({ ...acc, voiceCall: call });
+                }
+              }}
+            />
+          );
+        })()}
       </AnimatePresence>
 
       <Dialog open={isCrmOpen} onOpenChange={setIsCrmOpen}>
@@ -3785,7 +4043,10 @@ export function Dashboard({
                 })()
               )}
 
-              {crmLastSync && !crmSyncActive && (
+              {/* Only surface "Last sync" when the run actually pushed something.
+                  A run that pushed 0 (because everything was already synced)
+                  should not look like a success — see empty-state below. */}
+              {crmLastSync && !crmSyncActive && crmLastSync.pushed > 0 && (
                 <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 rounded-lg p-2.5 text-left text-[12px] text-emerald-800 dark:text-emerald-200 space-y-0.5">
                   <div className="font-semibold">
                     Last sync: {crmLastSync.pushed} pushed{crmLastSync.failed > 0 ? `, ${crmLastSync.failed} failed` : ''}
@@ -3796,26 +4057,70 @@ export function Dashboard({
                 </div>
               )}
 
-              <div className="flex gap-2 pt-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={isCrmLoading}
-                  onClick={handleTriggerCrmSync}
-                  className="flex-1 text-xs gap-1.5 h-9"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isCrmLoading ? 'animate-spin' : ''}`} />
-                  {isCrmLoading ? 'Syncing…' : 'Push Accounts Now'}
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleDisconnectCrm}
-                  className="text-xs text-red-500 dark:text-red-400 hover:text-red-655 hover:bg-red-50 h-9"
-                >
-                  Disconnect
-                </Button>
-              </div>
+              {(() => {
+                const eligible = accounts.filter(a => !a.isDisqualified);
+                const newCount = eligible.filter(a => !a.crmSyncedAt).length;
+                const skippedCount = eligible.length - newCount;
+                const nothingNewButHasMatches = eligible.length > 0 && newCount === 0;
+
+                return (
+                  <>
+                    {nothingNewButHasMatches ? (
+                      // Full empty-state block replaces both the summary line
+                      // and the Push button when there's nothing new to sync.
+                      <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-3 text-left space-y-1">
+                        <div className="flex items-center gap-1.5 text-[12px] font-semibold text-slate-700 dark:text-slate-200">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                          No new records to sync.
+                        </div>
+                        <div className="text-[11.5px] text-slate-500 dark:text-slate-400 leading-snug">
+                          All matched accounts already exist in the CRM.
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-[11.5px] text-slate-500 dark:text-slate-400 text-left leading-snug pt-1">
+                        {newCount > 0 ? (
+                          <>
+                            <strong className="text-slate-700 dark:text-slate-200">{newCount}</strong> new to push
+                            {skippedCount > 0 && (
+                              <> · <strong className="text-slate-700 dark:text-slate-200">{skippedCount}</strong> already synced (will be skipped)</>
+                            )}
+                          </>
+                        ) : (
+                          <>No qualified accounts to sync.</>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex gap-2 pt-1">
+                      {/* Push button is only shown when there is genuinely new work
+                          to do. When everything is already in the CRM, the empty-
+                          state block above stands alone. */}
+                      {newCount > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={isCrmLoading}
+                          onClick={handleTriggerCrmSync}
+                          className="flex-1 text-xs gap-1.5 h-9"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isCrmLoading ? 'animate-spin' : ''}`} />
+                          {isCrmLoading
+                            ? 'Syncing…'
+                            : `Push ${newCount} new account${newCount === 1 ? '' : 's'}`}
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleDisconnectCrm}
+                        className={`text-xs text-red-500 dark:text-red-400 hover:text-red-655 hover:bg-red-50 h-9 ${newCount === 0 ? 'flex-1' : ''}`}
+                      >
+                        Disconnect
+                      </Button>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           ) : crmStep === 1 ? (
             /* Select CRM Step 1 */
