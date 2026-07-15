@@ -883,6 +883,7 @@ function getAnalyzeBusinessFallback(url: string) {
       "Architecture & Engineering",
       "Supply Chain & Operations"
     ],
+    country: "United States",
     icp: {
       title: "Vice President of Operational Deliverables & Engineering Lead",
       description: "Ambitious operation directors and tech leaders at growing enterprises who must scale their digital products, migrate from on-prem infrastructure, or automate deep business-critical backlogs.",
@@ -1454,10 +1455,11 @@ app.post("/api/analyze-business", async (req, res) => {
   }
 
   try {
-    const prompt = `Analyze the website ${url}. Identify the business model, products, services, value proposition, and target industries. Then, generate a HIGHLY SPECIFIC Ideal Customer Profile (ICP) — avoid generic B2B language.
+    const prompt = `Analyze the website ${url}. Identify the business model, products, services, value proposition, target industries, AND the country the business is primarily headquartered in / operates from. Then, generate a HIGHLY SPECIFIC Ideal Customer Profile (ICP) — avoid generic B2B language.
 
 Requirements:
 - businessName + overview + services + valueProp + targetIndustries as normal
+- country: the single primary country the business operates from, expressed as the full English name Google Maps recognizes (e.g. "United States", "United Kingdom", "India", "Germany", "Singapore", "United Arab Emirates"). Infer from the domain ccTLD (e.g. .co.uk → United Kingdom, .in → India), the "About us"/"Contact" page addresses, or explicit mentions in press coverage. If the business is genuinely multi-country with no clear HQ, choose the country of the largest operational footprint. NEVER return "Global" or "Worldwide" — always name ONE country.
 - icp.title: name a specific role at a specific company profile (e.g. "VP Engineering at Series B-D SaaS post-PMF" — not "Business Owner")
 - icp.description: MUST reference concrete attributes tied to who actually buys this product:
     * Company scale band (employee count OR funding stage OR revenue tier)
@@ -1542,6 +1544,7 @@ Follow the depth and specificity of these examples for whatever industry the URL
         services: { type: Type.ARRAY, items: { type: Type.STRING } },
         valueProp: { type: Type.STRING },
         targetIndustries: { type: Type.ARRAY, items: { type: Type.STRING } },
+        country: { type: Type.STRING },
         icp: {
           type: Type.OBJECT,
           properties: {
@@ -3631,6 +3634,16 @@ Never make promises about pricing, contracts, or product roadmap. Redirect those
 `.trim();
 }
 
+// Public config for the client — advertises whether Vapi outbound dialing is
+// wired (so the modal can hide/show the "Phone call" mode) and returns an
+// optional demo default number for hackathon-style pre-fill. No secrets are
+// exposed; the API key and phone-number id stay server-side.
+app.get("/api/voice-call/config", (_req, res) => {
+  const vapiReady = !!(process.env.VAPI_API_KEY && process.env.VAPI_PHONE_NUMBER_ID);
+  const defaultPhone = String(process.env.DEMO_DEFAULT_PHONE || "").trim() || null;
+  return res.json({ vapiReady, defaultPhone });
+});
+
 app.post("/api/voice-call/start", async (req, res) => {
   const apiKey = process.env.VAPI_API_KEY;
   const phoneNumberId = process.env.VAPI_PHONE_NUMBER_ID;
@@ -3746,8 +3759,12 @@ app.post("/api/voice-call/start", async (req, res) => {
           firstMessage,
           transcriber: { provider: "deepgram", model: "nova-2", language: "en" },
           endCallPhrases: ["goodbye", "have a good day", "bye now"],
+          // Server URL (for webhook events) is set at the assistant level
+          // now — Vapi rejects it at the top of the /call payload with
+          // "property server should not exist". Alternatively configure it
+          // on the phone number in the Vapi dashboard and delete this field.
+          serverUrl: `${webhookBase}/api/voice-call/webhook`,
         },
-        server: { url: `${webhookBase}/api/voice-call/webhook` },
         metadata: { callId, accountId },
       }),
     });
@@ -4045,37 +4062,41 @@ app.get("/api/voice-call/:callId", (req, res) => {
 });
 
 // ------------------------------------------------------------------
-// Google Maps — Related companies (nearby competitors) lookup
+// Google Maps — Industry-wide business discovery
 // ------------------------------------------------------------------
 //
-// POST /api/maps/places  { name, geography?, domain?, keyword?, count? }
-//   →  { primary: {...place data for the selected account...},
-//        related: [{ name, address, rating, ratingsCount, phone, website,
-//                    distanceMeters, distanceLabel, mapsUrl, placeId }, ...] }
+// POST /api/maps/places
+//   {
+//     services?: string[],      // seller's service list (analysis.services)
+//     industries?: string[],    // seller's target industries (analysis.targetIndustries)
+//     businessName?: string,    // seller's own business — filtered from results
+//     domain?: string,          // seller's own domain — filtered from results
+//     geography?: string,       // optional geographic scope hint (e.g. "United States")
+//     count?: number,           // desired result count (3-25, default 12)
+//     keyword?: string,         // legacy fallback if services/industries missing
+//     name?: string,            // legacy fallback for businessName
+//   }
+//   → {
+//       matches: [{ name, formattedAddress, phone, website, rating,
+//                   ratingsCount, lat, lng, placeId, mapsUrl,
+//                   matchedKeyword, country }, ...],
+//       keywords: string[],     // the actual query strings we ran
+//       geography: string | null,
+//       cached: boolean,
+//     }
 //
-// The panel is a lead-discovery surface: it locates the SELECTED account on
-// Google Maps to anchor the geo search, then finds OTHER nearby businesses
-// offering the same service so the user can prospect adjacent leads without
-// leaving the app. The selected company itself is filtered from `related`.
+// `country` is derived from the last comma-separated segment of the Google
+// formatted_address and normalized (USA/US → United States, UK → United
+// Kingdom, UAE → United Arab Emirates). Included so the client can offer a
+// post-hoc country filter without re-querying Places.
+//
+// This is an industry-wide discovery surface: it runs Google Places Text
+// Search using industry × service keyword combinations derived from the
+// seller's analyzed website, then merges & dedupes results across queries.
+// The seller's own business is filtered out so the panel only surfaces
+// prospective adjacent companies matching the same industry and services.
 const mapsCache = new Map<string, { at: number; payload: any }>();
 const MAPS_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24h — Places data changes slowly
-
-// Haversine distance in metres between two lat/lng pairs.
-function haversineMeters(a: {lat: number, lng: number}, b: {lat: number, lng: number}): number {
-  const R = 6371000;
-  const toRad = (x: number) => (x * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLng = toRad(b.lng - a.lng);
-  const s1 = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s1)));
-}
-
-function formatDistance(m: number | null): string | null {
-  if (m == null || !Number.isFinite(m)) return null;
-  if (m < 1000) return `${Math.round(m)} m`;
-  const km = m / 1000;
-  return km < 10 ? `${km.toFixed(1)} km` : `${Math.round(km)} km`;
-}
 
 function normalizeDomainForMatch(v?: string): string {
   return String(v || "")
@@ -4087,6 +4108,104 @@ function normalizeDomainForMatch(v?: string): string {
 
 function normalizeNameForMatch(v?: string): string {
   return String(v || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+// Canonical country name + accepted aliases (case-insensitive). The scanner
+// below matches the tail of a Google formatted_address against these,
+// preferring the longest match first so "United Arab Emirates" beats
+// "United States" when they'd both partially match "United".
+//
+// Not exhaustive — covers the countries we expect to surface via the global
+// diversity regions plus common travellers. Extend as needed. Aliases are
+// mapped to the canonical label so the client-side chip filter doesn't split
+// "USA" / "United States" into two buckets.
+const COUNTRY_MATCHERS: Array<{ canonical: string; aliases: string[] }> = [
+  { canonical: "United States", aliases: ["United States of America", "United States", "USA", "U.S.A.", "U.S.A", "U.S.", "U.S", "US"] },
+  { canonical: "United Kingdom", aliases: ["United Kingdom", "Great Britain", "U.K.", "UK", "England", "Scotland", "Wales", "Northern Ireland"] },
+  { canonical: "United Arab Emirates", aliases: ["United Arab Emirates", "U.A.E.", "UAE"] },
+  { canonical: "India", aliases: ["India"] },
+  { canonical: "Canada", aliases: ["Canada"] },
+  { canonical: "Australia", aliases: ["Australia"] },
+  { canonical: "New Zealand", aliases: ["New Zealand"] },
+  { canonical: "Germany", aliases: ["Germany", "Deutschland"] },
+  { canonical: "France", aliases: ["France"] },
+  { canonical: "Italy", aliases: ["Italy", "Italia"] },
+  { canonical: "Spain", aliases: ["Spain", "España"] },
+  { canonical: "Portugal", aliases: ["Portugal"] },
+  { canonical: "Netherlands", aliases: ["Netherlands", "The Netherlands", "Holland"] },
+  { canonical: "Belgium", aliases: ["Belgium"] },
+  { canonical: "Switzerland", aliases: ["Switzerland", "Schweiz"] },
+  { canonical: "Austria", aliases: ["Austria", "Österreich"] },
+  { canonical: "Sweden", aliases: ["Sweden", "Sverige"] },
+  { canonical: "Norway", aliases: ["Norway", "Norge"] },
+  { canonical: "Denmark", aliases: ["Denmark", "Danmark"] },
+  { canonical: "Finland", aliases: ["Finland", "Suomi"] },
+  { canonical: "Ireland", aliases: ["Ireland", "Éire"] },
+  { canonical: "Poland", aliases: ["Poland", "Polska"] },
+  { canonical: "Czech Republic", aliases: ["Czech Republic", "Czechia"] },
+  { canonical: "Turkey", aliases: ["Turkey", "Türkiye"] },
+  { canonical: "Greece", aliases: ["Greece", "Ελλάδα"] },
+  { canonical: "Japan", aliases: ["Japan", "日本"] },
+  { canonical: "Singapore", aliases: ["Singapore"] },
+  { canonical: "Hong Kong", aliases: ["Hong Kong"] },
+  { canonical: "South Korea", aliases: ["South Korea", "Korea, Republic of", "Republic of Korea"] },
+  { canonical: "China", aliases: ["China", "People's Republic of China", "PRC"] },
+  { canonical: "Taiwan", aliases: ["Taiwan"] },
+  { canonical: "Malaysia", aliases: ["Malaysia"] },
+  { canonical: "Thailand", aliases: ["Thailand"] },
+  { canonical: "Philippines", aliases: ["Philippines"] },
+  { canonical: "Indonesia", aliases: ["Indonesia"] },
+  { canonical: "Vietnam", aliases: ["Vietnam", "Viet Nam"] },
+  { canonical: "Saudi Arabia", aliases: ["Saudi Arabia"] },
+  { canonical: "Israel", aliases: ["Israel"] },
+  { canonical: "Qatar", aliases: ["Qatar"] },
+  { canonical: "Bahrain", aliases: ["Bahrain"] },
+  { canonical: "Kuwait", aliases: ["Kuwait"] },
+  { canonical: "Oman", aliases: ["Oman"] },
+  { canonical: "South Africa", aliases: ["South Africa"] },
+  { canonical: "Egypt", aliases: ["Egypt"] },
+  { canonical: "Nigeria", aliases: ["Nigeria"] },
+  { canonical: "Kenya", aliases: ["Kenya"] },
+  { canonical: "Brazil", aliases: ["Brazil", "Brasil"] },
+  { canonical: "Mexico", aliases: ["Mexico", "México"] },
+  { canonical: "Argentina", aliases: ["Argentina"] },
+  { canonical: "Chile", aliases: ["Chile"] },
+  { canonical: "Colombia", aliases: ["Colombia"] },
+  { canonical: "Peru", aliases: ["Peru", "Perú"] },
+];
+
+// Ordered aliases (longest first) so multi-word canonicals win over their
+// prefixes when both would match. Computed once at module load.
+const COUNTRY_ALIAS_LOOKUP: Array<{ pattern: RegExp; canonical: string }> = (() => {
+  const flat: Array<{ alias: string; canonical: string }> = [];
+  for (const m of COUNTRY_MATCHERS) {
+    for (const a of m.aliases) flat.push({ alias: a, canonical: m.canonical });
+  }
+  flat.sort((a, b) => b.alias.length - a.alias.length);
+  return flat.map(({ alias, canonical }) => {
+    const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    // Word-boundary anchored at the string tail. We scan the last ~60 chars
+    // of the address for a match — that's where Google places country names.
+    return { pattern: new RegExp(`(^|[^A-Za-z0-9])${escaped}(?![A-Za-z0-9])`, "i"), canonical };
+  });
+})();
+
+function extractCountryFromAddress(addr?: string | null): string | null {
+  if (!addr) return null;
+  const s = String(addr).trim();
+  if (!s) return null;
+  // Search the tail first (where the country almost always lives) — cheaper
+  // and less likely to false-match a city name that happens to be a country
+  // name too (rare, but "Georgia" the country vs Georgia the US state).
+  const tail = s.slice(-80);
+  for (const { pattern, canonical } of COUNTRY_ALIAS_LOOKUP) {
+    if (pattern.test(tail)) return canonical;
+  }
+  // Fallback: scan the whole string (some Google entries pack country early).
+  for (const { pattern, canonical } of COUNTRY_ALIAS_LOOKUP) {
+    if (pattern.test(s)) return canonical;
+  }
+  return null;
 }
 
 async function fetchPlaceDetails(placeId: string, apiKey: string): Promise<any | null> {
@@ -4115,6 +4234,112 @@ async function fetchPlaceDetails(placeId: string, apiKey: string): Promise<any |
   return json.status === "OK" ? json.result : null;
 }
 
+// Regions we append when the caller doesn't force a specific country.
+// Google Places Text Search is IP-biased, so an unscoped query from a server
+// in India returns only Indian results — appending explicit country names to
+// a handful of variants forces a geographically diverse result set that the
+// client-side country filter can then narrow. Ordered by rough market
+// prominence for B2B services / SaaS.
+const GLOBAL_DIVERSITY_REGIONS = [
+  "United States",
+  "United Kingdom",
+  "Germany",
+  "Singapore",
+  "Australia",
+  "Canada",
+  "India",
+  "United Arab Emirates",
+];
+
+// Build the list of Text Search query strings from the seller's analyzed
+// services + industries. We pair each industry with each service to produce
+// intent-focused queries ("industrial paint contractor United States") that
+// return companies matching BOTH dimensions at once, rather than any random
+// business tagged with either term alone.
+//
+// Two modes:
+//   - `geography` set  → run the classic per-country query set (used when a
+//                        caller explicitly wants to force a single country).
+//   - `geography` empty → run a base set of unscoped queries PLUS regional
+//                         variants for the top combo across a curated list
+//                         of major markets. Caps applied so we don't blow
+//                         the daily Places quota — total ≤ ~15 calls.
+function buildDiscoveryQueries(
+  services: string[],
+  industries: string[],
+  geography: string | null,
+  fallbackKeyword: string | null,
+): string[] {
+  const svc = services
+    .map(s => String(s || "").trim())
+    .filter(s => s.length > 1 && s.length < 60)
+    .slice(0, 3);
+  const ind = industries
+    .map(s => String(s || "").trim())
+    .filter(s => s.length > 1 && s.length < 60)
+    .slice(0, 3);
+  const geo = geography ? String(geography).trim() : "";
+
+  // ── Classic per-country mode: preserve the old scoped-search behavior for
+  //    any caller that still passes an explicit geography.
+  if (geo) {
+    const scoped: string[] = [];
+    if (ind.length && svc.length) {
+      for (const i of ind) for (const s of svc) scoped.push(`${i} ${s} ${geo}`);
+    } else if (svc.length) {
+      for (const s of svc) scoped.push(`${s} ${geo}`);
+    } else if (ind.length) {
+      for (const i of ind) scoped.push(`${i} ${geo}`);
+    }
+    const fb = (fallbackKeyword || "").trim();
+    if (scoped.length === 0 && fb) scoped.push(`${fb} ${geo}`);
+    return dedupe(scoped);
+  }
+
+  // ── Global diversity mode. Base = up to 4 top industry×service combos
+  //    (unscoped — Google will IP-bias these). Regional = the single top
+  //    combo suffixed with each major market so the result set spans
+  //    multiple countries and the client-side country filter has something
+  //    to narrow.
+  const base: string[] = [];
+  if (ind.length && svc.length) {
+    // Prioritize combos so lower-ranked ones don't crowd out regional variants.
+    outer: for (const i of ind) {
+      for (const s of svc) {
+        base.push(`${i} ${s}`);
+        if (base.length >= 4) break outer;
+      }
+    }
+  } else if (svc.length) {
+    for (const s of svc.slice(0, 4)) base.push(s);
+  } else if (ind.length) {
+    for (const i of ind.slice(0, 4)) base.push(i);
+  }
+
+  const topCombo =
+    base[0] ||
+    (fallbackKeyword ? String(fallbackKeyword).trim() : "");
+
+  const regional: string[] = [];
+  if (topCombo) {
+    for (const r of GLOBAL_DIVERSITY_REGIONS) regional.push(`${topCombo} ${r}`);
+  }
+
+  const fb = (fallbackKeyword || "").trim();
+  const combined = base.length === 0 && regional.length === 0 && fb ? [fb] : [...base, ...regional];
+  return dedupe(combined);
+}
+
+function dedupe(arr: string[]): string[] {
+  const seen = new Set<string>();
+  return arr.filter(q => {
+    const k = q.toLowerCase();
+    if (!k || seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
 app.post("/api/maps/places", async (req, res) => {
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
@@ -4124,25 +4349,38 @@ app.post("/api/maps/places", async (req, res) => {
     });
   }
 
-  const { name, geography, domain, keyword, count } = (req.body || {}) as {
-    name?: string;
-    geography?: string;
+  const body = (req.body || {}) as {
+    services?: string[];
+    industries?: string[];
+    businessName?: string;
     domain?: string;
+    geography?: string;
     keyword?: string;
+    name?: string;
     count?: number;
   };
-  if (!name || typeof name !== "string") {
-    return res.status(400).json({ error: "name is required" });
-  }
+  const services = Array.isArray(body.services) ? body.services : [];
+  const industries = Array.isArray(body.industries) ? body.industries : [];
+  const businessName = String(body.businessName || body.name || "").trim();
+  const domain = String(body.domain || "").trim();
+  const geography = String(body.geography || "").trim() || null;
+  const fallbackKeyword = String(body.keyword || "").trim() || null;
 
-  const relatedCount = Math.max(3, Math.min(15, Number.isFinite(count) ? Number(count) : 8));
-  const primaryQuery = [name, geography].filter(Boolean).join(" ").trim();
-  const searchKeyword = (keyword || "").trim();
+  const desiredCount = Math.max(3, Math.min(25, Number.isFinite(body.count) ? Number(body.count) : 12));
+
+  const queries = buildDiscoveryQueries(services, industries, geography, fallbackKeyword);
+  if (queries.length === 0) {
+    return res.status(400).json({
+      error: "At least one of services[], industries[], or keyword is required to run an industry search.",
+    });
+  }
+  console.log(`[maps/places] biz="${businessName}" domain="${domain}" geo="${geography || '(none)'}" queries=${JSON.stringify(queries)}`);
+
   const cacheKey = JSON.stringify({
-    p: primaryQuery.toLowerCase(),
-    k: searchKeyword.toLowerCase(),
-    n: relatedCount,
+    q: queries.map(q => q.toLowerCase()),
+    n: desiredCount,
     d: normalizeDomainForMatch(domain),
+    b: businessName.toLowerCase(),
   });
   const now = Date.now();
   const cached = mapsCache.get(cacheKey);
@@ -4151,120 +4389,78 @@ app.post("/api/maps/places", async (req, res) => {
   }
 
   try {
-    // ── Step 1: Locate the primary company via Text Search ────────────────
-    const primarySearchUrl = new URL("https://maps.googleapis.com/maps/api/place/textsearch/json");
-    primarySearchUrl.searchParams.set("query", primaryQuery);
-    primarySearchUrl.searchParams.set("key", apiKey);
-    const primaryRes = await fetch(primarySearchUrl.toString());
-    if (!primaryRes.ok) throw new Error(`Text Search HTTP ${primaryRes.status}`);
-    const primaryData: any = await primaryRes.json();
-    if (primaryData.status !== "OK" && primaryData.status !== "ZERO_RESULTS") {
-      throw new Error(`Text Search: ${primaryData.status}${primaryData.error_message ? ` — ${primaryData.error_message}` : ""}`);
-    }
-    const primaryResults: any[] = Array.isArray(primaryData.results) ? primaryData.results : [];
-    const normDomain = normalizeDomainForMatch(domain);
-    let primaryMatch: any = primaryResults[0];
-    if (normDomain && primaryResults.length > 0) {
-      const websiteMatch = primaryResults.find(r => normalizeDomainForMatch(r.website).includes(normDomain));
-      if (websiteMatch) primaryMatch = websiteMatch;
-    }
+    // ── Step 1: Run each industry × service Text Search in parallel ────────
+    // Each response is capped at 20 results by Google. We take the top ~5
+    // from each so a single overweighted query can't crowd out the others.
+    const perQueryTake = Math.max(4, Math.ceil((desiredCount * 2) / queries.length));
 
-    let primaryDetails: any = null;
-    if (primaryMatch?.place_id) {
-      primaryDetails = await fetchPlaceDetails(primaryMatch.place_id, apiKey);
-    }
-    const primaryMerged = { ...(primaryMatch || {}), ...(primaryDetails || {}) };
-    const primaryLat = primaryMerged?.geometry?.location?.lat;
-    const primaryLng = primaryMerged?.geometry?.location?.lng;
-    const primaryPayload = primaryMatch ? {
-      name: primaryMerged.name || name,
-      formattedAddress: primaryMerged.formatted_address || null,
-      phone: primaryMerged.formatted_phone_number || primaryMerged.international_phone_number || null,
-      website: primaryMerged.website || null,
-      rating: primaryMerged.rating ?? null,
-      ratingsCount: primaryMerged.user_ratings_total ?? null,
-      lat: typeof primaryLat === "number" ? primaryLat : null,
-      lng: typeof primaryLng === "number" ? primaryLng : null,
-      placeId: primaryMerged.place_id || null,
-      mapsUrl: primaryMerged.url || null,
-    } : null;
+    type Raw = {
+      place_id?: string;
+      name?: string;
+      formatted_address?: string;
+      rating?: number;
+      user_ratings_total?: number;
+      geometry?: { location?: { lat?: number; lng?: number } };
+      __matched: string;
+    };
 
-    // Filter set to exclude the primary from `related` — match on placeId,
-    // domain, and normalized name so competitors don't include the seed.
-    const excludePlaceIds = new Set<string>();
-    if (primaryPayload?.placeId) excludePlaceIds.add(primaryPayload.placeId);
-    const excludeDomains = new Set<string>();
-    if (normDomain) excludeDomains.add(normDomain);
-    if (primaryPayload?.website) excludeDomains.add(normalizeDomainForMatch(primaryPayload.website));
-    const excludeName = normalizeNameForMatch(primaryPayload?.name || name);
-
-    // ── Step 2: Find nearby similar-service businesses ─────────────────────
-    // Prefer Nearby Search (rank by prominence around primary's coords) when
-    // we have lat/lng; otherwise fall back to a keyword-only Text Search.
-    let related: any[] = [];
-    if (primaryPayload?.lat != null && primaryPayload?.lng != null && searchKeyword) {
-      const nearbyUrl = new URL("https://maps.googleapis.com/maps/api/place/nearbysearch/json");
-      nearbyUrl.searchParams.set("location", `${primaryPayload.lat},${primaryPayload.lng}`);
-      nearbyUrl.searchParams.set("radius", "50000"); // 50 km
-      nearbyUrl.searchParams.set("keyword", searchKeyword);
-      nearbyUrl.searchParams.set("key", apiKey);
-      const nearbyRes = await fetch(nearbyUrl.toString());
-      if (nearbyRes.ok) {
-        const nearbyJson: any = await nearbyRes.json();
-        if (nearbyJson.status === "OK" && Array.isArray(nearbyJson.results)) {
-          related = nearbyJson.results;
-        }
-      }
-    }
-    if (related.length === 0) {
-      // Fallback: keyword-based Text Search using geography as location hint.
-      const fallbackQuery = [searchKeyword || name, geography].filter(Boolean).join(" ").trim();
-      if (fallbackQuery) {
+    const perQuery = await Promise.all(
+      queries.map(async (q): Promise<Raw[]> => {
         const url = new URL("https://maps.googleapis.com/maps/api/place/textsearch/json");
-        url.searchParams.set("query", fallbackQuery);
+        url.searchParams.set("query", q);
         url.searchParams.set("key", apiKey);
-        const r = await fetch(url.toString());
-        if (r.ok) {
+        try {
+          const r = await fetch(url.toString());
+          if (!r.ok) return [];
           const j: any = await r.json();
-          if (j.status === "OK" && Array.isArray(j.results)) related = j.results;
+          if (j.status !== "OK" || !Array.isArray(j.results)) return [];
+          return (j.results as any[])
+            .slice(0, perQueryTake)
+            .map(raw => ({ ...raw, __matched: q } as Raw));
+        } catch {
+          return [];
         }
+      })
+    );
+
+    // ── Step 2: Merge, dedupe by place_id, exclude seller's own business ──
+    const excludeDomains = new Set<string>();
+    const normSellerDomain = normalizeDomainForMatch(domain);
+    if (normSellerDomain) excludeDomains.add(normSellerDomain);
+    const excludeName = normalizeNameForMatch(businessName);
+
+    const byId = new Map<string, Raw>();
+    for (const list of perQuery) {
+      for (const r of list) {
+        if (!r.place_id) continue;
+        const rn = normalizeNameForMatch(r.name);
+        if (excludeName && rn === excludeName) continue;
+        if (!byId.has(r.place_id)) byId.set(r.place_id, r);
       }
     }
 
-    // ── Step 3: Filter out the primary + enrich the top candidates ────────
-    const filtered = related.filter(r => {
-      if (r.place_id && excludePlaceIds.has(r.place_id)) return false;
-      const rn = normalizeNameForMatch(r.name);
-      if (rn && rn === excludeName) return false;
-      return true;
-    });
-
-    // Cheap initial ranking so we only pull Place Details for the best ones
-    // (Details is a paid, per-call endpoint — cap the fan-out).
-    const initialRanked = filtered
+    // ── Step 3: Cheap rank, cap fan-out, enrich winners via Place Details ─
+    const initialRanked = Array.from(byId.values())
       .map(r => ({
         raw: r,
         rating: typeof r.rating === "number" ? r.rating : 0,
         ratings: typeof r.user_ratings_total === "number" ? r.user_ratings_total : 0,
       }))
       .sort((a, b) => (b.rating * Math.log2(1 + b.ratings)) - (a.rating * Math.log2(1 + a.ratings)))
-      .slice(0, relatedCount);
+      .slice(0, desiredCount);
 
     const enriched = await Promise.all(
       initialRanked.map(async ({ raw }) => {
         const det = raw.place_id ? await fetchPlaceDetails(raw.place_id, apiKey) : null;
-        const m = { ...raw, ...(det || {}) };
+        const m: any = { ...raw, ...(det || {}) };
         const rw = normalizeDomainForMatch(m.website);
-        if (rw && excludeDomains.has(rw)) return null; // domain match with primary — drop
+        if (rw && excludeDomains.has(rw)) return null; // seller's own site — drop
         const lat = m?.geometry?.location?.lat;
         const lng = m?.geometry?.location?.lng;
-        const distanceMeters =
-          primaryPayload?.lat != null && primaryPayload?.lng != null && typeof lat === "number" && typeof lng === "number"
-            ? haversineMeters({lat: primaryPayload.lat, lng: primaryPayload.lng}, {lat, lng})
-            : null;
+        const formattedAddress = m.formatted_address || raw.formatted_address || null;
         return {
           name: m.name || raw.name || "Unnamed business",
-          formattedAddress: m.formatted_address || raw.formatted_address || raw.vicinity || null,
+          formattedAddress,
           phone: m.formatted_phone_number || m.international_phone_number || null,
           website: m.website || null,
           rating: m.rating ?? raw.rating ?? null,
@@ -4273,30 +4469,26 @@ app.post("/api/maps/places", async (req, res) => {
           lng: typeof lng === "number" ? lng : null,
           placeId: m.place_id || raw.place_id || null,
           mapsUrl: m.url || null,
-          distanceMeters,
-          distanceLabel: formatDistance(distanceMeters),
+          matchedKeyword: raw.__matched || null,
+          country: extractCountryFromAddress(formattedAddress),
         };
       })
     );
 
-    // Final ranking: rating × log2(1 + reviews) − distance penalty.
-    const finalRelated = enriched
+    const matches = enriched
       .filter((x): x is NonNullable<typeof x> => x != null)
       .map(x => {
         const rating = x.rating ?? 0;
         const reviews = x.ratingsCount ?? 0;
-        const distKm = x.distanceMeters ? x.distanceMeters / 1000 : 0;
-        const distancePenalty = distKm * 0.05; // 0.05 per km — modest weight
-        const score = rating * Math.log2(1 + reviews) - distancePenalty;
-        return { ...x, __score: score };
+        return { ...x, __score: rating * Math.log2(1 + reviews) };
       })
       .sort((a, b) => b.__score - a.__score)
       .map(({ __score, ...rest }) => rest);
 
     const payload = {
-      primary: primaryPayload,
-      related: finalRelated,
-      keyword: searchKeyword || null,
+      matches,
+      keywords: queries,
+      geography,
       cached: false,
     };
     mapsCache.set(cacheKey, { at: now, payload });

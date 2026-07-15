@@ -44,6 +44,16 @@ export default function App() {
       return null;
     }
   });
+  // Persisted so the Industry Discovery panel can derive the seller's
+  // country (from the URL TLD) and their own domain (to filter self-matches
+  // out of Google Maps results). Rehydrates on reload just like `analysis`.
+  const [analyzedUrl, setAnalyzedUrl] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('gtm_analyzed_url') || null;
+    } catch {
+      return null;
+    }
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [activeLandingTab, setActiveLandingTab] = useState<'analyze' | 'saved-library'>('analyze');
@@ -59,6 +69,18 @@ export default function App() {
       console.log(e);
     }
   }, [analysis]);
+
+  useEffect(() => {
+    try {
+      if (analyzedUrl) {
+        localStorage.setItem('gtm_analyzed_url', analyzedUrl);
+      } else {
+        localStorage.removeItem('gtm_analyzed_url');
+      }
+    } catch (e) {
+      console.log(e);
+    }
+  }, [analyzedUrl]);
 
   useEffect(() => {
     try {
@@ -181,6 +203,7 @@ export default function App() {
     // covering the gap between "business analyzed" and "accounts populated".
     setAccounts([]);
     setActiveReportId(null);
+    setAnalyzedUrl(url);
     setIsDiscovering(true);
     try {
       const response = await fetch('/api/analyze-business', {
@@ -440,6 +463,7 @@ export default function App() {
       ) : (
         <Dashboard
           analysis={analysis}
+          analyzedUrl={analyzedUrl}
           accounts={accounts}
           isDiscovering={isDiscovering}
           activeReportId={activeReportId}
@@ -470,6 +494,7 @@ export default function App() {
           onBack={() => {
             setAnalysis(null);
             setActiveReportId(null);
+            setAnalyzedUrl(null);
             toast.info("Returned to seller website input screen");
           }}
         />

@@ -5,13 +5,14 @@ import { AccountCard, getAccountPriorityInfo } from './AccountCard';
 import { AccountDetail } from './AccountDetail';
 import { VoiceCallModal } from './VoiceCallModal';
 import { MapsPanel } from './MapsPanel';
-import type { VoiceCallState } from '../types';
+import type { VoiceCallState, ScheduledCall } from '../types';
 import {
   BarChart3, Users, Zap, Briefcase,
   Search, Filter, Plus, FileUp, Download, Play, LayoutGrid, List,
   LayoutDashboard, ListTodo, Radar, Network,
   ChevronDown, ChevronRight, Bell, Database, RefreshCw, CheckCircle2, CloudLightning, ArrowRight, ArrowLeft,
-  Clock, TrendingUp, AlertTriangle, Lightbulb, Compass, Sparkles, FolderOpen, Sliders, Pencil, Trash2, X, BookOpen, MapPin
+  Clock, TrendingUp, AlertTriangle, Lightbulb, Compass, Sparkles, FolderOpen, Sliders, Pencil, Trash2, X, BookOpen, MapPin,
+  CalendarClock, Phone
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -123,6 +124,10 @@ const COUNTRIES: string[] = [
 
 interface DashboardProps {
   analysis: BusinessAnalysis;
+  // Original URL the user submitted for analysis. Passed through to the
+  // Industry Discovery panel so it can derive the seller's country (from the
+  // TLD) and filter the seller's own domain out of Google Maps results.
+  analyzedUrl?: string | null;
   accounts: TargetAccount[];
   isDiscovering: boolean;
   activeReportId?: string | null;
@@ -151,9 +156,10 @@ export function getDefaultReportName(analysis: BusinessAnalysis | null | undefin
 }
 
 export function Dashboard({
-  analysis, 
-  accounts, 
-  isDiscovering, 
+  analysis,
+  analyzedUrl,
+  accounts,
+  isDiscovering,
   activeReportId,
   savedReports = [],
   onAnalyzeAccount,
@@ -177,46 +183,180 @@ export function Dashboard({
 
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [voiceCallAccountId, setVoiceCallAccountId] = useState<string | null>(null);
+  // When the AI Call Scheduler poller fires a due call, it stashes the
+  // triggering schedule here so the VoiceCallModal mounts with autoStart=true
+  // AND the same script/contact captured at schedule time. Cleared when the
+  // user closes the modal.
+  const [autoStartSchedule, setAutoStartSchedule] = useState<ScheduledCall | null>(null);
 
-  // Maps side-panel state:
-  //   mapAccountId — which account's Places data is currently displayed.
+  // Pending/triggered AI call schedules. Persisted so schedules survive tab
+  // reloads. The poller below advances 'pending' → 'triggered' when a call is
+  // launched, and keeps a bounded history so users can see what happened.
+  const [scheduledCalls, setScheduledCalls] = useState<ScheduledCall[]>(() => {
+    try {
+      const raw = localStorage.getItem('gtm_scheduled_calls');
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? (parsed as ScheduledCall[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('gtm_scheduled_calls', JSON.stringify(scheduledCalls));
+    } catch {
+      // ignore quota / private-mode issues
+    }
+  }, [scheduledCalls]);
+
+  const scheduleCall = (schedule: Omit<ScheduledCall, 'id' | 'status' | 'createdAt'>) => {
+    setScheduledCalls(prev => {
+      // Only one pending schedule per account — a new one supersedes the old.
+      // Older pending schedules for the same account are marked 'cancelled'
+      // so the audit trail shows they were replaced, not silently dropped.
+      const cancelled = prev.map(s =>
+        s.accountId === schedule.accountId && s.status === 'pending'
+          ? { ...s, status: 'cancelled' as const, cancelledAt: new Date().toISOString() }
+          : s
+      );
+      const next: ScheduledCall = {
+        ...schedule,
+        id: `sched-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      };
+      return [...cancelled, next];
+    });
+  };
+
+  const cancelScheduledCall = (scheduleId: string) => {
+    setScheduledCalls(prev => prev.map(s =>
+      s.id === scheduleId && s.status === 'pending'
+        ? { ...s, status: 'cancelled', cancelledAt: new Date().toISOString() }
+        : s
+    ));
+    toast.success('Scheduled AI call cancelled.');
+  };
+
+  // Poller: every 15s, scan for pending schedules whose UTC instant has been
+  // reached. When one fires, mark it 'triggered' and open the modal with
+  // autoStart=true so the AI initiates the conversation without user input.
+  // We only fire one at a time — if multiple came due (e.g. after a long
+  // sleep) we handle the earliest and let the next tick handle the rest.
+  useEffect(() => {
+    const tick = () => {
+      // Bail if a call is already open — don't stack modals on top of a live
+      // call. The current call will end, the user will close, and the next
+      // poll will pick up any still-pending schedule.
+      if (voiceCallAccountId) return;
+      const now = Date.now();
+      const due = scheduledCalls
+        .filter(s => s.status === 'pending' && new Date(s.scheduledFor).getTime() <= now)
+        .sort((a, b) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime());
+      if (due.length === 0) return;
+      const fire = due[0];
+      // Confirm the referenced account still exists — the pipeline may have
+      // been cleared. If it's gone, mark the schedule failed so it doesn't
+      // keep firing every tick forever.
+      const acc = accounts.find(a => a.id === fire.accountId);
+      if (!acc) {
+        setScheduledCalls(prev => prev.map(s =>
+          s.id === fire.id
+            ? { ...s, status: 'failed', failureReason: 'Account no longer in pipeline.', triggeredAt: new Date().toISOString() }
+            : s
+        ));
+        return;
+      }
+      setScheduledCalls(prev => prev.map(s =>
+        s.id === fire.id ? { ...s, status: 'triggered', triggeredAt: new Date().toISOString() } : s
+      ));
+      // Phone-mode: dial via Vapi through the server, no modal needed. The
+      // browser doesn't have to be focused (though the tab does have to be
+      // alive for setInterval to keep firing).
+      if (fire.mode === 'phone' && fire.phoneNumber) {
+        (async () => {
+          try {
+            const res = await fetch('/api/voice-call/start', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                accountId: acc.id,
+                accountName: acc.name,
+                contactName: fire.contactName,
+                phoneNumber: fire.phoneNumber,
+                script: fire.script,
+                fitReason: acc.fitReason,
+                signals: acc.signals,
+                industry: acc.industry,
+                sellerName: analysis?.businessName,
+                sellerValueProp: analysis?.valueProp,
+              }),
+            });
+            const body = await res.json();
+            if (!res.ok) throw new Error(body?.error || `Dial failed (HTTP ${res.status})`);
+            setScheduledCalls(prev => prev.map(s =>
+              s.id === fire.id ? { ...s, vapiCallId: body.callId } : s
+            ));
+            toast.success(`Ringing ${fire.phoneNumber} — ${fire.accountName}`);
+          } catch (err: any) {
+            setScheduledCalls(prev => prev.map(s =>
+              s.id === fire.id ? { ...s, status: 'failed', failureReason: err?.message || 'Dial failed' } : s
+            ));
+            toast.error(`Scheduled dial failed for ${fire.accountName}: ${err?.message || 'unknown error'}`);
+          }
+        })();
+        return;
+      }
+      // Browser-mode: pop the WebRTC modal in autoStart mode.
+      setAutoStartSchedule(fire);
+      setVoiceCallAccountId(fire.accountId);
+      toast.info(`Scheduled AI call launching now — ${fire.accountName}`);
+    };
+    tick(); // fire on mount too so a just-passed schedule doesn't wait 15s
+    const int = setInterval(tick, 15_000);
+    return () => clearInterval(int);
+  }, [scheduledCalls, voiceCallAccountId, accounts]);
+
+  const pendingSchedules = scheduledCalls.filter(s => s.status === 'pending');
+  const existingScheduleForVoiceCall = voiceCallAccountId
+    ? pendingSchedules.find(s => s.accountId === voiceCallAccountId) || null
+    : null;
+  const [isSchedulesOpen, setIsSchedulesOpen] = useState(false);
+  // Driver for the "+ New Scheduled Call" account picker inside the schedules
+  // dialog. Reset to '' each time the dialog closes so it doesn't preserve a
+  // stale selection across opens.
+  const [newScheduleAccountId, setNewScheduleAccountId] = useState<string>('');
+  useEffect(() => {
+    if (!isSchedulesOpen) setNewScheduleAccountId('');
+  }, [isSchedulesOpen]);
+
+  // Industry Discovery side-panel state:
   //   isMapsPanelOpen — whether the panel is visible.
-  //   mapsSearchGeneration — bumped whenever the discovery/account list changes
-  //     so MapsPanel invalidates any in-flight fetches and re-queries.
-  const [mapAccountId, setMapAccountId] = useState<string | null>(null);
+  //   mapsSearchGeneration — bumped whenever the analyzed services/industries
+  //     change so MapsPanel invalidates any in-flight fetches and re-queries.
   const [isMapsPanelOpen, setIsMapsPanelOpen] = useState(false);
   const [mapsSearchGeneration, setMapsSearchGeneration] = useState(0);
 
-  // Track whether the CURRENT mapAccountId still exists in the accounts list
-  // AND whether the discovery generation (represented by the concatenation of
-  // account ids) has changed. When discovery reruns and the ids shift, we
-  // bump mapsSearchGeneration and auto-select the first account so the panel
-  // is never blank after a fresh search.
-  const accountsSignature = React.useMemo(
-    () => accounts.map(a => a.id).join('|'),
-    [accounts]
+  // Re-run the discovery search whenever the seller's analyzed services or
+  // target industries change (e.g. Edit Blueprint updated the ICP). The
+  // panel itself is driven by `analysis`, not by the account list, so we
+  // key generation on the analysis signature rather than account ids.
+  const analysisSignature = React.useMemo(
+    () =>
+      [
+        analysis?.businessName || '',
+        (analysis?.services || []).slice(0, 6).join('|'),
+        (analysis?.targetIndustries || []).slice(0, 6).join('|'),
+      ].join('~'),
+    [analysis?.businessName, analysis?.services, analysis?.targetIndustries]
   );
-  const prevSignatureRef = React.useRef<string>('');
+  const prevAnalysisSigRef = React.useRef<string>('');
   React.useEffect(() => {
-    if (accountsSignature === prevSignatureRef.current) return;
-    prevSignatureRef.current = accountsSignature;
+    if (analysisSignature === prevAnalysisSigRef.current) return;
+    prevAnalysisSigRef.current = analysisSignature;
     setMapsSearchGeneration(g => g + 1);
-    // If the currently-shown map account was removed OR no account is
-    // selected yet, fall back to the first account so the panel stays alive.
-    const stillExists = mapAccountId && accounts.some(a => a.id === mapAccountId);
-    if (!stillExists && accounts.length > 0) {
-      setMapAccountId(accounts[0].id);
-    }
-  }, [accountsSignature, accounts, mapAccountId]);
-
-  // Keep the Maps panel synchronized with whichever account the user opens
-  // in AccountDetail. This way clicking through cards while the panel is open
-  // updates the map in real time, with no manual "refresh" step.
-  React.useEffect(() => {
-    if (selectedAccountId && isMapsPanelOpen) {
-      setMapAccountId(selectedAccountId);
-    }
-  }, [selectedAccountId, isMapsPanelOpen]);
+  }, [analysisSignature]);
   const [uploadedFile, setUploadedFile] = useState<{ name: string; content?: string } | null>(null);
   const [activeTab, setActiveTab] = useState<'recommendations' | 'pipeline' | 'clusters' | 'partner-pathways'>('recommendations');
   const [channelPartners, setChannelPartners] = useState<SellerChannelPartner[]>(() => {
@@ -1514,28 +1654,20 @@ export function Dashboard({
                   <span>Show Reports</span>
                 </Button>
               )}
-              {accounts.length > 0 && (
+              {analysis && (
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => {
-                    setIsMapsPanelOpen(open => !open);
-                    // If opening for the first time and no map account is picked,
-                    // default to the first discovered account so the panel is
-                    // never blank on toggle.
-                    if (!mapAccountId && accounts.length > 0) {
-                      setMapAccountId(accounts[0].id);
-                    }
-                  }}
+                  onClick={() => setIsMapsPanelOpen(open => !open)}
                   className={`h-8 text-[13px] font-bold gap-1 px-3 rounded-lg border cursor-pointer shrink-0 transition-all ${
                     isMapsPanelOpen
                       ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-200 hover:bg-emerald-500/20'
                       : 'border-white/[0.08] hover:bg-white/[0.06] text-zinc-300 hover:text-zinc-100 bg-transparent'
                   }`}
-                  title="Find similar businesses near the selected account"
+                  title="Discover companies on Google Maps matching this industry & services"
                 >
                   <MapPin className={`w-3.5 h-3.5 ${isMapsPanelOpen ? 'text-emerald-300' : 'text-zinc-400'}`} />
-                  <span>Related Companies</span>
+                  <span>Industry Discovery</span>
                 </Button>
               )}
               {onUpdateReport && (
@@ -1548,6 +1680,27 @@ export function Dashboard({
                 >
                   <Sliders className="w-3.5 h-3.5 text-zinc-400" />
                   <span>Edit Blueprint</span>
+                </Button>
+              )}
+
+              {accounts.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsSchedulesOpen(true)}
+                  className={`h-8 text-[13px] font-bold gap-1 px-3 rounded-lg cursor-pointer shrink-0 ${
+                    pendingSchedules.length > 0
+                      ? 'border-orange-500/40 bg-orange-500/10 hover:bg-orange-500/20 text-orange-200 hover:text-orange-100'
+                      : 'border-white/[0.08] hover:bg-white/[0.06] text-zinc-300 hover:text-zinc-100 bg-transparent'
+                  }`}
+                  title={pendingSchedules.length > 0 ? 'View, cancel, or add scheduled AI calls' : 'Schedule an AI call to any account'}
+                >
+                  <CalendarClock className={`w-3.5 h-3.5 ${pendingSchedules.length > 0 ? 'text-orange-300' : 'text-zinc-400'}`} />
+                  <span>
+                    {pendingSchedules.length > 0
+                      ? `Scheduled AI Calls · ${pendingSchedules.length}`
+                      : 'Schedule AI Call'}
+                  </span>
                 </Button>
               )}
 
@@ -3916,52 +4069,165 @@ export function Dashboard({
         )}
       </AnimatePresence>
 
-      {/* Related-companies side panel — locates the selected account on Google
-          Maps, then finds nearby businesses offering the same service so the
-          user can prospect adjacent leads. */}
-      {(() => {
-        const mapAcc = mapAccountId ? evaluatedAccounts.find(a => a.id === mapAccountId) || null : null;
-        // Build the service keyword from the most specific source available:
-        //   1. account.industry (if the AI populated it per-account)
-        //   2. seller's ICP target industry (from the initial analysis)
-        //   3. first 6 words of account description as a last-ditch heuristic
-        const derivedKeyword =
-          mapAcc?.industry?.trim()
-          || analysis?.targetIndustries?.[0]?.trim()
-          || (mapAcc?.description || '').split(/\s+/).slice(0, 6).join(' ')
-          || '';
+      {/* Industry Discovery side panel — runs Google Maps searches using the
+          services + target industries extracted from the seller's analyzed
+          website, surfacing companies that match the same industry & service
+          mix (not a per-account "nearby" search). */}
+      <MapsPanel
+        analysis={analysis}
+        analyzedUrl={analyzedUrl || undefined}
+        open={isMapsPanelOpen}
+        onClose={() => setIsMapsPanelOpen(false)}
+        searchGeneration={mapsSearchGeneration}
+        onAddToPipeline={(payload) => {
+          if (!onAddAccount) return;
+          // Insert the Maps-discovered business as a fresh TargetAccount
+          // with sensible starting scores; user can run analyze-account
+          // later to enrich it fully with AI intelligence.
+          const newAcc: TargetAccount = {
+            id: `maps-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+            name: payload.name,
+            domain: payload.domain || '',
+            description: payload.address ? `Discovered via Google Maps · ${payload.address}` : 'Discovered via Google Maps',
+            fitReason: `Matches ${analysis?.targetIndustries?.[0] || 'your'} industry & service profile on Google Maps`,
+            signals: payload.address ? [`Located at ${payload.address}`] : [],
+            fitScore: 60,
+            timingScore: 50,
+            priorityIndex: 55,
+            priorityFlag: 'Standard Follow-up',
+            outreachAngle: 'Introductory outreach — enrich with a fresh analyze-account run.',
+            status: 'new',
+          };
+          onAddAccount(newAcc);
+        }}
+      />
 
-        return (
-          <MapsPanel
-            account={mapAcc}
-            open={isMapsPanelOpen}
-            onClose={() => setIsMapsPanelOpen(false)}
-            searchGeneration={mapsSearchGeneration}
-            keyword={derivedKeyword}
-            onAddToPipeline={(payload) => {
-              if (!onAddAccount) return;
-              // Insert the Maps-discovered business as a fresh TargetAccount
-              // with sensible starting scores; user can run analyze-account
-              // later to enrich it fully with AI intelligence.
-              const newAcc: TargetAccount = {
-                id: `maps-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
-                name: payload.name,
-                domain: payload.domain || '',
-                description: payload.address ? `Discovered via Google Maps · ${payload.address}` : 'Discovered via Google Maps',
-                fitReason: mapAcc ? `Similar service provider near ${mapAcc.name}` : 'Discovered via Google Maps side panel',
-                signals: payload.address ? [`Located at ${payload.address}`] : [],
-                fitScore: 60,
-                timingScore: 50,
-                priorityIndex: 55,
-                priorityFlag: 'Standard Follow-up',
-                outreachAngle: 'Introductory outreach — enrich with a fresh analyze-account run.',
-                status: 'new',
-              };
-              onAddAccount(newAcc);
-            }}
-          />
-        );
-      })()}
+
+      {/* Scheduled AI Calls — pending queue management + global scheduler */}
+      <Dialog open={isSchedulesOpen} onOpenChange={setIsSchedulesOpen}>
+        <DialogContent className="sm:max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-6 rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarClock className="w-4 h-4 text-orange-500" />
+              Scheduled AI Calls
+            </DialogTitle>
+            <DialogDescription>
+              The AI will launch each conversation at the scheduled time using the selected script. Keep this tab open so the browser can capture your mic and audio.
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Global scheduler entry point — pick any account from the pipeline
+              and jump straight into that account's call scheduler modal. This
+              is the "same scheduling flow, but for all accounts" surface so
+              users don't have to hunt for a specific account card first. */}
+          {accounts.length > 0 && (
+            <div className="p-3 rounded-xl border border-orange-200 dark:border-orange-900/40 bg-orange-50/50 dark:bg-orange-950/15 space-y-2">
+              <div className="flex items-center gap-1.5 text-[10.5px] font-bold tracking-wide uppercase text-orange-700 dark:text-orange-300">
+                <CalendarClock className="w-3.5 h-3.5" />
+                New Scheduled Call
+              </div>
+              <div className="flex gap-2">
+                <select
+                  value={newScheduleAccountId}
+                  onChange={(e) => setNewScheduleAccountId(e.target.value)}
+                  className="flex-1 min-w-0 h-9 px-2 text-[13px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400"
+                >
+                  <option value="">— Pick an account —</option>
+                  {accounts
+                    .slice()
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((a) => {
+                      const hasSchedule = pendingSchedules.some((s) => s.accountId === a.id);
+                      return (
+                        <option key={a.id} value={a.id}>
+                          {a.name}{a.domain ? ` · ${a.domain}` : ''}{hasSchedule ? ' · already scheduled' : ''}
+                        </option>
+                      );
+                    })}
+                </select>
+                <Button
+                  size="sm"
+                  disabled={!newScheduleAccountId}
+                  onClick={() => {
+                    if (!newScheduleAccountId) return;
+                    setIsSchedulesOpen(false);
+                    setVoiceCallAccountId(newScheduleAccountId);
+                    setNewScheduleAccountId('');
+                  }}
+                  className="h-9 px-3 gap-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white font-semibold shadow-[0_1px_3px_rgba(245,130,32,0.35)] border-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Open the scheduler for this account"
+                >
+                  <Phone className="w-3.5 h-3.5" /> Open
+                </Button>
+              </div>
+              <p className="text-[10.5px] text-zinc-500 dark:text-zinc-400 leading-snug">
+                Picks a contact from that account's personas / stakeholder map in the next step.
+              </p>
+            </div>
+          )}
+
+          {pendingSchedules.length === 0 ? (
+            <p className="py-4 text-center text-sm text-slate-500 dark:text-slate-400">
+              No AI calls are queued yet.
+            </p>
+          ) : (
+            <div className="space-y-2 max-h-[420px] overflow-y-auto">
+              {pendingSchedules
+                .slice()
+                .sort((a, b) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime())
+                .map(s => (
+                  <div
+                    key={s.id}
+                    className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-3 flex items-start justify-between gap-3"
+                  >
+                    <div className="min-w-0 space-y-0.5">
+                      <div className="text-[13px] font-semibold text-slate-900 dark:text-slate-100 truncate">
+                        {s.accountName}
+                      </div>
+                      <div className="text-[11.5px] text-slate-600 dark:text-slate-300 flex items-center gap-1">
+                        <CalendarClock className="w-3 h-3 text-orange-500" /> {s.wallClockLabel}
+                      </div>
+                      <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                        {s.script.replace('_', ' ')} · {s.contactName === 'there' ? 'no contact name' : s.contactName}
+                      </div>
+                      <div className="mt-1">
+                        {s.mode === 'phone' && s.phoneNumber ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-1.5 py-0.5 rounded">
+                            <Phone className="w-2.5 h-2.5" /> Vapi dial · {s.phoneNumber}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-mono text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-1.5 py-0.5 rounded">
+                            <CalendarClock className="w-2.5 h-2.5" /> Browser mic
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsSchedulesOpen(false);
+                          setVoiceCallAccountId(s.accountId);
+                        }}
+                        className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-900/50 rounded-md px-2 py-1 cursor-pointer inline-flex items-center gap-1"
+                        title="Open the account's call modal now"
+                      >
+                        <Phone className="w-3 h-3" /> Open
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => cancelScheduledCall(s.id)}
+                        className="text-[11px] font-semibold text-rose-600 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-950/60 border border-rose-200 dark:border-rose-900/50 rounded-md px-2 py-1 cursor-pointer inline-flex items-center gap-1"
+                      >
+                        <Trash2 className="w-3 h-3" /> Cancel
+                      </button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* AI Voice Call modal */}
       <AnimatePresence>
@@ -3972,12 +4238,22 @@ export function Dashboard({
             <VoiceCallModal
               account={acc}
               sellerContext={analysis}
-              onClose={() => setVoiceCallAccountId(null)}
+              onClose={() => {
+                setVoiceCallAccountId(null);
+                setAutoStartSchedule(null);
+              }}
               onCallCompleted={(accountId, call: VoiceCallState) => {
                 if (onUpdateAccount) {
                   onUpdateAccount({ ...acc, voiceCall: call });
                 }
               }}
+              onSchedule={scheduleCall}
+              existingSchedule={existingScheduleForVoiceCall}
+              onCancelSchedule={cancelScheduledCall}
+              autoStart={!!autoStartSchedule && autoStartSchedule.accountId === voiceCallAccountId}
+              initialScript={autoStartSchedule?.script}
+              initialContactName={autoStartSchedule?.contactName}
+              pipelineAccounts={evaluatedAccounts}
             />
           );
         })()}

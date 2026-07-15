@@ -4,6 +4,11 @@ export interface BusinessAnalysis {
   services: string[];
   valueProp: string;
   targetIndustries: string[];
+  // Primary country the business operates from (full English name recognized
+  // by Google Maps, e.g. "United States", "India"). AI-inferred during
+  // analyze-business. Used by the Industry Discovery panel to scope Google
+  // Maps searches to the seller's country.
+  country?: string;
   icp: {
     title: string;
     description: string;
@@ -167,6 +172,34 @@ export interface VoiceCallTranscriptLine {
   speaker: 'ai' | 'human';
   text: string;
   timestamp: string;
+}
+
+// Schedule for an AI call that should auto-initiate at a future time.
+// Persisted in localStorage; a Dashboard-level poller launches the modal in
+// auto-start mode when `scheduledFor` (a UTC ISO instant) is reached and the
+// status is still 'pending'. The browser must be open at that time — this is
+// a client-side scheduler, not a server cron.
+export interface ScheduledCall {
+  id: string;
+  accountId: string;
+  accountName: string;
+  contactName: string;   // 'there' when the user left it blank
+  script: VoiceCallScript;
+  scheduledFor: string;  // absolute UTC ISO — already timezone-resolved
+  timezone: string;      // IANA name captured at schedule time (audit/display)
+  wallClockLabel: string;// human-readable "Jul 14, 2026 · 3:30 PM IST" for UI
+  status: 'pending' | 'triggered' | 'cancelled' | 'failed';
+  createdAt: string;     // ISO
+  triggeredAt?: string;
+  cancelledAt?: string;
+  failureReason?: string;
+  // How the AI should reach the contact at the scheduled time.
+  //   'browser' — open the WebRTC modal in this tab (requires tab open + mic)
+  //   'phone'   — Vapi dials `phoneNumber` in the background; no tab needed
+  // Default 'browser' preserves the pre-Vapi behavior for older persisted rows.
+  mode?: 'browser' | 'phone';
+  phoneNumber?: string;  // E.164 (required when mode === 'phone')
+  vapiCallId?: string;   // set after a successful phone-mode dial
 }
 
 export interface VoiceCallState {
