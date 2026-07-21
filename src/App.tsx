@@ -7,10 +7,11 @@ import React, { useState, useEffect } from 'react';
 import { BusinessInput } from './components/BusinessInput';
 import { Dashboard, getDefaultReportName } from './components/Dashboard';
 import { SavedReportsLibrary } from './components/SavedReportsLibrary';
+import { LandingPage } from './components/LandingPage';
 import { BusinessAnalysis, TargetAccount, DetailedAnalysis } from './types';
 import { Toaster, toast } from 'sonner';
-import { Rocket, Globe, FileText } from 'lucide-react';
-import { ThemeToggle } from './components/ThemeToggle';
+import { Rocket, Globe, FileText, House } from 'lucide-react';
+import { ThemeToggle, applyTheme } from './components/ThemeToggle';
 
 export default function App() {
   const [analysis, setAnalysis] = useState<BusinessAnalysis | null>(() => {
@@ -57,6 +58,17 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [activeLandingTab, setActiveLandingTab] = useState<'analyze' | 'saved-library'>('analyze');
+  // Always show the landing page on every fresh page load.
+  const [showLanding, setShowLanding] = useState<boolean>(true);
+
+  // Auto-switch theme: dark for landing/analyze screens, light for dashboard.
+  useEffect(() => {
+    const isDashboard = !!analysis && !showLanding && activeLandingTab !== 'saved-library';
+    applyTheme(isDashboard ? 'light' : 'dark');
+  }, [analysis, showLanding, activeLandingTab]);
+  const dismissLanding = () => {
+    setShowLanding(false);
+  };
 
   useEffect(() => {
     try {
@@ -384,25 +396,56 @@ export default function App() {
   return (
     <div className="min-h-screen text-zinc-900 dark:text-zinc-100 bg-stone-50 dark:bg-[#1F1F20] font-sans selection:bg-orange-100 selection:text-orange-900 dark:selection:bg-orange-900/30 dark:selection:text-orange-100 flex flex-col justify-start">
       <Toaster position="top-center" expand={true} richColors />
-      
+
+      {/* Marketing landing — shown first for new visitors. Fully self-hosted
+          header (its own nav + theme toggle), so the shared analyze-screen
+          header below is intentionally suppressed while it's visible. */}
+      {showLanding && !analysis && activeLandingTab !== 'saved-library' ? (
+        <LandingPage
+          onEnter={dismissLanding}
+          onOpenLibrary={() => {
+            dismissLanding();
+            setActiveLandingTab('saved-library');
+          }}
+          hasSavedReports={savedReports.length > 0}
+        />
+      ) : (
+        <>
+
       {/* Dynamic Navigation Header for Workspace Landing Screen */}
       {!analysis && (
         <header className="w-full bg-stone-50/90 dark:bg-[#1F1F20]/90 backdrop-blur-md border-b border-stone-200/60 dark:border-white/[0.06] sticky top-0 z-40 transition-all">
-          <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="max-w-6xl mx-auto px-6 h-24 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-400 via-orange-500 to-orange-600 flex items-center justify-center shadow-[0_1px_3px_rgba(245,130,32,0.45)]">
-                <Rocket className="w-3.5 h-3.5 text-white" />
-              </div>
-              <span
-                className="font-bold text-sm md:text-base tracking-tight text-zinc-900 dark:text-zinc-100 hover:opacity-80 cursor-pointer select-none"
-                style={{ letterSpacing: '-0.02em' }}
+              <img
+                src="/vee-technologies-logo.png"
+                alt="Vee Technologies"
+                className="w-12 h-12 object-contain select-none"
+              />
+              <div
+                className="flex flex-col leading-none hover:opacity-80 cursor-pointer select-none"
                 onClick={() => setActiveLandingTab('analyze')}
               >
-                AI Market Pulse
-              </span>
+                <span
+                  className="font-normal text-[18px] tracking-tight text-zinc-900 dark:text-zinc-100"
+                  style={{ letterSpacing: '-0.02em' }}
+                >
+                  <span className="text-white">AI</span> Market Pulse
+                </span>
+                <span className="mt-0.5 text-[8.5px] font-mono uppercase tracking-[0.14em] text-orange-600 dark:text-orange-400">
+                  by Vee Technologies
+                </span>
+              </div>
             </div>
 
             <div className="flex items-center gap-3">
+              <button
+                onClick={() => setShowLanding(true)}
+                className="inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg text-zinc-500 dark:text-zinc-400 hover:text-orange-600 dark:hover:text-orange-400 hover:bg-stone-100 dark:hover:bg-white/[0.05] cursor-pointer transition-all"
+              >
+                <House className="w-3.5 h-3.5" />
+                Home
+              </button>
               <div className="flex items-center gap-1 bg-stone-100 dark:bg-white/[0.05] p-1 rounded-xl border border-stone-200/60 dark:border-white/[0.07]">
                 <button
                   onClick={() => setActiveLandingTab('analyze')}
@@ -498,6 +541,8 @@ export default function App() {
             toast.info("Returned to seller website input screen");
           }}
         />
+      )}
+        </>
       )}
     </div>
   );

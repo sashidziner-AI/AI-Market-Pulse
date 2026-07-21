@@ -105,7 +105,7 @@ export function VoiceCallModal({
     accountId: string;        // origin account (used for optgroup label)
     accountName: string;
     isOwnAccount: boolean;    // belongs to the currently-selected account
-    source: 'crm' | 'persona' | 'stakeholder';
+    source: 'crm' | 'persona' | 'stakeholder' | 'account';
   };
   const contactOptions = useMemo<ContactOption[]>(() => {
     const opts: ContactOption[] = [];
@@ -123,6 +123,7 @@ export function VoiceCallModal({
 
     for (const a of walk) {
       const isOwn = a.id === account.id;
+      let addedForThisAccount = 0;
       const crm = a.crmRecord;
       if (crm && (crm.name || crm.mobile)) {
         opts.push({
@@ -135,6 +136,7 @@ export function VoiceCallModal({
           isOwnAccount: isOwn,
           source: 'crm',
         });
+        addedForThisAccount++;
       }
       (a.analysis?.buyerPersonas || []).forEach((p, i) => {
         if (!p?.role) return;
@@ -147,6 +149,7 @@ export function VoiceCallModal({
           isOwnAccount: isOwn,
           source: 'persona',
         });
+        addedForThisAccount++;
       });
       const map = a.analysis?.multiThreadingStrategy;
       if (map) {
@@ -167,6 +170,25 @@ export function VoiceCallModal({
             isOwnAccount: isOwn,
             source: 'stakeholder',
           });
+          addedForThisAccount++;
+        });
+      }
+      // Fallback: even if this account has no personas / stakeholders / CRM
+      // yet, expose a generic "greet as someone at <account>" option so the
+      // dropdown is never empty for a pipeline that has at least one account.
+      // This is the option surfaced when the user hasn't run analyze-account
+      // yet — it keeps the picker visible and self-explanatory.
+      if (addedForThisAccount === 0) {
+        opts.push({
+          id: `${a.id}:account`,
+          name: `Contact at ${a.name}`,
+          subtitle: a.domain
+            ? `Generic greeting · ${a.domain}`
+            : 'Generic greeting · analyze the account to unlock personas',
+          accountId: a.id,
+          accountName: a.name,
+          isOwnAccount: isOwn,
+          source: 'account',
         });
       }
     }
@@ -832,7 +854,10 @@ export function VoiceCallModal({
                             g.items.push(c);
                           }
                           const roleLabel = (s: ContactOption['source']) =>
-                            s === 'crm' ? 'CRM' : s === 'persona' ? 'Persona' : 'Stakeholder';
+                            s === 'crm' ? 'CRM'
+                              : s === 'persona' ? 'Persona'
+                              : s === 'stakeholder' ? 'Stakeholder'
+                              : 'Account';
                           return order.map(id => {
                             const g = byAccount.get(id)!;
                             const label = g.isOwn
@@ -895,9 +920,9 @@ export function VoiceCallModal({
                         />
                       </div>
                     )}
-                    {contactOptions.length === 0 && (
+                    {contactOptions.every(c => c.source === 'account') && contactOptions.length > 0 && (
                       <p className="text-[10.5px] text-zinc-400 dark:text-zinc-500 leading-snug">
-                        Run analyze-account on any pipeline account to populate this dropdown with personas & stakeholder map contacts.
+                        Run analyze-account on any pipeline account to unlock personas & stakeholder map contacts in this dropdown.
                       </p>
                     )}
                   </div>

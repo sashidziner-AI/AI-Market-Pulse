@@ -480,6 +480,9 @@ export function Dashboard({
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [reportNameInput, setReportNameInput] = useState('');
 
+  // Confirm-delete-account modal state
+  const [pendingDeleteAccountId, setPendingDeleteAccountId] = useState<string | null>(null);
+
   const [isEditReportOpen, setIsEditReportOpen] = useState(false);
   const [editBusinessName, setEditBusinessName] = useState(analysis?.businessName || '');
   const [editOverview, setEditOverview] = useState(analysis?.overview || '');
@@ -575,11 +578,17 @@ export function Dashboard({
 
   const handleDeleteAccountDirectly = (accId: string, event: React.MouseEvent) => {
     event.stopPropagation();
-    const updated = accounts.filter(a => a.id !== accId);
+    setPendingDeleteAccountId(accId);
+  };
+
+  const handleConfirmDeleteAccount = () => {
+    if (!pendingDeleteAccountId) return;
+    const updated = accounts.filter(a => a.id !== pendingDeleteAccountId);
     if (onUpdateReport) {
       onUpdateReport(analysis, updated);
       toast.success("Discovered account suggestion removed from report.");
     }
+    setPendingDeleteAccountId(null);
   };
 
   const triggerSaveReportInitiation = () => {
@@ -1477,10 +1486,15 @@ export function Dashboard({
       <aside className="w-64 border-r border-white/[0.06] bg-[#2A2A2B] sticky top-0 h-screen hidden lg:flex flex-col flex-shrink-0">
         <div className="p-5">
           <div className="flex items-center gap-2 mb-8">
-            <div className="w-6 h-6 rounded-md bg-gradient-to-br from-amber-400 via-orange-500 to-orange-600 flex items-center justify-center shadow-[0_1px_2px_rgba(245,130,32,0.5)]">
-              <span className="text-white text-[10px] font-bold">M</span>
+            <img
+              src="/vee-technologies-logo.png"
+              alt="Vee Technologies"
+              className="w-12 h-12 object-contain"
+            />
+            <div className="flex flex-col leading-none">
+              <span className="font-normal text-zinc-100 tracking-tight text-[18px]" style={{ letterSpacing: '-0.02em' }}><span className="text-white">AI</span> Market Pulse</span>
+              <span className="mt-0.5 text-[8.5px] font-mono uppercase tracking-[0.14em] text-orange-400">by Vee Technologies</span>
             </div>
-            <span className="font-semibold text-zinc-100 tracking-tight text-[13px]" style={{ letterSpacing: '-0.02em' }}>AI Market Pulse</span>
           </div>
 
           <nav className="space-y-1">
@@ -1982,11 +1996,8 @@ export function Dashboard({
                 {/* Card 2: Immediate Action — URGENT ALERT with pulsing accent bar + gradient */}
                 <div
                   onClick={() => setPriorityFilter('immediate')}
-                  className="relative overflow-hidden p-3 rounded-2xl border transition-all cursor-pointer text-left border-rose-500 bg-gradient-to-br from-rose-100 to-rose-50 dark:from-rose-900/30 dark:to-rose-950/20"
+                  className="relative overflow-hidden p-3 rounded-2xl border-2 transition-all cursor-pointer text-left border-rose-500 bg-gradient-to-br from-rose-100 to-rose-50 dark:from-rose-900/30 dark:to-rose-950/20 ring-1 ring-rose-300"
                 >
-                  {/* Pulsing accent bar at top */}
-                  <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-rose-400 via-rose-500 to-orange-500 animate-pulse" />
-
                   <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-1.5">
                       <TrendingUp className="w-4 h-4 text-rose-500 dark:text-rose-400" />
@@ -4732,6 +4743,66 @@ export function Dashboard({
             </motion.div>
           </>
         )}
+      </AnimatePresence>
+
+      {/* ========================================================= */}
+      {/* 🗑 CONFIRM DELETE ACCOUNT                                */}
+      {/* ========================================================= */}
+      <AnimatePresence>
+        {pendingDeleteAccountId && (() => {
+          const pendingAccount = accounts.find(a => a.id === pendingDeleteAccountId);
+          const displayName = pendingAccount?.name || pendingAccount?.domain || 'this account';
+          return (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setPendingDeleteAccountId(null)}
+                className="fixed inset-0 bg-slate-900/60 backdrop-blur-[2px] z-50 transition-opacity"
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-6 z-50 space-y-5 text-left font-sans"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300">
+                    <Trash2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 leading-tight">Remove account?</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-300">This account will be dropped from the current report.</p>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200 font-semibold truncate">
+                  {displayName}
+                </div>
+
+                <div className="flex gap-2.5 pt-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPendingDeleteAccountId(null)}
+                    className="flex-1 text-slate-500 dark:text-slate-300 hover:text-slate-800 hover:bg-slate-50 h-10 text-xs font-bold cursor-pointer"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={handleConfirmDeleteAccount}
+                    className="flex-1 bg-rose-600 hover:bg-rose-700 text-white h-10 text-xs font-bold cursor-pointer"
+                  >
+                    Delete Account
+                  </Button>
+                </div>
+              </motion.div>
+            </>
+          );
+        })()}
       </AnimatePresence>
 
       {/* ========================================================= */}

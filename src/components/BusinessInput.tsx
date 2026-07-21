@@ -55,7 +55,7 @@ export function BusinessInput({
   const StepIcon = currentStep.icon;
 
   return (
-    <div className="relative min-h-[85vh] w-full overflow-hidden bg-stone-50 dark:bg-[#1F1F20]">
+    <div className="relative h-screen w-full overflow-hidden bg-stone-50 dark:bg-[#1F1F20]">
       {/* Aurora gradient blobs */}
       <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
         <motion.div
@@ -93,7 +93,7 @@ export function BusinessInput({
         }}
       />
 
-      <div className="relative flex flex-col items-center justify-center min-h-[85vh] px-6 py-16 max-w-6xl mx-auto">
+      <div className="relative flex flex-col items-center justify-center h-full px-6 py-10 max-w-6xl mx-auto">
         <motion.div
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
@@ -151,17 +151,17 @@ export function BusinessInput({
                 />
                 {/* Count picker — how many accounts the AI should discover.
                     Higher = slower & more OpenAI tokens; lower = quicker demo. */}
-                <label className="hidden sm:flex items-center gap-1.5 text-[11px] font-mono text-zinc-500 dark:text-zinc-400 select-none pl-2 border-l border-stone-200 dark:border-white/[0.08]">
-                  <span className="uppercase tracking-wider text-[10px] text-zinc-400 dark:text-zinc-500">Accounts</span>
+                <label className="hidden sm:flex items-center gap-1.5 text-[11px] font-mono select-none pl-2 border-l border-orange-300/60 dark:border-orange-500/40">
+                  <span className="uppercase tracking-wider text-[10px] text-orange-500 dark:text-orange-400 font-semibold">Accounts</span>
                   <select
                     value={accountCount}
                     onChange={(e) => setAccountCount(Number(e.target.value))}
                     disabled={isLoading}
-                    className="bg-transparent outline-none font-mono text-[12px] text-zinc-800 dark:text-zinc-100 font-semibold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="bg-transparent outline-none font-mono text-[13px] text-orange-600 dark:text-orange-400 font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                     title="How many target accounts to discover"
                   >
                     {ACCOUNT_COUNT_PRESETS.map(n => (
-                      <option key={n} value={n}>{n}</option>
+                      <option key={n} value={n} className="bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">{n}</option>
                     ))}
                   </select>
                 </label>
