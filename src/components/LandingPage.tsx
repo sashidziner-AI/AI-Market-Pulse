@@ -4,9 +4,10 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { ScrollToPlugin } from 'gsap/ScrollToPlugin';
 import {
   Rocket, ArrowRight, Sparkles, Globe, Target, Users, Phone,
-  BarChart2, MapPin, Zap, ShieldCheck, Layers, Play,
+  BarChart2, MapPin, Zap, ShieldCheck, Layers, Play, Pause,
   Brain, Compass, MessageSquare, TrendingUp, Clock, Menu, X,
   MousePointer2, DollarSign, LineChart, Award, Building2, Check,
+  Film, Volume2, VolumeX, Maximize2,
 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 
@@ -393,6 +394,7 @@ export function LandingPage({ onEnter, onOpenLibrary, hasSavedReports }: Landing
             </span>
           </div>
           <nav className="hidden md:flex items-center gap-6 text-[13px] font-medium text-zinc-500 dark:text-zinc-400">
+            <a href="#watch" onClick={(e) => scrollToId(e, '#watch')} className="hover:text-orange-600 dark:hover:text-orange-400 transition-colors">Watch</a>
             <a href="#features" onClick={(e) => scrollToId(e, '#features')} className="hover:text-orange-600 dark:hover:text-orange-400 transition-colors">Features</a>
             <a href="#how" onClick={(e) => scrollToId(e, '#how')} className="hover:text-orange-600 dark:hover:text-orange-400 transition-colors">How it works</a>
             <a href="#capabilities" onClick={(e) => scrollToId(e, '#capabilities')} className="hover:text-orange-600 dark:hover:text-orange-400 transition-colors">Capabilities</a>
@@ -433,6 +435,7 @@ export function LandingPage({ onEnter, onOpenLibrary, hasSavedReports }: Landing
           <nav className="overflow-hidden flex flex-col px-6 min-h-0">
             <div className="py-4 flex flex-col gap-1">
               {[
+                { href: '#watch', label: 'Watch' },
                 { href: '#features', label: 'Features' },
                 { href: '#how', label: 'How it works' },
                 { href: '#capabilities', label: 'Capabilities' },
@@ -676,6 +679,9 @@ export function LandingPage({ onEnter, onOpenLibrary, hasSavedReports }: Landing
         </div>
       </section>
 
+      {/* ---------------------------- WATCH VIDEO --------------------------- */}
+      <WatchSection />
+
       {/* ------------------------- STATS + MARQUEE -------------------------- */}
       <section className="relative py-14 border-y border-stone-200/60 dark:border-white/[0.06] bg-gradient-to-b from-transparent via-white/40 dark:via-white/[0.02] to-transparent overflow-hidden">
         <div className="max-w-6xl mx-auto px-6 grid grid-cols-2 lg:grid-cols-4 gap-8">
@@ -844,6 +850,206 @@ export function LandingPage({ onEnter, onOpenLibrary, hasSavedReports }: Landing
         </div>
       </footer>
     </div>
+  );
+}
+
+/* --------------------------------------------------------------------------
+   Watch section — inline product intro video with custom play overlay.
+   The video is streamed from /public and only fetches metadata on load so
+   the 138 MB file does not download until the user actually hits play.
+   -------------------------------------------------------------------------- */
+
+function WatchSection() {
+  const secRef = useRef<HTMLElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [muted, setMuted] = useState(true);
+  const [started, setStarted] = useState(false);
+
+  useLayoutEffect(() => {
+    const sec = secRef.current;
+    if (!sec) return;
+    const ctx = gsap.context(() => {
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+      gsap.fromTo(
+        stageRef.current,
+        { rotateX: 18, scale: 0.94, y: 60, opacity: 0.4 },
+        {
+          rotateX: 0, scale: 1, y: 0, opacity: 1,
+          ease: 'power3.out',
+          scrollTrigger: {
+            trigger: sec, start: 'top 85%', end: 'top 30%', scrub: 0.6,
+          },
+        }
+      );
+      gsap.to('.watch-halo', {
+        opacity: 0.9, scale: 1.08, duration: 2.4,
+        repeat: -1, yoyo: true, ease: 'sine.inOut',
+      });
+    }, sec);
+    return () => ctx.revert();
+  }, []);
+
+  const togglePlay = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.paused) {
+      void v.play();
+      setStarted(true);
+    } else {
+      v.pause();
+    }
+  };
+
+  const toggleMute = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    v.muted = !v.muted;
+    setMuted(v.muted);
+  };
+
+  const goFullscreen = () => {
+    const v = videoRef.current;
+    if (!v) return;
+    if (v.requestFullscreen) void v.requestFullscreen();
+  };
+
+  return (
+    <section
+      ref={secRef}
+      id="watch"
+      className="relative py-20 md:py-28 overflow-hidden"
+    >
+      {/* Ambient halo behind the video */}
+      <div
+        aria-hidden
+        className="watch-halo pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[85%] max-w-[900px] aspect-video rounded-[40px] opacity-70"
+        style={{
+          background:
+            'radial-gradient(ellipse at center, rgba(245,130,32,0.28), transparent 65%)',
+          filter: 'blur(40px)',
+        }}
+      />
+
+      <div className="relative max-w-5xl mx-auto px-6">
+        <div className="reveal text-center">
+          <SectionEyebrow>
+            <Film className="w-3 h-3" />
+            <span className="ml-1">Product tour</span>
+          </SectionEyebrow>
+          <SectionHeadline>
+            See{' '}
+            <span className="bg-gradient-to-r from-amber-500 to-orange-500 bg-clip-text text-transparent">
+              AI Market Pulse
+            </span>{' '}
+            in motion.
+          </SectionHeadline>
+          <p className="mt-3 mx-auto max-w-2xl text-[15px] md:text-base text-zinc-600 dark:text-zinc-400 leading-relaxed">
+            A 2-minute walk-through of the full pipeline — from URL to buying committee to phone dial.
+          </p>
+        </div>
+
+        {/* Video stage with browser-chrome frame */}
+        <div
+          className="mt-12 md:mt-14 mx-auto"
+          style={{ perspective: 1400 }}
+        >
+          <div
+            ref={stageRef}
+            className="relative rounded-2xl border border-stone-200 dark:border-white/[0.08] bg-white/80 dark:bg-white/[0.03] backdrop-blur-xl shadow-[0_20px_60px_-15px_rgba(0,0,0,0.35)] will-change-transform overflow-hidden"
+            style={{ transformStyle: 'preserve-3d' }}
+          >
+            {/* Chrome */}
+            <div className="flex items-center gap-1.5 px-4 py-2.5 border-b border-stone-200 dark:border-white/[0.06] bg-stone-50/70 dark:bg-white/[0.02]">
+              <span className="w-2.5 h-2.5 rounded-full bg-rose-400/70" />
+              <span className="w-2.5 h-2.5 rounded-full bg-amber-400/70" />
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400/70" />
+              <span className="ml-3 text-[11px] font-mono text-zinc-400 dark:text-zinc-500 truncate">
+                app.aimarketpulse.io / demo
+              </span>
+              <span className="ml-auto inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-wider text-orange-600 dark:text-orange-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse" />
+                Live demo
+              </span>
+            </div>
+
+            {/* Video */}
+            <div className="relative bg-black">
+              <video
+                ref={videoRef}
+                src="/intro-video.mp4"
+                preload="metadata"
+                playsInline
+                muted={muted}
+                className="w-full aspect-video object-cover cursor-pointer"
+                onClick={togglePlay}
+                onPlay={() => setPlaying(true)}
+                onPause={() => setPlaying(false)}
+                onEnded={() => setPlaying(false)}
+              />
+
+              {/* Play overlay — visible until the user has started the video */}
+              {!started && (
+                <button
+                  onClick={togglePlay}
+                  aria-label="Play intro video"
+                  className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-gradient-to-b from-black/30 via-black/40 to-black/60 group cursor-pointer transition-opacity"
+                >
+                  <span className="relative flex items-center justify-center">
+                    <span className="absolute w-24 h-24 rounded-full bg-orange-500/30 blur-2xl group-hover:bg-orange-500/50 transition-all" />
+                    <span className="relative w-20 h-20 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-[0_8px_32px_rgba(245,130,32,0.55)] group-hover:scale-110 transition-transform">
+                      <Play className="w-8 h-8 text-white ml-1" fill="currentColor" />
+                    </span>
+                  </span>
+                  <span className="text-white text-sm font-semibold tracking-wide drop-shadow">
+                    Watch the 2-minute tour
+                  </span>
+                </button>
+              )}
+
+              {/* Custom controls bar — only shown once playback starts */}
+              {started && (
+                <div className="absolute bottom-0 inset-x-0 flex items-center gap-2 px-4 py-3 bg-gradient-to-t from-black/70 via-black/40 to-transparent opacity-0 hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                  <button
+                    onClick={togglePlay}
+                    aria-label={playing ? 'Pause' : 'Play'}
+                    className="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25 backdrop-blur flex items-center justify-center text-white cursor-pointer transition-colors"
+                  >
+                    {playing ? <Pause className="w-4 h-4" fill="currentColor" /> : <Play className="w-4 h-4 ml-0.5" fill="currentColor" />}
+                  </button>
+                  <button
+                    onClick={toggleMute}
+                    aria-label={muted ? 'Unmute' : 'Mute'}
+                    className="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25 backdrop-blur flex items-center justify-center text-white cursor-pointer transition-colors"
+                  >
+                    {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                  </button>
+                  <div className="ml-auto">
+                    <button
+                      onClick={goFullscreen}
+                      aria-label="Fullscreen"
+                      className="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25 backdrop-blur flex items-center justify-center text-white cursor-pointer transition-colors"
+                    >
+                      <Maximize2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Caption ticker below the frame */}
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-x-5 gap-y-1.5 text-[11px] font-mono uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+            <span className="inline-flex items-center gap-1.5"><Sparkles className="w-3 h-3 text-orange-500" /> Live product footage</span>
+            <span className="opacity-30">·</span>
+            <span className="inline-flex items-center gap-1.5"><Zap className="w-3 h-3 text-amber-500" /> No signup required</span>
+            <span className="opacity-30">·</span>
+            <span className="inline-flex items-center gap-1.5"><ShieldCheck className="w-3 h-3 text-emerald-500" /> Recorded on real data</span>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
