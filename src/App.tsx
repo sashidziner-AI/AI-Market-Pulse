@@ -279,6 +279,36 @@ export default function App() {
       } else {
         toast.success(`${formattedAccounts.length} high-potential accounts discovered`);
       }
+
+      // Fire-and-forget lead pipelines so the Leads tab fills without a
+      // manual click. Both hit /api endpoints that are safe to fail silently.
+      //   1. Immediate sweep — pull real Hunter matches for DM personas
+      //      across the top ~3 accounts right now. Cap keeps quota safe.
+      //   2. Persistent enrollment — same accounts get added to the
+      //      persona-discovery cron queue, so nightly runs keep growing
+      //      the leads DB even without further user interaction.
+      const enrolledAccounts = formattedAccounts
+        .filter((a: any) => a?.domain && a?.name)
+        .map((a: any) => ({ domain: a.domain, name: a.name }));
+      if (enrolledAccounts.length > 0) {
+        void fetch('/api/enrichment/sweep', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accounts: enrolledAccounts.slice(0, 3), cap: 12 }),
+        })
+          .then((r) => r.json())
+          .then((r) => {
+            if (r?.leadsCreated > 0) {
+              toast.success(`Auto-discovered ${r.leadsCreated} lead${r.leadsCreated === 1 ? '' : 's'} across ${enrolledAccounts.slice(0, 3).length} accounts. Open the Leads tab.`, { duration: 5000 });
+            }
+          })
+          .catch(() => {});
+        void fetch('/api/scheduler/enroll', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accounts: enrolledAccounts }),
+        }).catch(() => {});
+      }
     } catch (error: any) {
       toast.error('Discovery failed: ' + error.message);
     } finally {

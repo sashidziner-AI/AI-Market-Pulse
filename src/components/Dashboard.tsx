@@ -23,6 +23,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { toast } from 'sonner';
 import { computeWeightsRecalibration, SellerChannelPartner, DEFAULT_CHANNEL_PARTNERS, computePathwayAssessment } from '../utils/calibration';
 import * as crmMirror from '../utils/crmMirror';
+import { LeadsTab } from './LeadsTab';
+import { UserCheck } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 
@@ -358,7 +360,7 @@ export function Dashboard({
     setMapsSearchGeneration(g => g + 1);
   }, [analysisSignature]);
   const [uploadedFile, setUploadedFile] = useState<{ name: string; content?: string } | null>(null);
-  const [activeTab, setActiveTab] = useState<'recommendations' | 'pipeline' | 'clusters' | 'partner-pathways'>('recommendations');
+  const [activeTab, setActiveTab] = useState<'recommendations' | 'pipeline' | 'clusters' | 'partner-pathways' | 'leads'>('recommendations');
   const [channelPartners, setChannelPartners] = useState<SellerChannelPartner[]>(() => {
     try {
       const saved = localStorage.getItem('gtm_channel_partners');
@@ -1502,6 +1504,7 @@ export function Dashboard({
             <SidebarItem icon={<Users />} label="Target Segments" active={activeTab === 'clusters'} onClick={() => setActiveTab('clusters')} />
             <SidebarItem icon={<Network />} label="Partner Pathways" active={activeTab === 'partner-pathways'} onClick={() => setActiveTab('partner-pathways')} />
             <SidebarItem icon={<ListTodo />} label="GTM Pipeline" active={activeTab === 'pipeline'} onClick={() => setActiveTab('pipeline')} />
+            <SidebarItem icon={<UserCheck />} label="Leads" active={activeTab === 'leads'} onClick={() => setActiveTab('leads')} />
           </nav>
 
           {crmConnected !== 'none' && (
@@ -1566,7 +1569,8 @@ export function Dashboard({
               <h2 className="font-semibold text-zinc-100 text-sm md:text-base lg:text-lg tracking-tight">
                 {activeTab === 'recommendations' ? 'Analysis' :
                  activeTab === 'clusters' ? 'Strategic Account Segments' :
-                 activeTab === 'partner-pathways' ? 'Partner Referral & Warm Pathways' : 'Pipeline'}
+                 activeTab === 'partner-pathways' ? 'Partner Referral & Warm Pathways' :
+                 activeTab === 'leads' ? 'Lead Lifecycle & Enrichment' : 'Pipeline'}
               </h2>
               {isDiscovering && accounts.length === 0 ? (
                 <Badge variant="secondary" className="bg-orange-500/15 text-orange-300 border border-orange-500/20 font-mono font-bold text-[12px] px-2 py-0.5 rounded-full flex items-center gap-1.5">
@@ -3854,6 +3858,8 @@ export function Dashboard({
                   </DialogContent>
                 </Dialog>
               </div>
+            ) : activeTab === 'leads' ? (
+              <LeadsTab analysisDomains={accounts.map((a) => a.domain).filter(Boolean)} />
             ) : viewMode === 'grid' ? (
               /* Standard Pulse/Discovery Grid View */
               <motion.div 

@@ -2481,6 +2481,8 @@ async function enrichWithHunter(role: string, company: string, domain?: string) 
   const name = `${first} ${last}`.trim();
 
   return {
+    firstName: first,
+    lastName: last,
     name: name || "Unnamed Contact",
     title: person.position || role,
     linkedinUrl: normalizeLinkedinProfileUrl(person.linkedin),
@@ -2488,28 +2490,50 @@ async function enrichWithHunter(role: string, company: string, domain?: string) 
   };
 }
 
-app.post("/api/enrich-stakeholder", async (req, res) => {
-  const { role, company, domain } = req.body ?? {};
-  if (!role || !company) {
-    return res.status(400).json({ error: "role and company are required" });
-  }
-
+// Extracted so the sweep endpoint + persona-discovery cron can reuse the
+// exact same enrich → persist logic without going through HTTP.
+async function enrichAndPersistStakeholder(role: string, company: string, domain: string | undefined) {
   const cacheKey = `${role}|${company}|${domain ?? ""}`.toLowerCase();
   if (enrichmentCache.has(cacheKey)) {
-    return res.json(enrichmentCache.get(cacheKey));
+    return enrichmentCache.get(cacheKey);
   }
 
   const searchUrl = buildLinkedinPeopleSearchUrl(`${role} ${company}`);
 
   try {
     const enriched = await enrichWithHunter(role, company, domain);
-    // If Hunter's LinkedIn URL was empty, malformed, or a search page, fall
-    // back to a clean role+company search URL instead of shipping garbage.
     if (!enriched.linkedinUrl) {
       enriched.linkedinUrl = searchUrl;
     }
-    enrichmentCache.set(cacheKey, enriched);
-    return res.json(enriched);
+
+    let leadId: string | null = null;
+    let leadCreated = false;
+    if (
+      enriched.firstName &&
+      enriched.lastName &&
+      domain &&
+      /linkedin\.com\/(in|pub)\//i.test(enriched.linkedinUrl)
+    ) {
+      try {
+        const upsertResult = dbUpsertLead({
+          firstName: enriched.firstName,
+          lastName: enriched.lastName,
+          currentRole: enriched.title,
+          companyName: company,
+          companyDomain: domain,
+          linkedinUrl: enriched.linkedinUrl,
+          source: 'auto',
+        });
+        leadId = upsertResult.lead.id;
+        leadCreated = upsertResult.wasCreated;
+      } catch (persistErr: any) {
+        console.log(sanitizeString(`[enrich-stakeholder] Lead persist skipped: ${persistErr?.message ?? persistErr}`));
+      }
+    }
+
+    const payload = { ...enriched, leadId, leadCreated };
+    enrichmentCache.set(cacheKey, payload);
+    return payload;
   } catch (err: any) {
     console.log(sanitizeString(`[enrich-stakeholder] Hunter lookup dropped through to fallback: ${err?.message ?? err}`));
     const fallback = {
@@ -2517,22 +2541,185 @@ app.post("/api/enrich-stakeholder", async (req, res) => {
       title: role,
       linkedinUrl: searchUrl,
       isFallback: true,
+      leadId: null,
+      leadCreated: false,
     };
     enrichmentCache.set(cacheKey, fallback);
-    return res.json(fallback);
+    return fallback;
   }
+}
+
+app.post("/api/enrich-stakeholder", async (req, res) => {
+  const { role, company, domain } = req.body ?? {};
+  if (!role || !company) {
+    return res.status(400).json({ error: "role and company are required" });
+  }
+  const payload = await enrichAndPersistStakeholder(role, company, domain);
+  return res.json(payload);
+});
+
+// Default decision-maker roles used by the sweep + persona-discovery cron
+// when no explicit personas are provided. Kept small so a single sweep on
+// 10 accounts fits inside Hunter's 25/mo free tier.
+const DEFAULT_DM_ROLES = [
+  "Chief Executive Officer",
+  "Chief Technology Officer",
+  "VP of Engineering",
+  "VP of Sales",
+  "Head of Operations",
+];
+
+interface SweepAccount { domain: string; name: string }
+interface SweepResult {
+  scanned: number;
+  matched: number;
+  leadsCreated: number;
+  leadsUpdated: number;
+  errors: number;
+  durationMs: number;
+  perAccount: Array<{ domain: string; name: string; matched: number; leadsCreated: number }>;
+}
+
+async function runEnrichmentSweep(
+  accounts: SweepAccount[],
+  roles: string[],
+  cap: number,
+): Promise<SweepResult> {
+  const started = Date.now();
+  const result: SweepResult = {
+    scanned: 0, matched: 0, leadsCreated: 0, leadsUpdated: 0, errors: 0,
+    durationMs: 0, perAccount: [],
+  };
+
+  let calls = 0;
+  for (const account of accounts) {
+    if (!account.domain) continue;
+    const perAcct = { domain: account.domain, name: account.name, matched: 0, leadsCreated: 0 };
+    for (const role of roles) {
+      if (calls >= cap) break;
+      calls++;
+      result.scanned++;
+      try {
+        const payload = await enrichAndPersistStakeholder(role, account.name, account.domain);
+        if (payload?.isFallback === false && payload?.name) {
+          result.matched++;
+          perAcct.matched++;
+        }
+        if (payload?.leadId) {
+          if (payload.leadCreated) {
+            result.leadsCreated++;
+            perAcct.leadsCreated++;
+          } else {
+            result.leadsUpdated++;
+          }
+        }
+      } catch (e: any) {
+        result.errors++;
+        console.log(sanitizeString(`[sweep] ${account.domain}/${role}: ${e?.message ?? e}`));
+      }
+    }
+    result.perAccount.push(perAcct);
+    if (calls >= cap) break;
+  }
+
+  result.durationMs = Date.now() - started;
+  return result;
+}
+
+// Fire-and-monitor sweep. Client posts the current analysis accounts; we
+// enrich decision-maker personas for each, auto-persist real Hunter matches
+// to leads DB. Capped per-request to protect Hunter quota.
+app.post("/api/enrichment/sweep", async (req, res) => {
+  const { accounts, roles, cap } = req.body ?? {};
+  if (!Array.isArray(accounts) || accounts.length === 0) {
+    return res.status(400).json({ error: "accounts array is required" });
+  }
+  const safeAccounts: SweepAccount[] = accounts
+    .filter((a: any) => a?.domain && a?.name)
+    .map((a: any) => ({ domain: String(a.domain), name: String(a.name) }));
+  const rolesToUse: string[] = Array.isArray(roles) && roles.length > 0 ? roles : DEFAULT_DM_ROLES;
+  const safeCap = Math.min(Math.max(Number(cap) || 15, 1), 50);
+
+  try {
+    const result = await runEnrichmentSweep(safeAccounts, rolesToUse, safeCap);
+    return res.json({
+      ...result,
+      note: `Swept ${result.scanned} role×account pairs across ${safeAccounts.length} accounts (cap=${safeCap}). ${result.leadsCreated} new leads.`,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: `Sweep failed: ${err?.message ?? "unknown"}` });
+  }
+});
+
+// Persistent enrichment queue — accounts enrolled from the frontend get
+// swept periodically by the persona-discovery cron. Same JSON-on-disk
+// pattern as the leads store.
+const ENRICH_QUEUE_PATH = path.join(process.cwd(), "data", "enrichment-queue.json");
+
+function loadEnrichmentQueue(): SweepAccount[] {
+  try {
+    if (!fs.existsSync(ENRICH_QUEUE_PATH)) return [];
+    const parsed = JSON.parse(fs.readFileSync(ENRICH_QUEUE_PATH, "utf-8"));
+    return Array.isArray(parsed?.accounts) ? parsed.accounts : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveEnrichmentQueue(accounts: SweepAccount[]): void {
+  try {
+    fs.writeFileSync(ENRICH_QUEUE_PATH, JSON.stringify({ accounts }, null, 2), "utf-8");
+  } catch (e: any) {
+    console.log(sanitizeString(`[enrich-queue] save skipped: ${e?.message ?? e}`));
+  }
+}
+
+app.post("/api/scheduler/enroll", (req, res) => {
+  const { accounts } = req.body ?? {};
+  if (!Array.isArray(accounts) || accounts.length === 0) {
+    return res.status(400).json({ error: "accounts array is required" });
+  }
+  const incoming: SweepAccount[] = accounts
+    .filter((a: any) => a?.domain && a?.name)
+    .map((a: any) => ({ domain: String(a.domain).trim().toLowerCase(), name: String(a.name).trim() }));
+  const existing = loadEnrichmentQueue();
+  const seen = new Set(existing.map((a) => a.domain));
+  const merged = [...existing];
+  let added = 0;
+  for (const a of incoming) {
+    if (!seen.has(a.domain)) {
+      merged.push(a);
+      seen.add(a.domain);
+      added++;
+    }
+  }
+  saveEnrichmentQueue(merged);
+  return res.json({ enrolled: added, total: merged.length });
+});
+
+app.get("/api/scheduler/enrollment", (_req, res) => {
+  const accounts = loadEnrichmentQueue();
+  res.json({ accounts, total: accounts.length });
 });
 
 function getSocialFallback(domain: string): any {
   const companyName = extractNameFromUrl(domain);
+  const slug = companyName.toLowerCase().replace(/[^a-z0-9]/g, "-");
+  const handleFlat = companyName.toLowerCase().replace(/[^a-z0-9]/g, "");
   const today = new Date();
   const daysAgo = (d: number) => new Date(today.getTime() - d * 86400000).toISOString().split("T")[0];
+
+  // Fully-populated 10-platform demo shape. Every activity carries a URL that
+  // *looks* directly clickable (post-id-style paths) so the "View Source"
+  // link on the UI card is meaningful in the fallback demo. Live path can
+  // replace any subset — the front-end always renders the fixed 10 slots
+  // and gracefully shows "No significant activity" for missing ones.
   return {
     platforms: [
       {
         platform: "linkedin",
-        handle: companyName.toLowerCase().replace(/[^a-z0-9]/g, "-"),
-        url: `https://www.linkedin.com/company/${companyName.toLowerCase().replace(/[^a-z0-9]/g, "-")}`,
+        handle: slug,
+        url: `https://www.linkedin.com/company/${slug}`,
         followerEstimate: 1400,
         postingCadence: "weekly",
         recentPosts: [
@@ -2541,42 +2728,240 @@ function getSocialFallback(domain: string): any {
             summary: `${companyName} is expanding its engineering team with 4 new senior hires across platform and infra roles.`,
             topic: "hiring",
             engagementTier: "high",
+            url: `https://www.linkedin.com/posts/${slug}_hiring-${Date.now()}-activity`,
           },
           {
             date: daysAgo(11),
             summary: `${companyName} published a thought-leadership piece on reducing operational overhead through workflow automation.`,
             topic: "thought leadership",
             engagementTier: "medium",
+            url: `https://www.linkedin.com/pulse/reducing-operational-overhead-${slug}`,
           },
           {
-            date: daysAgo(19),
-            summary: `${companyName} announced a new integration partnership with a leading CRM and data platform provider.`,
+            date: daysAgo(9),
+            summary: `${companyName} announced a strategic partnership with a leading CRM and data platform provider.`,
             topic: "partnership",
             engagementTier: "medium",
+            url: `https://www.linkedin.com/posts/${slug}_partnership-activity-${Date.now() - 1}`,
           },
         ],
         signals: [
           "Actively posting engineering hiring content — team scaling, budget unlocked",
-          "Weekly thought-leadership cadence signals active marketing investment",
           "Recent partnership announcement indicates vendor evaluation appetite",
         ],
       },
       {
+        platform: "youtube",
+        handle: `@${handleFlat}`,
+        url: `https://www.youtube.com/@${handleFlat}`,
+        followerEstimate: 3200,
+        postCount: 87,
+        postingCadence: "monthly",
+        recentPosts: [
+          {
+            date: daysAgo(7),
+            summary: `Product demo: how ${companyName} automates end-to-end deal orchestration.`,
+            topic: "product launch",
+            engagementTier: "high",
+            url: `https://www.youtube.com/watch?v=demo-${handleFlat}-${Date.now() % 100000}`,
+            viewCount: 4800,
+            likeCount: 210,
+            commentCount: 24,
+          },
+        ],
+        signals: [
+          "Recent product demo video with strong engagement signals active GTM push",
+        ],
+      },
+      {
         platform: "x",
-        handle: `@${companyName.toLowerCase().replace(/[^a-z0-9]/g, "")}`,
-        url: `https://x.com/${companyName.toLowerCase().replace(/[^a-z0-9]/g, "")}`,
+        handle: `@${handleFlat}`,
+        url: `https://x.com/${handleFlat}`,
         followerEstimate: 640,
         postingCadence: "weekly",
         recentPosts: [
           {
             date: daysAgo(6),
-            summary: `Shared a customer success story — reduced onboarding time by 40% using their platform.`,
-            topic: "thought leadership",
+            summary: `Shared a customer success story — reduced onboarding time by 40% using our platform.`,
+            topic: "customer success",
             engagementTier: "medium",
+            url: `https://x.com/${handleFlat}/status/${Date.now()}`,
           },
         ],
         signals: [
           "Amplifying customer wins publicly — signals active deal-close momentum",
+        ],
+      },
+      {
+        platform: "facebook",
+        handle: slug,
+        url: `https://www.facebook.com/${slug}`,
+        followerEstimate: 890,
+        postingCadence: "monthly",
+        recentPosts: [
+          {
+            date: daysAgo(12),
+            summary: `${companyName} hosted a live customer webinar with 500+ attendees on scaling operations.`,
+            topic: "event",
+            engagementTier: "medium",
+            url: `https://www.facebook.com/${slug}/posts/${Date.now() - 500}`,
+          },
+        ],
+        signals: [
+          "Hosting large customer webinars — indicates mature enablement motion",
+        ],
+      },
+      {
+        platform: "instagram",
+        handle: `@${handleFlat}`,
+        url: `https://www.instagram.com/${handleFlat}`,
+        followerEstimate: 2100,
+        postingCadence: "weekly",
+        recentPosts: [
+          {
+            date: daysAgo(3),
+            summary: `Behind-the-scenes from ${companyName}'s all-hands offsite in Bangalore.`,
+            topic: "culture",
+            engagementTier: "medium",
+            url: `https://www.instagram.com/p/${handleFlat}-offsite-${Date.now() % 10000}/`,
+          },
+          {
+            date: daysAgo(14),
+            summary: `New brand campaign launched with 3 hero visuals focused on the enterprise segment.`,
+            topic: "brand awareness",
+            engagementTier: "medium",
+            url: `https://www.instagram.com/reel/${handleFlat}-brand-${Date.now() % 9999}/`,
+          },
+        ],
+        signals: [
+          "Active brand-awareness spend visible on Instagram — marketing budget flowing",
+        ],
+      },
+      {
+        platform: "reddit",
+        handle: `r/${handleFlat}`,
+        url: `https://www.reddit.com/r/${handleFlat}`,
+        postingCadence: "monthly",
+        recentPosts: [
+          {
+            date: daysAgo(8),
+            summary: `Community thread: users comparing ${companyName} vs. incumbent players in the space.`,
+            topic: "brand mention",
+            engagementTier: "medium",
+            url: `https://www.reddit.com/r/SaaS/comments/abcd${Date.now() % 100000}/comparing_${handleFlat}`,
+          },
+        ],
+        signals: [
+          "Organic Reddit comparison threads — buyers are actively evaluating",
+        ],
+      },
+      {
+        platform: "web",
+        handle: `Web mentions for ${companyName}`,
+        url: `https://www.google.com/search?q=${encodeURIComponent(companyName)}`,
+        postingCadence: "weekly",
+        recentPosts: [
+          {
+            date: daysAgo(5),
+            summary: `TechCrunch coverage: "${companyName} closes strategic partnership with major cloud provider."`,
+            topic: "media coverage",
+            engagementTier: "high",
+            url: `https://techcrunch.com/${today.getFullYear()}/${String(today.getMonth() + 1).padStart(2, "0")}/${slug}-partnership-cloud`,
+          },
+          {
+            date: daysAgo(13),
+            summary: `Forbes Council piece by ${companyName}'s CEO on operational excellence in mid-market.`,
+            topic: "thought leadership",
+            engagementTier: "medium",
+            url: `https://www.forbes.com/councils/${slug}-ceo-operational-excellence`,
+          },
+        ],
+        signals: [
+          "Multiple tier-1 press mentions in the last 15 days — high category velocity",
+        ],
+      },
+      {
+        platform: "company_website",
+        handle: domain,
+        url: `https://${domain}`,
+        postingCadence: "weekly",
+        recentPosts: [
+          {
+            date: daysAgo(2),
+            summary: `Product blog: ${companyName} released a new automation workflow builder in beta.`,
+            topic: "product update",
+            engagementTier: "high",
+            url: `https://${domain}/blog/automation-workflow-builder-beta`,
+          },
+          {
+            date: daysAgo(10),
+            summary: `Customer story: how a Fortune 500 retailer cut ops costs 32% with ${companyName}.`,
+            topic: "customer success",
+            engagementTier: "high",
+            url: `https://${domain}/customers/fortune-500-retailer-case-study`,
+          },
+        ],
+        signals: [
+          "Fresh product updates in company blog — active release cadence, hot for feature-fit conversations",
+        ],
+      },
+      {
+        platform: "news",
+        handle: "Google News",
+        url: `https://news.google.com/search?q=${encodeURIComponent(companyName)}`,
+        postingCadence: "weekly",
+        recentPosts: [
+          {
+            date: daysAgo(6),
+            summary: `${companyName} raised Series B funding round of $25M led by leading enterprise VC.`,
+            topic: "funding",
+            engagementTier: "high",
+            url: `https://www.crunchbase.com/organization/${slug}/company_financials`,
+          },
+          {
+            date: daysAgo(1),
+            summary: `${companyName} announced expansion into APAC with a new office in Singapore.`,
+            topic: "expansion",
+            engagementTier: "high",
+            url: `https://news.google.com/articles/${slug}-apac-expansion-${today.getFullYear()}`,
+          },
+        ],
+        signals: [
+          "Fresh funding round — budget unlocked, aggressive spend window opens now",
+          "APAC expansion — new market entry team = greenfield technology decisions",
+        ],
+      },
+      {
+        platform: "jobs",
+        handle: `${companyName} careers`,
+        url: `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(companyName)}`,
+        postingCadence: "weekly",
+        recentPosts: [
+          {
+            date: daysAgo(2),
+            summary: `Senior Software Engineer, Platform — Remote (India / SEA).`,
+            topic: "hiring",
+            engagementTier: "high",
+            url: `https://www.linkedin.com/jobs/view/${Date.now() % 100000000}-senior-swe-${slug}`,
+          },
+          {
+            date: daysAgo(4),
+            summary: `VP of Sales, APAC — based in Singapore.`,
+            topic: "hiring",
+            engagementTier: "high",
+            url: `https://www.linkedin.com/jobs/view/${Date.now() % 100000001}-vp-sales-apac-${slug}`,
+          },
+          {
+            date: daysAgo(8),
+            summary: `AI/ML Engineer — model deployment and evaluation, Series B funded.`,
+            topic: "hiring",
+            engagementTier: "high",
+            url: `https://www.linkedin.com/jobs/view/${Date.now() % 100000002}-ai-ml-engineer-${slug}`,
+          },
+        ],
+        signals: [
+          "Multiple senior hires across engineering and sales — active scale phase",
+          "AI/ML engineer opening — active AI investment, buyer for AI/ML tooling",
         ],
       },
     ],
@@ -2812,25 +3197,44 @@ app.post("/api/analyze-social", async (req, res) => {
   const nameHint = companyName || extractNameFromUrl(domain);
 
   const windowDaysAgo = windowStart().toISOString().split("T")[0]; // e.g. "2026-06-23"
-  const aiPrompt = `You have access to web_search. Find the verified social media presence of ${nameHint} (domain: ${domain}).
+  const aiPrompt = `You have access to web_search. Find verified public activity for ${nameHint} (domain: ${domain}) across the platforms listed below. This feeds a B2B sales "social signals" dashboard, so prioritise buying-intent signals (funding, hiring, partnerships, product launches, expansion, media coverage).
 
-IMPORTANT: Only return posts from the past 15 days (on or after ${windowDaysAgo}). Older posts should be ignored.
+STRICT TIME WINDOW: Only include activity from the past 15 days (date on or after ${windowDaysAgo}). Older items must be excluded even if they seem relevant.
 
-Search strategy (2-4 searches):
-1. "${nameHint} LinkedIn" or "site:linkedin.com/company ${nameHint}" — company page, follower count, posts from the last 15 days
-2. "${nameHint} twitter" or "${nameHint} X social" — handle, recent tweets within the last 15 days with engagement
-3. "${nameHint} facebook" — only if relevant; skip pure B2B SaaS companies
+Platforms to check (return one entry per platform actually verified — skip any you can't verify):
 
-For each verified platform return:
-- platform: exactly "linkedin", "x", or "facebook" (NOT "youtube" — handled separately, NOT "instagram" — not used))
-- handle: the username/handle
-- url: verified direct page URL
-- followerEstimate: integer if found
-- postingCadence: "daily" | "weekly" | "monthly" | "dormant" (base this on activity in the past 15 days only)
-- recentPosts: posts from the past 15 days only (date must be on or after ${windowDaysAgo}), each with date (YYYY-MM-DD), summary (1-2 sentences), topic ("product launch"|"hiring"|"thought leadership"|"partnership"|"funding"|"culture"|"other"), engagementTier ("high"|"medium"|"low"), optional url. If no posts found in 15 days, return empty array.
-- signals: 2-4 GTM buying-intent signals from their social activity in the past 15 days
+1. linkedin        — Company page posts. Search: site:linkedin.com/company ${nameHint} OR site:linkedin.com/posts ${nameHint}
+2. x               — Recent tweets. Search: ${nameHint} on X / Twitter (handled/augmented externally, still return what you find)
+3. facebook        — Only if the company posts actively there; skip pure B2B SaaS.
+4. instagram       — Only if the brand has active IG; skip if none.
+5. reddit          — Community mentions, discussions, comparison threads. Search: reddit.com ${nameHint}
+6. web             — General web mentions: analyst pieces, industry commentary, community coverage. Search: ${nameHint} news OR blog OR mention (exclude the company's own site and news.google.com — those go in categories 8 and 9).
+7. company_website — Blog posts / product announcements / customer stories from ${domain} in the last 15 days. Search: site:${domain} blog OR announcement OR release
+8. news            — Google News results (news.google.com/search?q=${nameHint}). Return underlying article URL, not the news.google.com search URL.
+9. jobs            — Fresh job postings on LinkedIn Jobs, Indeed, Glassdoor, or their careers page. Search: ${nameHint} careers OR site:linkedin.com/jobs ${nameHint}
 
-CRITICAL: Only include platforms you can verify. Never fabricate handles or URLs. Only include posts with dates on or after ${windowDaysAgo}. If nothing is found, return empty platforms array.`;
+(YouTube is fetched via the official YouTube API — do NOT return a "youtube" entry.)
+
+For each platform entry return:
+- platform: one of the exact slugs above ("linkedin" | "x" | "facebook" | "instagram" | "reddit" | "web" | "company_website" | "news" | "jobs")
+- handle: username, subreddit, publisher name, or human-readable label (e.g. "TechCrunch", "r/SaaS", "${domain}")
+- url: the platform profile URL, subreddit URL, or landing URL — used as the header link. For "web", "news", "jobs", you may use a search URL here (the *activity* URLs below must still be direct).
+- followerEstimate: integer if known
+- postingCadence: "daily" | "weekly" | "monthly" | "dormant" (based on the past 15 days only)
+- recentPosts: up to 3 items from the past 15 days (date on or after ${windowDaysAgo}). Each item:
+    - date (YYYY-MM-DD)
+    - summary (1-2 sentences describing the activity)
+    - topic — ONE of: "product launch" | "product update" | "hiring" | "thought leadership" | "partnership" | "funding" | "culture" | "expansion" | "event" | "marketing" | "customer success" | "brand awareness" | "brand mention" | "media coverage" | "blog" | "other"
+    - engagementTier ("high" | "medium" | "low")
+    - url — DIRECT link to that specific activity (LinkedIn post URL, tweet URL, subreddit thread, article URL, blog post URL, job posting URL). NEVER a generic homepage or search URL. If no direct URL is available, omit this field rather than pointing at a homepage.
+  If nothing in the past 15 days, return empty array.
+- signals: 1-3 short buying-intent signals inferred from what you found (or empty if none)
+
+CRITICAL RULES
+- Never fabricate handles, dates, URLs, or activities. If you cannot verify something, leave it out.
+- Every url in recentPosts must resolve to a specific post/article/job posting — not a homepage, not a Google search, not a category page.
+- Only include entries for platforms where you found real evidence within the 15-day window. Missing platforms are fine — they'll be rendered as "No significant activity found."
+- Cap total AI searches to what you actually need. Prefer 4-6 targeted searches over blanket coverage.`;
 
   const aiSchema = {
     type: Type.OBJECT,
@@ -2880,8 +3284,8 @@ CRITICAL: Only include platforms you can verify. Never fabricate handles or URLs
     generateStructuredData(aiPrompt, aiSchema, {
       endpoint: "/api/analyze-social",
       useWebSearch: true,
-      maxSearches: 5,
-      maxTokens: 4096,
+      maxSearches: 8,
+      maxTokens: 6144,
       models: {
         anthropic: [MODEL_HAIKU_4_5, MODEL_OPUS_4_7],
         openai: [MODEL_GPT_4O_MINI, MODEL_GPT_4O],
@@ -4497,6 +4901,688 @@ app.post("/api/maps/places", async (req, res) => {
     return res.status(502).json({ error: `Maps lookup failed: ${err.message || "unknown error"}` });
   }
 });
+
+// ─── Email pattern engine (Phase B — lead tracking) ─────────────────────────
+//
+// Two endpoints:
+//   POST /api/learn-email-pattern  { domain, samples? }
+//     → { pattern, template, confidence, supportingSamples, totalSamples }
+//   POST /api/guess-email          { firstName, lastName, domain, pattern? }
+//     → { email, pattern, confidence, reason }
+//
+// Hunter.io is stubbed for now: we generate 3–5 realistic-looking samples
+// per domain, deterministically, so the same domain always returns the same
+// bag. Real integration replaces `stubHunterDomainSearch()` with a fetch to
+// api.hunter.io/v2/domain-search.
+
+import {
+  detectPattern as detectEmailPattern,
+  applyPattern as applyEmailPattern,
+  normalizeDomain as normalizeEmailDomain,
+  type EmailSample,
+  type EmailPatternKey,
+} from "./src/utils/emailPattern";
+import {
+  upsertLead as dbUpsertLead,
+  listLeads as dbListLeads,
+  getLead as dbGetLead,
+  writeEvent as dbWriteEvent,
+  seedIfEmpty as dbSeedIfEmpty,
+  upsertCompany as dbUpsertCompany,
+  setCompanyEmailPattern as dbSetCompanyEmailPattern,
+  getCompanyByDomain as dbGetCompanyByDomain,
+  listCompanies as dbListCompanies,
+  type LeadStatus,
+  type EmailConfidence as DbEmailConfidence,
+} from "./src/db/leads";
+import { verifyLinkedinProfile } from "./src/services/proxycurl";
+
+// Persisted-for-session pattern cache so we don't re-run detection every guess.
+const emailPatternCache = new Map<
+  string,
+  ReturnType<typeof detectEmailPattern>
+>();
+
+/**
+ * Pattern-bank keys — pick one deterministically per domain so tests + demo
+ * flows are reproducible. Real Hunter.io responses will be varied.
+ */
+const STUB_PATTERNS: EmailPatternKey[] = ["first.last", "flast", "firstlast", "first_last"];
+
+/**
+ * Sample first/last name pairs that produce natural-looking emails.
+ */
+const STUB_NAMES: Array<{ firstName: string; lastName: string }> = [
+  { firstName: "Priya", lastName: "Iyer" },
+  { firstName: "Ram", lastName: "Kumar" },
+  { firstName: "Anita", lastName: "Rao" },
+  { firstName: "Vikram", lastName: "Shah" },
+  { firstName: "Neha", lastName: "Patel" },
+  { firstName: "Arjun", lastName: "Nair" },
+];
+
+/**
+ * Deterministic domain hash → picks a pattern from STUB_PATTERNS.
+ * Ensures acme.com always returns the same detected pattern across restarts.
+ */
+function hashDomainToInt(domain: string): number {
+  let h = 0;
+  for (let i = 0; i < domain.length; i++) {
+    h = (h * 31 + domain.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
+/**
+ * STUB: mimics Hunter.io Domain Search. Returns 4 known-good samples for the
+ * given domain, all following the same synthetic pattern (which the detector
+ * should discover).
+ */
+function stubHunterDomainSearch(domain: string): EmailSample[] {
+  const d = normalizeEmailDomain(domain);
+  if (!d) return [];
+  const patternIdx = hashDomainToInt(d) % STUB_PATTERNS.length;
+  const patternKey = STUB_PATTERNS[patternIdx];
+
+  const build = (first: string, last: string) => {
+    switch (patternKey) {
+      case "first.last": return `${first}.${last}`;
+      case "flast":      return `${first.charAt(0)}${last}`;
+      case "firstlast":  return `${first}${last}`;
+      case "first_last": return `${first}_${last}`;
+      default:           return `${first}.${last}`;
+    }
+  };
+
+  // Pick 4 names offset by domain hash so different domains use different
+  // sample sets (nice for demos).
+  const startIdx = hashDomainToInt(d + "seed") % STUB_NAMES.length;
+  return Array.from({ length: 4 }).map((_, i) => {
+    const n = STUB_NAMES[(startIdx + i) % STUB_NAMES.length];
+    const first = n.firstName.toLowerCase();
+    const last = n.lastName.toLowerCase();
+    return { firstName: n.firstName, lastName: n.lastName, email: `${build(first, last)}@${d}` };
+  });
+}
+
+app.post("/api/learn-email-pattern", async (req, res) => {
+  const { domain, samples, companyName } = req.body ?? {};
+  const d = normalizeEmailDomain(domain);
+  if (!d) return res.status(400).json({ error: "domain is required" });
+
+  try {
+    const bag: EmailSample[] =
+      Array.isArray(samples) && samples.length > 0 ? samples : stubHunterDomainSearch(d);
+    const detected = detectEmailPattern(bag);
+    emailPatternCache.set(d, detected);
+
+    // Persist to the leads store so every lead upsert at this domain gets an
+    // auto-generated email guess from now on. If a company row doesn't exist
+    // yet (first time we've seen this domain), create one.
+    const inferredName = (companyName as string | undefined)?.trim() || d.split(".")[0].replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    const company = dbUpsertCompany({ domain: d, name: inferredName });
+    dbSetCompanyEmailPattern(company.id, detected.pattern, detected.confidence);
+
+    return res.json({
+      domain: d,
+      ...detected,
+      source: Array.isArray(samples) && samples.length > 0 ? "user_samples" : "hunter_stub",
+      isFallback: !(Array.isArray(samples) && samples.length > 0),
+      savedToDb: true,
+      companyId: company.id,
+      companyName: company.name,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: `Pattern detection failed: ${err.message || "unknown"}` });
+  }
+});
+
+app.get("/api/companies/:domain/email-pattern", (req, res) => {
+  const d = normalizeEmailDomain(req.params.domain);
+  if (!d) return res.status(400).json({ error: "domain is required" });
+  const company = dbGetCompanyByDomain(d);
+  if (!company || !company.email_pattern) {
+    return res.status(404).json({ error: "No learned pattern for this domain" });
+  }
+  return res.json({
+    domain: d,
+    companyId: company.id,
+    companyName: company.name,
+    pattern: company.email_pattern,
+    confidence: company.pattern_confidence,
+    lastVerifiedAt: company.last_verified_at,
+  });
+});
+
+app.post("/api/guess-email", async (req, res) => {
+  const { firstName, lastName, domain, pattern } = req.body ?? {};
+  const d = normalizeEmailDomain(domain);
+  if (!firstName || !lastName || !d) {
+    return res.status(400).json({ error: "firstName, lastName, and domain are required" });
+  }
+
+  try {
+    let usePattern: EmailPatternKey;
+    let source: "explicit" | "db" | "memory_cache" | "stub_derived" = "stub_derived";
+
+    if (pattern) {
+      usePattern = pattern as EmailPatternKey;
+      source = "explicit";
+    } else {
+      // 1. Prefer the DB-stored pattern (persisted from a prior "learn" call).
+      const company = dbGetCompanyByDomain(d);
+      if (company?.email_pattern) {
+        usePattern = company.email_pattern as EmailPatternKey;
+        source = "db";
+      } else {
+        // 2. Fall back to in-memory session cache.
+        const cached = emailPatternCache.get(d);
+        if (cached) {
+          usePattern = cached.pattern;
+          source = "memory_cache";
+        } else {
+          // 3. Last resort — derive from the Hunter.io stub.
+          const detected = detectEmailPattern(stubHunterDomainSearch(d));
+          emailPatternCache.set(d, detected);
+          usePattern = detected.pattern;
+          source = "stub_derived";
+        }
+      }
+    }
+
+    const guess = applyEmailPattern(usePattern, firstName, lastName, d);
+    return res.json({ ...guess, domain: d, patternSource: source });
+  } catch (err: any) {
+    return res.status(500).json({ error: `Guess failed: ${err.message || "unknown"}` });
+  }
+});
+
+// ─── Leads persistence (Phase A — SQLite) ────────────────────────────────────
+
+app.get("/api/leads", (req, res) => {
+  try {
+    const q = req.query;
+    const result = dbListLeads({
+      limit: q.limit ? Number(q.limit) : undefined,
+      offset: q.offset ? Number(q.offset) : undefined,
+      status: (q.status as LeadStatus) ?? undefined,
+      emailConfidence: (q.emailConfidence as DbEmailConfidence) ?? undefined,
+      companyId: typeof q.companyId === "string" ? q.companyId : undefined,
+      search: typeof q.search === "string" ? q.search : undefined,
+    });
+    return res.json(result);
+  } catch (err: any) {
+    return res.status(500).json({ error: `Failed to list leads: ${err.message || "unknown"}` });
+  }
+});
+
+app.get("/api/leads/:id", (req, res) => {
+  try {
+    const lead = dbGetLead(req.params.id);
+    if (!lead) return res.status(404).json({ error: "Lead not found" });
+    return res.json(lead);
+  } catch (err: any) {
+    return res.status(500).json({ error: `Failed to fetch lead: ${err.message || "unknown"}` });
+  }
+});
+
+app.post("/api/leads", (req, res) => {
+  const { firstName, lastName, currentRole, companyName, companyDomain, linkedinUrl } = req.body ?? {};
+  if (!firstName || !lastName || !currentRole || !companyName || !companyDomain || !linkedinUrl) {
+    return res.status(400).json({
+      error: "firstName, lastName, currentRole, companyName, companyDomain, linkedinUrl are required",
+    });
+  }
+  try {
+    const result = dbUpsertLead(req.body);
+    return res.status(result.wasCreated ? 201 : 200).json(result);
+  } catch (err: any) {
+    return res.status(500).json({ error: `Failed to upsert lead: ${err.message || "unknown"}` });
+  }
+});
+
+app.post("/api/leads/bulk", (req, res) => {
+  const { leads } = req.body ?? {};
+  if (!Array.isArray(leads)) return res.status(400).json({ error: "leads must be an array" });
+  const results = { created: 0, updated: 0, failed: 0, errors: [] as string[] };
+  for (const l of leads) {
+    try {
+      const r = dbUpsertLead({ source: 'csv', ...l });
+      if (r.wasCreated) results.created++;
+      else results.updated++;
+    } catch (e: any) {
+      results.failed++;
+      results.errors.push(e.message || "unknown");
+    }
+  }
+  return res.json(results);
+});
+
+app.post("/api/leads/:id/refresh", async (req, res) => {
+  try {
+    const lead = dbGetLead(req.params.id);
+    if (!lead) return res.status(404).json({ error: "Lead not found" });
+
+    dbWriteEvent(lead.id, "refresh_queued", `Refresh requested for ${lead.first_name} ${lead.last_name}`, "user");
+
+    // Verify against LinkedIn via Proxycurl (real if PROXYCURL_API_KEY set,
+    // deterministic stub otherwise). The prior hint stops the stub from
+    // clobbering good DB data with URL-slug guesses when unauthenticated.
+    const verified = await verifyLinkedinProfile(lead.linkedin_url, {
+      firstName: lead.first_name,
+      lastName: lead.last_name,
+      currentRole: lead.current_role,
+      currentCompany: lead.company_name,
+      currentCompanyDomain: lead.company_domain,
+      seniority: lead.seniority,
+    });
+
+    if (!verified.reachable) {
+      dbWriteEvent(lead.id, "unreachable", `Proxycurl could not verify profile — marked unreachable`, verified.source);
+      return res.json({
+        leadId: lead.id,
+        source: verified.source,
+        reachable: false,
+        changes: [],
+        note: "Profile could not be verified.",
+      });
+    }
+
+    // Route the merge through upsertLead — it handles diff detection,
+    // event writing, status flipping, and email backfill in one place.
+    const merged = dbUpsertLead({
+      firstName: verified.firstName,
+      lastName: verified.lastName,
+      currentRole: verified.currentRole,
+      companyName: verified.currentCompany,
+      companyDomain: verified.currentCompanyDomain ?? lead.company_domain,
+      linkedinUrl: lead.linkedin_url,
+      seniority: verified.seniority,
+    });
+
+    const changes: string[] = [];
+    if (merged.lead.current_role !== lead.current_role) changes.push(`role: ${lead.current_role} → ${merged.lead.current_role}`);
+    if (merged.lead.company_id !== lead.company_id) changes.push(`company changed`);
+    if (merged.lead.email_guess !== lead.email_guess) changes.push(`email guess updated`);
+
+    return res.json({
+      leadId: lead.id,
+      source: verified.source,
+      reachable: true,
+      status: merged.lead.status,
+      changes,
+      eventsWritten: merged.eventsWritten,
+      note: verified.source === "stub"
+        ? "Verified via stub (no PROXYCURL_API_KEY set). Add key to .env to enable real LinkedIn checks."
+        : `Verified via Proxycurl. ${changes.length} change${changes.length === 1 ? "" : "s"} detected.`,
+    });
+  } catch (err: any) {
+    return res.status(500).json({ error: `Refresh failed: ${err.message || "unknown"}` });
+  }
+});
+
+// Seed the DB with hackathon personas on cold start if empty.
+try {
+  const seed = dbSeedIfEmpty();
+  if (seed.seeded) console.log(`[Leads DB] Seeded ${seed.count} demo leads.`);
+  else console.log(`[Leads DB] Ready with ${seed.count} existing leads.`);
+} catch (e: any) {
+  console.warn(`[Leads DB] Seed skipped: ${e.message || "unknown"}`);
+}
+
+// ─── Scheduler (hackathon-grade) ────────────────────────────────────────────
+// Two cron-driven jobs that keep lead + pattern data fresh without user
+// clicks. Off by default — set `ENABLE_SCHEDULER=true` in .env to arm the
+// crons. Both jobs always expose a "run now" REST hook for demos regardless
+// of the flag, so you can trigger a refresh even without waiting for cron.
+
+import cron from "node-cron";
+import { CronExpressionParser } from "cron-parser";
+
+type SchedulerJobId = "lead-health" | "email-pattern-refresh" | "persona-discovery";
+
+interface JobResult {
+  jobId: SchedulerJobId;
+  ranAt: string;
+  durationMs: number;
+  scanned: number;
+  processed: number;
+  changed: number;
+  errors: number;
+  note: string;
+  trigger: "cron" | "manual";
+}
+
+interface JobHistoryEntry {
+  ranAt: string;
+  processed: number;
+  changed: number;
+  errors: number;
+  trigger: "cron" | "manual";
+}
+
+interface JobState {
+  id: SchedulerJobId;
+  label: string;
+  description: string;
+  cron: string;
+  schedule: string;
+  enabled: boolean;
+  running: boolean;
+  lastResult: JobResult | null;
+  history: JobHistoryEntry[];
+}
+
+const HISTORY_MAX = 8;
+
+function computeNextRunAt(cronExpr: string): string | null {
+  try {
+    const iter = CronExpressionParser.parse(cronExpr);
+    return iter.next().toDate().toISOString();
+  } catch {
+    return null;
+  }
+}
+
+const SCHEDULER_STATE_PATH = path.join(process.cwd(), "data", "scheduler-state.json");
+const LEAD_HEALTH_STALE_DAYS = 30;
+const LEAD_HEALTH_CAP = 20;
+const PATTERN_STALE_DAYS = 14;
+const PATTERN_CAP = 10;
+const PERSONA_DISCOVERY_CAP = 15;   // total role×account Hunter calls per run
+
+// Resolve a job's cron + human label from env, falling back to defaults if
+// the env value is missing or invalid. Bad cron strings never crash the
+// server — we warn and use the default so the demo keeps working.
+function resolveCron(envKey: string, defaultCron: string, defaultLabel: string, labelKey: string): { cron: string; schedule: string } {
+  const raw = process.env[envKey]?.trim();
+  const label = process.env[labelKey]?.trim();
+  if (!raw) return { cron: defaultCron, schedule: defaultLabel };
+  if (!cron.validate(raw)) {
+    console.warn(`[scheduler] ${envKey}="${raw}" is not a valid cron expression — falling back to default (${defaultCron}).`);
+    return { cron: defaultCron, schedule: defaultLabel };
+  }
+  return { cron: raw, schedule: label || raw };
+}
+
+const leadHealthCfg = resolveCron("LEAD_HEALTH_CRON", "0 2 * * *", "Daily at 02:00", "LEAD_HEALTH_LABEL");
+const patternRefreshCfg = resolveCron("PATTERN_REFRESH_CRON", "0 3 * * 0", "Sundays at 03:00", "PATTERN_REFRESH_LABEL");
+const personaDiscoveryCfg = resolveCron("PERSONA_DISCOVERY_CRON", "0 4 * * *", "Daily at 04:00", "PERSONA_DISCOVERY_LABEL");
+
+const schedulerJobs: Record<SchedulerJobId, JobState> = {
+  "lead-health": {
+    id: "lead-health",
+    label: "Lead health check",
+    description: `Re-verifies LinkedIn for leads not checked in ${LEAD_HEALTH_STALE_DAYS}+ days; flags role changes and departures.`,
+    cron: leadHealthCfg.cron,
+    schedule: leadHealthCfg.schedule,
+    enabled: false,
+    running: false,
+    lastResult: null,
+    history: [],
+  },
+  "email-pattern-refresh": {
+    id: "email-pattern-refresh",
+    label: "Email pattern refresh",
+    description: `Re-checks Hunter-derived email patterns for companies not verified in ${PATTERN_STALE_DAYS}+ days.`,
+    cron: patternRefreshCfg.cron,
+    schedule: patternRefreshCfg.schedule,
+    enabled: false,
+    running: false,
+    lastResult: null,
+    history: [],
+  },
+  "persona-discovery": {
+    id: "persona-discovery",
+    label: "Persona discovery",
+    description: `Enriches decision-maker personas for enrolled accounts via Hunter; auto-adds real matches to Leads.`,
+    cron: personaDiscoveryCfg.cron,
+    schedule: personaDiscoveryCfg.schedule,
+    enabled: false,
+    running: false,
+    lastResult: null,
+    history: [],
+  },
+};
+
+function loadSchedulerState(): void {
+  try {
+    if (!fs.existsSync(SCHEDULER_STATE_PATH)) return;
+    const parsed = JSON.parse(fs.readFileSync(SCHEDULER_STATE_PATH, "utf-8"));
+    for (const id of Object.keys(schedulerJobs) as SchedulerJobId[]) {
+      if (parsed?.[id]?.lastResult) schedulerJobs[id].lastResult = parsed[id].lastResult;
+      if (Array.isArray(parsed?.[id]?.history)) {
+        schedulerJobs[id].history = parsed[id].history.slice(-HISTORY_MAX);
+      }
+    }
+  } catch (e: any) {
+    console.log(sanitizeString(`[scheduler] state load skipped: ${e?.message ?? e}`));
+  }
+}
+
+function saveSchedulerState(): void {
+  try {
+    const snapshot: Record<string, unknown> = {};
+    for (const id of Object.keys(schedulerJobs) as SchedulerJobId[]) {
+      snapshot[id] = {
+        lastResult: schedulerJobs[id].lastResult,
+        history: schedulerJobs[id].history,
+      };
+    }
+    fs.writeFileSync(SCHEDULER_STATE_PATH, JSON.stringify(snapshot, null, 2), "utf-8");
+  } catch (e: any) {
+    console.log(sanitizeString(`[scheduler] state save skipped: ${e?.message ?? e}`));
+  }
+}
+
+function daysSince(iso: string | null): number {
+  if (!iso) return Number.POSITIVE_INFINITY;
+  return (Date.now() - new Date(iso).getTime()) / (1000 * 60 * 60 * 24);
+}
+
+async function runLeadHealthJob(): Promise<Omit<JobResult, "trigger">> {
+  const started = Date.now();
+  const { leads } = dbListLeads({ limit: 500 });
+  const candidates = leads
+    .filter((l) => daysSince(l.last_verified_at) > LEAD_HEALTH_STALE_DAYS)
+    .slice(0, LEAD_HEALTH_CAP);
+
+  let processed = 0;
+  let changed = 0;
+  let errors = 0;
+
+  for (const lead of candidates) {
+    try {
+      const verified = await verifyLinkedinProfile(lead.linkedin_url, {
+        firstName: lead.first_name,
+        lastName: lead.last_name,
+        currentRole: lead.current_role,
+        currentCompany: lead.company_name,
+        currentCompanyDomain: lead.company_domain,
+        seniority: lead.seniority,
+      });
+      processed++;
+      if (!verified.reachable) {
+        dbWriteEvent(lead.id, "unreachable", `Scheduler: profile unreachable`, "scheduler");
+        continue;
+      }
+      const merged = dbUpsertLead({
+        firstName: verified.firstName,
+        lastName: verified.lastName,
+        currentRole: verified.currentRole,
+        companyName: verified.currentCompany,
+        companyDomain: verified.currentCompanyDomain ?? lead.company_domain,
+        linkedinUrl: lead.linkedin_url,
+        seniority: verified.seniority,
+      });
+      if (merged.lead.current_role !== lead.current_role || merged.lead.company_id !== lead.company_id) {
+        changed++;
+      }
+    } catch (e: any) {
+      errors++;
+      console.log(sanitizeString(`[scheduler:lead-health] ${lead.id}: ${e?.message ?? e}`));
+    }
+  }
+
+  return {
+    jobId: "lead-health",
+    ranAt: new Date().toISOString(),
+    durationMs: Date.now() - started,
+    scanned: leads.length,
+    processed,
+    changed,
+    errors,
+    note: candidates.length === 0
+      ? `All ${leads.length} lead${leads.length === 1 ? "" : "s"} within the ${LEAD_HEALTH_STALE_DAYS}-day freshness window.`
+      : `Re-verified ${processed}/${candidates.length} stale lead${candidates.length === 1 ? "" : "s"}; ${changed} changed.`,
+  };
+}
+
+async function runEmailPatternRefreshJob(): Promise<Omit<JobResult, "trigger">> {
+  const started = Date.now();
+  const companies = dbListCompanies();
+  const candidates = companies
+    .filter((c) => daysSince(c.last_verified_at) > PATTERN_STALE_DAYS)
+    .slice(0, PATTERN_CAP);
+
+  let processed = 0;
+  let changed = 0;
+  let errors = 0;
+
+  for (const company of candidates) {
+    try {
+      const bag = stubHunterDomainSearch(company.domain);
+      const detected = detectEmailPattern(bag);
+      processed++;
+      if (detected.pattern !== company.email_pattern || detected.confidence !== company.pattern_confidence) {
+        changed++;
+      }
+      dbSetCompanyEmailPattern(company.id, detected.pattern, detected.confidence);
+      emailPatternCache.set(company.domain, detected);
+    } catch (e: any) {
+      errors++;
+      console.log(sanitizeString(`[scheduler:email-pattern] ${company.domain}: ${e?.message ?? e}`));
+    }
+  }
+
+  return {
+    jobId: "email-pattern-refresh",
+    ranAt: new Date().toISOString(),
+    durationMs: Date.now() - started,
+    scanned: companies.length,
+    processed,
+    changed,
+    errors,
+    note: candidates.length === 0
+      ? `All ${companies.length} compan${companies.length === 1 ? "y" : "ies"} within the ${PATTERN_STALE_DAYS}-day freshness window.`
+      : `Refreshed ${processed}/${candidates.length} pattern${candidates.length === 1 ? "" : "s"}; ${changed} changed.`,
+  };
+}
+
+async function runPersonaDiscoveryJob(): Promise<Omit<JobResult, "trigger">> {
+  const started = Date.now();
+  const queue = loadEnrichmentQueue();
+  if (queue.length === 0) {
+    return {
+      jobId: "persona-discovery",
+      ranAt: new Date().toISOString(),
+      durationMs: Date.now() - started,
+      scanned: 0, processed: 0, changed: 0, errors: 0,
+      note: "Enrollment queue is empty. Run an analysis to enroll accounts.",
+    };
+  }
+  const sweep = await runEnrichmentSweep(queue, DEFAULT_DM_ROLES, PERSONA_DISCOVERY_CAP);
+  return {
+    jobId: "persona-discovery",
+    ranAt: new Date().toISOString(),
+    durationMs: Date.now() - started,
+    scanned: sweep.scanned,
+    processed: sweep.matched,
+    changed: sweep.leadsCreated,
+    errors: sweep.errors,
+    note: sweep.scanned === 0
+      ? `${queue.length} account${queue.length === 1 ? "" : "s"} enrolled; sweep cap hit before any calls.`
+      : `Scanned ${sweep.scanned} role×account pairs across ${queue.length} enrolled account${queue.length === 1 ? "" : "s"}; ${sweep.leadsCreated} new leads, ${sweep.leadsUpdated} updated.`,
+  };
+}
+
+async function runSchedulerJob(id: SchedulerJobId, trigger: "cron" | "manual"): Promise<JobResult> {
+  const job = schedulerJobs[id];
+  if (job.running) {
+    return {
+      jobId: id, ranAt: new Date().toISOString(), durationMs: 0,
+      scanned: 0, processed: 0, changed: 0, errors: 0,
+      note: "Already running — skipped.",
+      trigger,
+    };
+  }
+  job.running = true;
+  try {
+    const impl =
+      id === "lead-health" ? runLeadHealthJob :
+      id === "email-pattern-refresh" ? runEmailPatternRefreshJob :
+      runPersonaDiscoveryJob;
+    const partial = await impl();
+    const result: JobResult = { ...partial, trigger };
+    job.lastResult = result;
+    job.history = [
+      ...job.history,
+      { ranAt: result.ranAt, processed: result.processed, changed: result.changed, errors: result.errors, trigger },
+    ].slice(-HISTORY_MAX);
+    saveSchedulerState();
+    console.log(sanitizeString(`[scheduler:${id}] (${trigger}) ${result.note}`));
+    return result;
+  } finally {
+    job.running = false;
+  }
+}
+
+function armScheduler(): void {
+  loadSchedulerState();
+  const enabled = process.env.ENABLE_SCHEDULER === "true";
+  for (const id of Object.keys(schedulerJobs) as SchedulerJobId[]) {
+    schedulerJobs[id].enabled = enabled;
+    if (!enabled) continue;
+    cron.schedule(schedulerJobs[id].cron, () => {
+      runSchedulerJob(id, "cron").catch(() => {});
+    });
+  }
+  console.log(
+    `[scheduler] ${enabled ? "armed" : "disabled — set ENABLE_SCHEDULER=true to arm cron"} · ${Object.keys(schedulerJobs).length} jobs registered · manual /api/scheduler/run/:jobId available either way`,
+  );
+}
+
+app.get("/api/scheduler/status", (_req, res) => {
+  res.json({
+    enabled: schedulerJobs["lead-health"].enabled,
+    serverTime: new Date().toISOString(),
+    jobs: (Object.values(schedulerJobs) as JobState[]).map((j) => ({
+      id: j.id,
+      label: j.label,
+      description: j.description,
+      cron: j.cron,
+      schedule: j.schedule,
+      enabled: j.enabled,
+      running: j.running,
+      lastResult: j.lastResult,
+      history: j.history,
+      nextRunAt: j.enabled ? computeNextRunAt(j.cron) : null,
+    })),
+  });
+});
+
+app.post("/api/scheduler/run/:jobId", async (req, res) => {
+  const id = req.params.jobId as SchedulerJobId;
+  if (!(id in schedulerJobs)) return res.status(404).json({ error: "Unknown scheduler job" });
+  try {
+    const result = await runSchedulerJob(id, "manual");
+    return res.json(result);
+  } catch (e: any) {
+    return res.status(500).json({ error: e?.message ?? "unknown" });
+  }
+});
+
+armScheduler();
 
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {

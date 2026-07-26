@@ -9,6 +9,7 @@ import {
   ExternalLink, Globe, Activity, RefreshCw, User, Briefcase, TrendingDown, ChevronRight, Download
 } from 'lucide-react';
 import { FaLinkedin, FaYoutube, FaXTwitter, FaInstagram, FaFacebook } from 'react-icons/fa6';
+import { SocialSignalsCard } from './SocialSignalsCard';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -16,6 +17,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { getAccountPriorityInfo, getOrInitializeSignals, AccountSignal } from './AccountCard';
 import { toast } from 'sonner';
 import * as crmMirror from '../utils/crmMirror';
+import { EmailPatternWidget } from './EmailPatternWidget';
 
 export function SourceCitation({ citation, inlineLabel, isSignal = false }: { citation?: IntelCitation; inlineLabel?: string; isSignal?: boolean }) {
   if (!citation) return null;
@@ -266,6 +268,8 @@ interface EnrichedStakeholder {
   title: string;
   linkedinUrl: string;
   isFallback?: boolean;
+  leadId?: string | null;
+  leadCreated?: boolean;
 }
 
 export function StakeholderLinkedinCard({ role, company, domain, compact = false }: { role: string; company: string; domain?: string; compact?: boolean }) {
@@ -309,9 +313,13 @@ export function StakeholderLinkedinCard({ role, company, domain, compact = false
   const enrichedProfileUrl = looksLikeProfileUrl(enriched?.linkedinUrl) ? enriched!.linkedinUrl : '';
   const linkedinHref = enrichedProfileUrl || details.linkedinUrl;
   const isReal = Boolean(enriched && enrichedProfileUrl);
+  const isTracked = Boolean(enriched?.leadId);
   const tooltip = isReal
     ? `Open ${displayName}'s LinkedIn profile in a new tab`
     : `Search LinkedIn for ${role} at ${company} (illustrative name — the search finds real people in this role)`;
+  const trackedTooltip = enriched?.leadCreated
+    ? `${displayName} was added to Leads. Open the Leads tab to see them.`
+    : `${displayName} is already tracked in Leads.`;
 
   if (compact) {
     return (
@@ -329,6 +337,11 @@ export function StakeholderLinkedinCard({ role, company, domain, compact = false
               {isReal && (
                 <span className="bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-[10px] font-bold px-1 rounded-full border border-emerald-100 dark:border-emerald-800/50 font-mono">
                   Live
+                </span>
+              )}
+              {isTracked && (
+                <span title={trackedTooltip} className="bg-orange-50 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300 text-[10px] font-bold px-1 rounded-full border border-orange-100 dark:border-orange-800/50 font-mono">
+                  Tracked
                 </span>
               )}
             </div>
@@ -369,12 +382,17 @@ export function StakeholderLinkedinCard({ role, company, domain, compact = false
                 Live
               </span>
             )}
+            {isTracked && (
+              <span title={trackedTooltip} className="inline-flex items-center justify-center bg-orange-50 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300 text-[11px] font-bold px-1.5 py-0.5 rounded-full border border-orange-100 dark:border-orange-800/50 font-mono">
+                Tracked
+              </span>
+            )}
           </div>
           <div className="text-xs text-slate-500 dark:text-slate-300 font-medium leading-none">
             {enriched?.title || role} at <span className="font-semibold text-slate-700 dark:text-slate-300">{company}</span>
           </div>
           <div className="text-[12px] text-slate-400 font-semibold uppercase tracking-normal font-mono">
-            {isReal ? 'Enriched via Apollo · Real Contact' : `${details.estimatedYoe} Years Exp • Inferred Stakeholder Node`}
+            {isReal ? (isTracked ? 'Enriched via Apollo · Auto-added to Leads' : 'Enriched via Apollo · Real Contact') : `${details.estimatedYoe} Years Exp • Inferred Stakeholder Node`}
           </div>
         </div>
       </div>
@@ -638,6 +656,96 @@ export function AccountDetail({
       transition={{ duration: 0.22, ease: 'easeOut' }}
       className="fixed inset-0 z-50 bg-slate-50 dark:bg-slate-950 overflow-y-auto"
     >
+      {/* Full-screen blocking overlay while /api/analyze-account is running.
+          No close button, no back button, no ESC — the user must wait for
+          the model + web search pass to complete. Sits above the Back header
+          (z-20) and the modal itself (z-50). */}
+      <AnimatePresence>
+        {account.analysisProgress && !analysis && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="fixed inset-0 z-[60] bg-slate-950/60 backdrop-blur-md flex items-center justify-center p-6 select-none"
+            onKeyDown={(e) => e.preventDefault()}
+            role="dialog"
+            aria-modal="true"
+            aria-label="AI analysis in progress"
+          >
+            <div className="w-full max-w-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-800 border border-orange-500/30 rounded-2xl shadow-2xl shadow-orange-500/10 p-8 space-y-6">
+              <div className="flex items-center gap-4">
+                <div className="relative w-14 h-14 shrink-0">
+                  <div className="absolute inset-0 rounded-full bg-orange-500/20 animate-ping" />
+                  <div className="absolute inset-1 rounded-full bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center shadow-lg shadow-orange-500/40">
+                    <Sparkles className="w-6 h-6 text-white animate-pulse" />
+                  </div>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-lg font-bold text-white leading-tight">
+                    AI is analyzing this account
+                  </h3>
+                  <p className="text-xs font-mono text-orange-300 mt-1">
+                    {account.name} · {account.domain}
+                  </p>
+                </div>
+                <div className="hidden sm:flex flex-col items-end gap-1">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-orange-300">Live</span>
+                  <span className="text-[10px] font-mono text-slate-400">GPT-4o + web search</span>
+                </div>
+              </div>
+
+              <div className="h-px bg-gradient-to-r from-transparent via-orange-500/30 to-transparent" />
+
+              {account.analysisProgress!.messages.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-orange-300">
+                    Reasoning trace
+                  </div>
+                  {account.analysisProgress!.messages.slice(-6).map((msg, idx, arr) => (
+                    <div
+                      key={`om-${idx}`}
+                      className={`flex items-start gap-2 text-[13px] leading-snug ${
+                        idx === arr.length - 1
+                          ? 'text-white font-semibold'
+                          : 'text-slate-400'
+                      }`}
+                    >
+                      <span className="text-orange-400 mt-0.5">›</span>
+                      <span>{msg}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {account.analysisProgress!.searches.length > 0 && (
+                <div className="space-y-1.5">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-orange-300">
+                    Web searches performed
+                  </div>
+                  {account.analysisProgress!.searches.slice(-4).map((query, idx) => (
+                    <div
+                      key={`os-${idx}`}
+                      className="flex items-start gap-2 text-[12px] font-mono text-slate-200 bg-slate-800/60 border border-slate-700/60 rounded-lg px-2.5 py-1.5"
+                    >
+                      <span className="text-orange-400 shrink-0">🔎</span>
+                      <span className="truncate">{query}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="pt-2 flex items-center gap-3">
+                <div className="flex-1 h-1 bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-orange-500 via-amber-500 to-orange-500 animate-pulse" style={{ width: '100%' }} />
+                </div>
+                <span className="text-[10px] font-mono text-slate-500">please wait…</span>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <header className="sticky top-0 z-20 bg-[#2A2A2B] border-b border-white/[0.06] backdrop-blur-md font-sans select-none">
         <div className="max-w-6xl mx-auto h-14 px-6 md:px-8 flex items-center gap-3">
           <Button
@@ -984,105 +1092,27 @@ export function AccountDetail({
             )}
           </section>
 
-          {/* Social Signals — tabbed per platform */}
-          <section className="space-y-2.5 bg-white dark:bg-slate-900 p-3.5 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-md text-left">
-            {/* Header */}
-            <div className="flex items-center justify-between">
-              <h3 className="text-[15px] font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                <Globe className="w-4 h-4 text-indigo-600 dark:text-indigo-300" />
-                Social Signals
-                <span className="text-[9.5px] font-semibold px-1.5 py-0 rounded-full bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800/60">
-                  Past 15 days
-                </span>
-              </h3>
-              <div className="flex items-center gap-1.5">
-                {socialLoading && (
-                  <span className="text-[10px] text-indigo-500 dark:text-indigo-400 font-mono animate-pulse">Scanning…</span>
-                )}
-                {socialData?.isFallback && !socialLoading && (
-                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800/60 bg-amber-50/50 dark:bg-amber-950/30">
-                    Simulated
-                  </Badge>
-                )}
-                {socialData && !socialData.isFallback && !socialLoading && (
-                  <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60">
-                    Live
-                  </Badge>
-                )}
-                {!socialLoading && (
-                  <button
-                    title="Refresh social signals"
-                    onClick={() => {
-                      setSocialData(null);
-                      setSocialLoading(true);
-                      fetch('/api/analyze-social', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ domain: account.domain, companyName: account.name }),
-                      })
-                        .then(r => r.ok ? r.json() : Promise.reject(r.status))
-                        .then((data: SocialActivity) => {
-                          setSocialData(data);
-                          setSocialLoading(false);
-                          onUpdateAccount?.({ ...account, socialActivity: data });
-                        })
-                        .catch(() => setSocialLoading(false));
-                    }}
-                    className="p-0.5 rounded-md text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                  >
-                    <RefreshCw className="w-3 h-3" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Body */}
-            {socialLoading ? (
-              <div className="flex flex-col items-center gap-2 py-5 text-slate-400 dark:text-slate-500">
-                <div className="w-5 h-5 border-2 border-slate-200 dark:border-slate-700 border-t-indigo-500 rounded-full animate-spin" />
-                <p className="text-[12px] font-medium">Scanning social media presence…</p>
-              </div>
-            ) : !socialData || socialData.platforms.length === 0 ? (
-              <div className="text-center py-4 text-slate-400 dark:text-slate-500 text-[12px] font-medium">
-                No verified social presence found for this account.
-              </div>
-            ) : (
-              <Tabs defaultValue={socialData.platforms[0]?.platform} className="w-full">
-                {/* Tab triggers — one per platform with post count badge */}
-                <TabsList className="w-full flex h-auto p-0.5 bg-slate-100 dark:bg-slate-800 rounded-lg gap-0.5 mb-2.5">
-                  {socialData.platforms.map((p) => {
-                    const pm = SOCIAL_META[p.platform] ?? SOCIAL_META.linkedin;
-                    const TabIcon = pm.Icon;
-                    const postCount15d = p.recentPosts.length;
-                    return (
-                      <TabsTrigger
-                        key={p.platform}
-                        value={p.platform}
-                        className="flex-1 flex items-center justify-center gap-1 text-[13px] font-semibold py-1 rounded-md data-[state=active]:bg-white dark:data-[state=active]:bg-slate-900 data-[state=active]:shadow-sm transition-all"
-                      >
-                        <TabIcon className={`w-3 h-3 shrink-0 ${pm.tabDot}`} />
-                        <span className="hidden sm:inline">{pm.label}</span>
-                        {postCount15d > 0 ? (
-                          <span className="text-[9px] font-bold px-1 py-0 rounded-full bg-indigo-100 dark:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 hidden md:inline">
-                            {postCount15d}
-                          </span>
-                        ) : (
-                          <span className="text-[9px] font-mono text-slate-400 dark:text-slate-500 hidden md:inline">—</span>
-                        )}
-                      </TabsTrigger>
-                    );
-                  })}
-                </TabsList>
-
-                {/* Tab content — one panel per platform */}
-                {socialData.platforms.map((p) => (
-                  <TabsContent key={p.platform} value={p.platform} className="mt-0 animate-in fade-in duration-150">
-                    <SocialPlatformCard platform={p} />
-                  </TabsContent>
-                ))}
-              </Tabs>
-            )}
-          </section>
+          {/* Social Signals — 10-platform vertical list + Buying Intent summary */}
+          <SocialSignalsCard
+            socialData={socialData}
+            loading={socialLoading}
+            onRefresh={() => {
+              setSocialData(null);
+              setSocialLoading(true);
+              fetch('/api/analyze-social', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ domain: account.domain, companyName: account.name }),
+              })
+                .then(r => r.ok ? r.json() : Promise.reject(r.status))
+                .then((data: SocialActivity) => {
+                  setSocialData(data);
+                  setSocialLoading(false);
+                  onUpdateAccount?.({ ...account, socialActivity: data });
+                })
+                .catch(() => setSocialLoading(false));
+            }}
+          />
 
           {/* Caution matching Alert indicator */}
           {info.hasCautionMatches && (
@@ -1652,6 +1682,12 @@ export function AccountDetail({
               </div>
             </div>
           </section>
+
+          {account.domain && (
+            <div className="mb-6">
+              <EmailPatternWidget domain={account.domain} companyName={account.name} />
+            </div>
+          )}
 
           <Tabs defaultValue="outreach" className="w-full">
             <TabsList className="grid w-full grid-cols-5 mb-6">

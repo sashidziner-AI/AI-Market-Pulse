@@ -289,10 +289,16 @@ export interface AccountCluster {
   coordinatedOutreachAngle: string;
 }
 
+export type SocialPostTopic =
+  | 'product launch' | 'product update' | 'hiring' | 'thought leadership'
+  | 'partnership' | 'funding' | 'culture' | 'expansion' | 'event'
+  | 'marketing' | 'customer success' | 'brand awareness' | 'brand mention'
+  | 'media coverage' | 'blog' | 'other';
+
 export interface SocialPost {
   date: string;
   summary: string;
-  topic: 'product launch' | 'hiring' | 'thought leadership' | 'partnership' | 'funding' | 'culture' | 'other';
+  topic: SocialPostTopic;
   engagementTier: 'high' | 'medium' | 'low';
   url?: string;
   viewCount?: number;
@@ -301,8 +307,12 @@ export interface SocialPost {
   retweetCount?: number;
 }
 
+export type SocialPlatformId =
+  | 'linkedin' | 'instagram' | 'x' | 'facebook' | 'youtube'
+  | 'reddit' | 'web' | 'company_website' | 'news' | 'jobs';
+
 export interface SocialPlatformData {
-  platform: 'linkedin' | 'instagram' | 'x' | 'facebook' | 'youtube';
+  platform: SocialPlatformId;
   handle: string;
   url: string;
   followerEstimate?: number;
