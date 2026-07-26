@@ -10,4 +10,3 @@ logs/
 .playwright-mcp/
 data/
 *.db
-public/intro-video.mp4
