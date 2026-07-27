@@ -1454,8 +1454,99 @@ app.post("/api/analyze-business", async (req, res) => {
     return res.json(businessCache.get(cacheKey));
   }
 
+  // Fetch the actual page content when the URL is a sub-page — otherwise
+  // the model is guessing based on the URL path alone and often includes
+  // the parent company's whole portfolio. Best-effort: on any fetch error
+  // we fall through to the URL-only prompt (current behavior).
+  const fetchPageContent = async (rawUrl: string, maxChars = 15000): Promise<string | null> => {
+    try {
+      const normalized = /^https?:\/\//i.test(rawUrl) ? rawUrl : `https://${rawUrl}`;
+      const res = await safeFetch(normalized, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; AIMarketPulse/1.0)",
+          "Accept": "text/html,application/xhtml+xml",
+        },
+      });
+      if (!res.ok) return null;
+      const ct = res.headers.get("content-type") || "";
+      if (!ct.includes("html") && !ct.includes("text")) return null;
+      const raw = await res.text();
+      // Strip site chrome (nav / header / footer / scripts / styles) so the
+      // model sees only the actual page body content.
+      const cleaned = raw
+        .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+        .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "")
+        .replace(/<nav\b[^>]*>[\s\S]*?<\/nav>/gi, "")
+        .replace(/<footer\b[^>]*>[\s\S]*?<\/footer>/gi, "")
+        .replace(/<header\b[^>]*>[\s\S]*?<\/header>/gi, "")
+        .replace(/<aside\b[^>]*>[\s\S]*?<\/aside>/gi, "")
+        .replace(/<noscript\b[^>]*>[\s\S]*?<\/noscript>/gi, "")
+        .replace(/<!--[\s\S]*?-->/g, "")
+        .replace(/<[^>]+>/g, " ")
+        .replace(/&nbsp;/g, " ")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/\s+/g, " ")
+        .trim();
+      return cleaned.slice(0, maxChars);
+    } catch (e: any) {
+      console.log(`[analyze-business] page fetch skipped for ${rawUrl}: ${sanitizeString(String(e?.message || e))}`);
+      return null;
+    }
+  };
+
+  // Detect page-scope vs site-scope. When the URL points to a specific
+  // sub-page (e.g. /services/engineering), scope the entire analysis to that
+  // page's content only — ignore parent-company noise (nav, footer,
+  // unrelated services). When it's the domain root, analyze the whole
+  // business as before.
+  let isSubpage = false;
+  let pageTopic = "";
   try {
-    const prompt = `Analyze the website ${url}. Identify the business model, products, services, value proposition, target industries, AND the country the business is primarily headquartered in / operates from. Then, generate a HIGHLY SPECIFIC Ideal Customer Profile (ICP) — avoid generic B2B language.
+    const parsed = new URL(/^https?:\/\//i.test(url) ? url : `https://${url}`);
+    const trimmedPath = parsed.pathname.replace(/\/+$/, "");
+    isSubpage = trimmedPath.length > 0 && trimmedPath !== "/";
+    if (isSubpage) {
+      // Best-effort human-readable topic from the last path segment.
+      const segs = trimmedPath.split("/").filter(Boolean);
+      pageTopic = decodeURIComponent(segs[segs.length - 1] || "")
+        .replace(/[-_]+/g, " ")
+        .replace(/\.\w+$/, "")
+        .trim();
+    }
+  } catch { /* Invalid URL — fall through as site-scope. */ }
+
+  // For sub-page URLs, try to fetch the page text so the model reads the
+  // ACTUAL content instead of guessing. Only done for sub-pages to keep the
+  // root-URL path fast + cached.
+  const pageContent = isSubpage ? await fetchPageContent(url) : null;
+  const contentBlock = pageContent
+    ? `\n\n=== ACTUAL PAGE CONTENT (already-stripped nav/footer/scripts, up to 15k chars) ===\n${pageContent}\n=== END PAGE CONTENT ===\n\nUse the above content as your SOLE source of truth for what this page offers. Do not invent details not present in this content.\n`
+    : "";
+
+  const scopeBlock = isSubpage
+    ? `PAGE-SCOPED ANALYSIS — READ THIS FIRST, IT OVERRIDES EVERYTHING ELSE:
+The URL is a specific sub-page: ${url}
+Detected topic from the URL path: "${pageTopic || "(inferred from page content)"}"
+
+Rules:
+1. Extract information ONLY from the content of THIS specific page or service.
+2. Return ONLY details related to that specific service/topic. If the page is about Engineering, return only Engineering-related details.
+3. IGNORE all other services, products, and industries listed elsewhere on the site (services grid, sibling menu items, "our other divisions", cross-sell blocks).
+4. IGNORE navigation menus, sidebars, footer content, cookie banners, generic "About Us" boilerplate, unrelated case studies, and company-wide announcements.
+5. Every output field — services, valueProp, targetIndustries, ICP.title / description / targetRoles / buyingSignals — MUST describe ONLY what THIS page is offering.
+6. businessName should still be the parent company that owns this page (that context is useful), but everything else must be scoped to the page topic.
+7. Do NOT invent adjacent services. Do NOT combine multiple offerings. Do NOT list industries the parent company serves that are irrelevant to this specific page.
+8. If the page is genuinely thin on content (e.g. only a title + generic marketing sentence), say so honestly by keeping services short — do not pad with content from other pages.
+
+`
+    : "";
+
+  try {
+    const prompt = `${scopeBlock}${contentBlock}Analyze the website ${url}. Identify the business model, products, services, value proposition, target industries, AND the country the business is primarily headquartered in / operates from. Then, generate a HIGHLY SPECIFIC Ideal Customer Profile (ICP) — avoid generic B2B language.
 
 Requirements:
 - businessName + overview + services + valueProp + targetIndustries as normal
@@ -5579,6 +5670,256 @@ app.post("/api/scheduler/run/:jobId", async (req, res) => {
     return res.json(result);
   } catch (e: any) {
     return res.status(500).json({ error: e?.message ?? "unknown" });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Jarvis voice assistant — MVP
+// Two endpoints power a browser-based conversational assistant:
+//   POST /api/jarvis/chat  {message, context?} -> {reply}
+//   POST /api/jarvis/tts   {text, voice?}      -> audio/mpeg binary
+// The frontend uses the browser's SpeechRecognition API for STT (free, no
+// server round-trip) and posts the transcript here. Chat replies stay short
+// and conversational so the TTS latency feels natural.
+// ---------------------------------------------------------------------------
+
+// Action registry — every command Jarvis can execute in the browser. The chat
+// endpoint returns one of these along with a spoken reply. The frontend
+// executes actions via window CustomEvents so cross-component wiring is loose.
+const JARVIS_ACTIONS = {
+  none: { desc: "No action, just speak the reply. Use for questions, explanations, chit-chat." },
+  "navigate.home": { desc: "Show the landing page (marketing site)." },
+  "navigate.analyze": { desc: "Show the Analyze Website screen where the user enters a URL to start a new analysis." },
+  "navigate.dashboard": { desc: "Show the Dashboard for the currently loaded analysis. Only useful if an analysis is already loaded." },
+  "navigate.savedReports": { desc: "Show the Saved Reports library." },
+  "navigate.back": { desc: "Go back to the previous screen / clear the current analysis and return to the analyze input." },
+  "landing.scrollToWatch": { desc: "Scroll the landing page to the Watch / product-tour video section." },
+  "landing.scrollToFeatures": { desc: "Scroll the landing page to the Features section." },
+  "landing.scrollToCta": { desc: "Scroll the landing page to the Get-Started / CTA section." },
+  "landing.playIntroVideo": { desc: "Scroll to the Watch section AND play the product intro video automatically." },
+  "landing.pauseIntroVideo": { desc: "Pause the intro video if it is currently playing." },
+  "landing.fullscreenIntroVideo": { desc: "Play the product intro video in fullscreen mode. Use when the user asks to watch it fullscreen, full screen, big, or maximized." },
+  "dashboard.tab": { desc: "Switch dashboard tab. args.tab must be one of: recommendations, clusters, partner-pathways, pipeline, leads." },
+  "theme.toggle": { desc: "Toggle light/dark theme." },
+  "theme.set": { desc: "Set theme. args.mode must be 'dark' or 'light'." },
+  "analyzeUrl": { desc: "Kick off a new business analysis. args.url must be a full URL." },
+  "loadReport": { desc: "Load a saved report. args.query is a fuzzy name to match against saved report titles." },
+  // Scroll — works on any screen.
+  "scroll.up": { desc: "Scroll the page up by roughly one viewport." },
+  "scroll.down": { desc: "Scroll the page down by roughly one viewport." },
+  "scroll.top": { desc: "Scroll to the very top of the current page." },
+  "scroll.bottom": { desc: "Scroll to the very bottom of the current page." },
+  // Business Input screen (analyze form) — voice-fill and submit.
+  "input.setUrl": { desc: "Fill the URL input on the analyze screen. args.url is the URL to enter." },
+  "input.setCount": { desc: "Set the number of accounts to discover on the analyze screen. args.count is 5, 10, 15, or 25." },
+  "input.submit": { desc: "Submit the analyze form to start business analysis." },
+  // Dashboard actions (once an analysis is loaded).
+  "dashboard.refresh": { desc: "Re-run account discovery for the current analysis." },
+  "dashboard.saveReport": { desc: "Save the current analysis as a report." },
+  "dashboard.openAccount": { desc: "Open a specific target account by name or position. args.query is the account name or position like 'first', 'second', 'third', or a number." },
+  "dashboard.closeDetail": { desc: "Close the currently-open account detail view." },
+  // Saved Reports library
+  "savedReports.load": { desc: "Load a saved report by fuzzy name. args.query is the report name." },
+  "savedReports.delete": { desc: "Delete a saved report by fuzzy name. args.query is the report name. Confirm with the user first if any doubt." },
+  // Meta / read-aloud
+  "readCurrentScreen": { desc: "No app action needed — Jarvis just verbally describes what's on the user's current screen using the injected app context." },
+} as const;
+
+const JARVIS_SYSTEM = `You are Jarvis, a friendly, calm voice assistant embedded inside "AI Market Pulse" (built by Vee Technologies). You have TWO jobs:
+
+1. ANSWER project questions using the knowledge base below.
+2. EXECUTE user commands by choosing exactly one action from the action registry.
+
+Always respond via the "respond" tool with a spoken reply plus one optional action.
+
+## KNOWLEDGE BASE — What this app does
+AI Market Pulse is a B2B go-to-market intelligence platform. Users paste their own company website URL, and the app runs a 4-stage AI pipeline:
+- Stage 1 — Business Analysis: infers the company's Ideal Customer Profile (ICP), overview, and services.
+- Stage 2 — Account Discovery: finds ~10 real target companies that match the ICP, with fit / timing / priority scores.
+- Stage 3 — Deep Account Analysis: for each target, produces buyer personas, competitors, multi-threading strategy, and cited intelligence.
+- Stage 4 — Cluster Segments: groups discovered accounts into strategic segments sharing common characteristics.
+Additional features: Leads pipeline (Hunter.io persona discovery), scheduled re-runs (cron jobs), Social Signals (YouTube + X profile analysis), CRM sync (ProspectAccel), Google Maps industry discovery, Vapi outbound phone dialing, Voice call scheduling.
+
+## SCREENS
+- Landing page: marketing site with hero, product tour video (Watch section), features, stats, CTA. Shown before any analysis.
+- Analyze Website: the input screen where the user pastes their URL to start.
+- Dashboard: post-analysis workspace. Tabs: Analysis (recommendations), Target Segments (clusters), Partner Pathways, GTM Pipeline, Leads.
+- Saved Reports: library of previously-run analyses the user can reload.
+
+## VOICE REPLY RULES — YOU ARE BEING SPOKEN OUT LOUD BY A TTS ENGINE
+- Keep the "reply" field to 1-3 sentences unless the user asks for detail. For an "explain the ICP" style prompt you may use up to 5-6 sentences.
+- Never use markdown, bullets, code fences, emojis, headings, or URLs. Plain prose only.
+- Confirm actions before executing when reasonable: "Sure, playing the intro video."
+- If you don't know something specific to the user's data, say so briefly. Never fabricate account names, numbers, or leads.
+- Address the user directly. Be helpful, warm, slightly witty. Never robotic.
+
+## ACTION REGISTRY (choose at most ONE per reply)
+${Object.entries(JARVIS_ACTIONS).map(([k, v]) => `- ${k}: ${v.desc}`).join("\n")}
+
+## EXAMPLES
+User: "Hey Jarvis, play the intro video."
+-> reply: "Sure, rolling the product tour now." action: "landing.playIntroVideo"
+
+User: "What is this app about?"
+-> reply: "AI Market Pulse is a B2B go-to-market intelligence platform. Paste your company URL and it discovers ideal target accounts, buyer personas, and warm pathways to reach them." action: "none"
+
+User: "Show me the leads tab."
+-> reply: "Opening leads." action: "dashboard.tab" args: { tab: "leads" }
+
+User: "Explain the ICP."
+-> reply: (use the analysis context if available; otherwise explain what an ICP is in the app's context) action: "none"
+
+User: "Go home."
+-> reply: "Heading home." action: "navigate.home"
+
+User: "Analyze stripe.com."
+-> reply: "On it, analyzing stripe.com now." action: "analyzeUrl" args: { url: "https://stripe.com" }`;
+
+const respondToolSchema = {
+  type: "object" as const,
+  properties: {
+    reply: {
+      type: "string",
+      description: "The natural-language spoken reply. 1-3 sentences typical, plain prose only.",
+    },
+    action: {
+      type: "string",
+      enum: Object.keys(JARVIS_ACTIONS),
+      description: "Which action to execute in the browser. Use 'none' for pure Q&A.",
+    },
+    args: {
+      type: "object",
+      description: "Optional arguments for the action. See action registry for required keys.",
+      additionalProperties: true,
+    },
+  },
+  required: ["reply", "action"],
+} as const;
+
+type JarvisResult = { reply: string; action?: string; args?: Record<string, unknown> };
+
+async function jarvisReplyAnthropic(message: string, context?: string): Promise<JarvisResult> {
+  const ai = getAnthropic();
+  const userContent = context ? `Current app context:\n${context}\n\nUser said: ${message}` : message;
+  const resp = await ai.messages.create({
+    model: MODEL_HAIKU_4_5,
+    max_tokens: 700,
+    system: JARVIS_SYSTEM,
+    tools: [
+      {
+        name: "respond",
+        description: "Reply to the user and optionally execute one browser action.",
+        input_schema: respondToolSchema as any,
+      },
+    ],
+    tool_choice: { type: "tool", name: "respond" },
+    messages: [{ role: "user", content: userContent }],
+  });
+  const block = resp.content.find((b: any) => b.type === "tool_use") as any;
+  const payload = block?.input as JarvisResult | undefined;
+  if (!payload?.reply) return { reply: "Sorry, I didn't catch that.", action: "none" };
+  const action = payload.action && payload.action !== "none" ? payload.action : undefined;
+  return { reply: payload.reply.trim(), action, args: payload.args };
+}
+
+async function jarvisReplyOpenAI(message: string, context?: string): Promise<JarvisResult> {
+  const ai = getOpenAI();
+  const userContent = context ? `Current app context:\n${context}\n\nUser said: ${message}` : message;
+  const resp = await ai.chat.completions.create({
+    model: "gpt-4o-mini",
+    max_tokens: 700,
+    messages: [
+      { role: "system", content: JARVIS_SYSTEM },
+      { role: "user", content: userContent },
+    ],
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: "jarvis_respond",
+        strict: false,
+        schema: respondToolSchema as any,
+      },
+    },
+  });
+  const raw = resp.choices[0]?.message?.content?.trim();
+  if (!raw) return { reply: "Sorry, I didn't catch that.", action: "none" };
+  try {
+    const parsed = JSON.parse(raw) as JarvisResult;
+    const action = parsed.action && parsed.action !== "none" ? parsed.action : undefined;
+    return { reply: (parsed.reply || "").trim() || "Sorry, I didn't catch that.", action, args: parsed.args };
+  } catch {
+    return { reply: raw, action: undefined };
+  }
+}
+
+app.post("/api/jarvis/chat", async (req, res) => {
+  const message = typeof req.body?.message === "string" ? req.body.message.slice(0, 4000).trim() : "";
+  const context = typeof req.body?.context === "string" ? req.body.context.slice(0, 8000) : undefined;
+  if (!message) return res.status(400).json({ error: "message is required" });
+
+  try {
+    const provider = pickProvider();
+    let result: JarvisResult;
+    if (provider === "anthropic") {
+      try {
+        result = await jarvisReplyAnthropic(message, context);
+      } catch (anthErr: any) {
+        console.log(`[jarvis/chat] anthropic failed, trying openai: ${sanitizeString(anthErr?.message ?? "unknown")}`);
+        if (!process.env.OPENAI_API_KEY) throw anthErr;
+        result = await jarvisReplyOpenAI(message, context);
+      }
+    } else {
+      result = await jarvisReplyOpenAI(message, context);
+    }
+    return res.json(result);
+  } catch (e: any) {
+    console.log(`[jarvis/chat] ${sanitizeString(e?.message ?? "unknown")}`);
+    return res.json({
+      reply: "I am having trouble reaching my brain right now. Please try again in a moment.",
+      isFallback: true,
+    });
+  }
+});
+
+app.post("/api/jarvis/tts", async (req, res) => {
+  const text = typeof req.body?.text === "string" ? req.body.text.slice(0, 4000).trim() : "";
+  const voice = typeof req.body?.voice === "string" ? req.body.voice : "onyx";
+  if (!text) return res.status(400).json({ error: "text is required" });
+  if (!process.env.OPENAI_API_KEY) {
+    return res.status(503).json({ error: "OPENAI_API_KEY is required for TTS" });
+  }
+  try {
+    const ai = getOpenAI();
+    // Try newer TTS models first (many project keys have gpt-4o-mini-tts enabled
+    // but not the legacy tts-1). Fall through the list on 403/model-access errors.
+    const ttsModels = ["gpt-4o-mini-tts", "tts-1", "tts-1-hd"];
+    let speech: any = null;
+    let lastErr: any = null;
+    for (const model of ttsModels) {
+      try {
+        speech = await ai.audio.speech.create({
+          model: model as any,
+          voice: voice as any,
+          input: text,
+          response_format: "mp3",
+        });
+        break;
+      } catch (err: any) {
+        lastErr = err;
+        const status = err?.status ?? err?.response?.status;
+        // Only try the next model on a permission/model-access problem.
+        if (status !== 403 && status !== 404) throw err;
+      }
+    }
+    if (!speech) throw lastErr ?? new Error("No TTS model accessible");
+    const buffer = Buffer.from(await speech.arrayBuffer());
+    res.setHeader("Content-Type", "audio/mpeg");
+    res.setHeader("Content-Length", buffer.length.toString());
+    res.setHeader("Cache-Control", "no-store");
+    return res.send(buffer);
+  } catch (e: any) {
+    console.log(`[jarvis/tts] ${sanitizeString(e?.message ?? "unknown")}`);
+    return res.status(500).json({ error: "TTS unavailable" });
   }
 });
 

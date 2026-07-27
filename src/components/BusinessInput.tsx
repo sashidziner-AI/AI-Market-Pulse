@@ -51,6 +51,29 @@ export function BusinessInput({
     }
   };
 
+  // Jarvis voice bridge — commands like "set the URL to acme.com", "make it
+  // twenty accounts", and "start the analysis" arrive here.
+  useEffect(() => {
+    function handleJarvis(evt: Event) {
+      const detail = (evt as CustomEvent).detail as { action: string; args?: any } | undefined;
+      if (!detail) return;
+      if (detail.action === 'input.setUrl' && typeof detail.args?.url === 'string') {
+        setUrl(detail.args.url.trim());
+      } else if (detail.action === 'input.setCount') {
+        const raw = detail.args?.count;
+        const n = typeof raw === 'number' ? raw : parseInt(String(raw || ''), 10);
+        if (!Number.isNaN(n) && n > 0 && n <= 50) setAccountCount(n);
+      } else if (detail.action === 'input.submit') {
+        // Fire a submit only if we have a URL AND we're not already loading.
+        if (url && !isLoading) {
+          onAnalyze(url.startsWith('http') ? url : `https://${url}`, accountCount);
+        }
+      }
+    }
+    window.addEventListener('jarvis:input', handleJarvis);
+    return () => window.removeEventListener('jarvis:input', handleJarvis);
+  }, [url, accountCount, isLoading, onAnalyze]);
+
   const currentStep = LOADING_STEPS[stepIndex];
   const StepIcon = currentStep.icon;
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import { 
   FileText, Calendar, Trash2, FolderOpen, Search, ArrowLeft, 
@@ -38,6 +38,28 @@ export function SavedReportsLibrary({
     setEditingReportName(name);
     setIsEditModalOpen(true);
   };
+
+  // Jarvis voice bridge — "load the Acme report", "delete the Stripe report"
+  useEffect(() => {
+    function handleJarvis(evt: Event) {
+      const detail = (evt as CustomEvent).detail as { action: string; args?: any } | undefined;
+      if (!detail) return;
+      const q = String(detail.args?.query ?? '').trim().toLowerCase();
+      if (!q) return;
+      const match = savedReports.find((r: any) => (r.name || '').toLowerCase().includes(q));
+      if (!match) {
+        toast.error(`No saved report matching "${q}".`);
+        return;
+      }
+      if (detail.action === 'savedReports.load') {
+        onLoadReport(match.id);
+      } else if (detail.action === 'savedReports.delete') {
+        onDeleteReport(match.id);
+      }
+    }
+    window.addEventListener('jarvis:savedReports', handleJarvis);
+    return () => window.removeEventListener('jarvis:savedReports', handleJarvis);
+  }, [savedReports, onLoadReport, onDeleteReport]);
 
   const handleSaveRename = () => {
     if (!editingReportName.trim()) {
@@ -276,7 +298,16 @@ export function SavedReportsLibrary({
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredReports.map((report, idx) => {
                   const industryList = report.analysis?.targetIndustries || [];
-                  const accountCount = report.accounts?.length || 0;
+                  const companyCount = report.accounts?.length || 0;
+                  // "Leads" = total stakeholders/personas generated across
+                  // all deep-analyzed accounts in this report. Sums each
+                  // account's buyerPersonas plus the 3 multi-threading
+                  // stakeholders when a multiThreadingStrategy exists.
+                  const leadCount = (report.accounts || []).reduce((sum: number, a: any) => {
+                    const personas = a?.analysis?.buyerPersonas?.length || 0;
+                    const mts = a?.analysis?.multiThreadingStrategy ? 3 : 0;
+                    return sum + personas + mts;
+                  }, 0);
                   
                   return (
                     <motion.div
@@ -316,7 +347,10 @@ export function SavedReportsLibrary({
                               <Pencil className="w-3.5 h-3.5" />
                             </button>
                           </div>
-                          <p className="text-xs text-slate-500 dark:text-slate-300 line-clamp-2 leading-relaxed h-8">
+                          <p
+                            className="text-xs text-slate-500 dark:text-slate-300 line-clamp-4 leading-relaxed min-h-[3.5rem]"
+                            title={report.analysis?.overview || 'No additional company analysis outline saved.'}
+                          >
                             {report.analysis?.overview || 'No additional company analysis outline saved.'}
                           </p>
                         </div>
@@ -342,9 +376,18 @@ export function SavedReportsLibrary({
                       </div>
 
                       <div className="border-t border-slate-100 dark:border-slate-800 mt-5 pt-4 flex items-center justify-between">
-                        <div className="flex items-center gap-1">
-                          <span className="text-xs font-bold font-mono text-indigo-650 dark:text-indigo-300 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-800/50 px-2.5 py-0.5 rounded-full">
-                            {accountCount} Leads
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span
+                            className="text-xs font-bold font-mono text-indigo-650 dark:text-indigo-300 bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-800/50 px-2.5 py-0.5 rounded-full"
+                            title={`${companyCount} target ${companyCount === 1 ? 'company' : 'companies'} discovered`}
+                          >
+                            {companyCount} {companyCount === 1 ? 'Company' : 'Companies'}
+                          </span>
+                          <span
+                            className="text-xs font-bold font-mono text-emerald-700 dark:text-emerald-300 bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-100 dark:border-emerald-800/50 px-2.5 py-0.5 rounded-full"
+                            title={`${leadCount} stakeholder ${leadCount === 1 ? 'persona' : 'personas'} generated across all companies`}
+                          >
+                            {leadCount} {leadCount === 1 ? 'Lead' : 'Leads'}
                           </span>
                         </div>
 
@@ -396,14 +439,19 @@ export function SavedReportsLibrary({
                         <th className="py-3 px-6 select-none">Client Brand Domain</th>
                         <th className="py-3 px-6 select-none">Industries Targeted</th>
                         <th className="py-3 px-6 select-none text-center">Date Saved</th>
-                        <th className="py-3 px-6 select-none text-center">Mapped Leads</th>
+                        <th className="py-3 px-6 select-none text-center">Companies · Leads</th>
                         <th className="py-3 px-6 text-right select-none">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-sm">
                       {filteredReports.map((report, idx) => {
                         const targetIndustries = report.analysis?.targetIndustries || [];
-                        const leadCount = report.accounts?.length || 0;
+                        const companyCount = report.accounts?.length || 0;
+                        const leadCount = (report.accounts || []).reduce((sum: number, a: any) => {
+                          const personas = a?.analysis?.buyerPersonas?.length || 0;
+                          const mts = a?.analysis?.multiThreadingStrategy ? 3 : 0;
+                          return sum + personas + mts;
+                        }, 0);
                         const businessName = report.analysis?.businessName || 'Interactive Scope';
                         
                         return (
@@ -428,7 +476,10 @@ export function SavedReportsLibrary({
                                     <Pencil className="w-3 h-3" />
                                   </button>
                                 </div>
-                                <span className="text-xs font-medium text-slate-400 line-clamp-1 font-sans lg:max-w-xs xl:max-w-md">
+                                <span
+                                  className="text-xs font-medium text-slate-400 line-clamp-2 leading-snug font-sans lg:max-w-xs xl:max-w-lg"
+                                  title={report.analysis?.overview || 'Outbound strategy outline.'}
+                                >
                                   {report.analysis?.overview || 'Outbound strategy outline.'}
                                 </span>
                               </div>
@@ -461,9 +512,20 @@ export function SavedReportsLibrary({
                               </div>
                             </td>
                             <td className="py-4 px-6 text-center whitespace-nowrap">
-                              <span className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800/50">
-                                {leadCount} Leads
-                              </span>
+                              <div className="inline-flex items-center gap-1.5">
+                                <span
+                                  className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-100 dark:border-indigo-800/50"
+                                  title={`${companyCount} target ${companyCount === 1 ? 'company' : 'companies'} discovered`}
+                                >
+                                  {companyCount} {companyCount === 1 ? 'Company' : 'Companies'}
+                                </span>
+                                <span
+                                  className="inline-block px-2.5 py-0.5 rounded-full text-xs font-bold font-mono bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-800/50"
+                                  title={`${leadCount} stakeholder ${leadCount === 1 ? 'persona' : 'personas'} generated across all companies`}
+                                >
+                                  {leadCount} {leadCount === 1 ? 'Lead' : 'Leads'}
+                                </span>
+                              </div>
                             </td>
                             <td className="py-4 px-6">
                               <div className="flex items-center justify-end gap-1.5">

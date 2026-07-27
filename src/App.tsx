@@ -12,6 +12,7 @@ import { BusinessAnalysis, TargetAccount, DetailedAnalysis } from './types';
 import { Toaster, toast } from 'sonner';
 import { Rocket, Globe, FileText, House } from 'lucide-react';
 import { ThemeToggle, applyTheme } from './components/ThemeToggle';
+import { JarvisOrb, JarvisAction } from './components/JarvisOrb';
 
 export default function App() {
   const [analysis, setAnalysis] = useState<BusinessAnalysis | null>(() => {
@@ -574,6 +575,173 @@ export default function App() {
       )}
         </>
       )}
+
+      <JarvisOrb
+        getContext={() => {
+          const parts: string[] = [];
+          if (analyzedUrl) parts.push(`Analyzed website: ${analyzedUrl}`);
+          if (analysis) {
+            const a: any = analysis;
+            const industry = a?.icp?.industry || a?.industry;
+            const overview = a?.overview || a?.summary;
+            if (industry) parts.push(`Business industry / ICP: ${industry}`);
+            if (overview) parts.push(`Business overview: ${String(overview).slice(0, 400)}`);
+            if (a?.icp) {
+              const icpBits: string[] = [];
+              if (a.icp.companySize) icpBits.push(`company size ${a.icp.companySize}`);
+              if (a.icp.geography) icpBits.push(`geography ${a.icp.geography}`);
+              if (Array.isArray(a.icp.painPoints) && a.icp.painPoints.length) {
+                icpBits.push(`pain points: ${a.icp.painPoints.slice(0, 4).join(', ')}`);
+              }
+              if (icpBits.length) parts.push(`ICP details: ${icpBits.join('; ')}`);
+            }
+          }
+          if (accounts.length > 0) {
+            parts.push(`Discovered accounts (${accounts.length}): ` +
+              accounts.slice(0, 8).map((a: any) => `${a.name || a.domain}${typeof a.fitScore === 'number' ? ` (fit ${a.fitScore})` : ''}`).join(', '));
+          }
+          if (savedReports.length > 0) {
+            parts.push(`Saved reports (${savedReports.length}): ` +
+              savedReports.slice(0, 6).map((r: any) => `"${r.name}"`).join(', '));
+          }
+          parts.push(`Current screen: ${activeLandingTab === 'saved-library' ? 'Saved Reports' : analysis ? 'Dashboard' : showLanding ? 'Landing page' : 'Analyze Website'}`);
+          return parts.join('\n');
+        }}
+        onAction={(a: JarvisAction) => {
+          const { action, args } = a;
+          switch (action) {
+            case 'navigate.home':
+              setShowLanding(true);
+              return;
+            case 'navigate.analyze':
+              setShowLanding(false);
+              setActiveLandingTab('analyze');
+              if (analysis) {
+                // If a dashboard is loaded, clear it so the input screen shows.
+                setAnalysis(null);
+                setActiveReportId(null);
+                setAnalyzedUrl(null);
+              }
+              return;
+            case 'navigate.dashboard':
+              setShowLanding(false);
+              setActiveLandingTab('analyze');
+              if (!analysis) {
+                toast.info('No analysis loaded. Analyze a website first.');
+              }
+              return;
+            case 'navigate.savedReports':
+              setShowLanding(false);
+              setActiveLandingTab('saved-library');
+              return;
+            case 'navigate.back':
+              if (analysis) {
+                setAnalysis(null);
+                setActiveReportId(null);
+                setAnalyzedUrl(null);
+              } else {
+                setShowLanding(true);
+              }
+              return;
+            case 'theme.toggle': {
+              const cur = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+              applyTheme(cur === 'dark' ? 'light' : 'dark');
+              return;
+            }
+            case 'theme.set': {
+              const mode = (args?.mode as string) === 'light' ? 'light' : 'dark';
+              applyTheme(mode);
+              return;
+            }
+            case 'analyzeUrl': {
+              const url = String(args?.url ?? '').trim();
+              if (!url) { toast.error('Jarvis needed a URL to analyze.'); return; }
+              setShowLanding(false);
+              setActiveLandingTab('analyze');
+              analyzeBusiness(url);
+              return;
+            }
+            case 'loadReport': {
+              const q = String(args?.query ?? '').trim().toLowerCase();
+              if (!q) return;
+              const match = savedReports.find(r => (r.name || '').toLowerCase().includes(q));
+              if (match) {
+                setShowLanding(false);
+                setActiveLandingTab('analyze');
+                handleLoadReport(match.id);
+              } else {
+                toast.error(`No saved report matching "${q}".`);
+              }
+              return;
+            }
+            case 'landing.playIntroVideo':
+            case 'landing.pauseIntroVideo':
+            case 'landing.fullscreenIntroVideo':
+            case 'landing.scrollToWatch':
+            case 'landing.scrollToFeatures':
+            case 'landing.scrollToCta':
+              // Component-scoped — dispatch a window event; LandingPage listens.
+              if (!showLanding) setShowLanding(true);
+              setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('jarvis:landing', { detail: { action, args } }));
+              }, showLanding ? 0 : 300);
+              return;
+            case 'dashboard.tab':
+            case 'dashboard.refresh':
+            case 'dashboard.saveReport':
+            case 'dashboard.openAccount':
+            case 'dashboard.closeDetail':
+              if (!analysis) {
+                toast.info('Open an analysis first — no dashboard is loaded.');
+                return;
+              }
+              window.dispatchEvent(new CustomEvent('jarvis:dashboard', { detail: { action, args } }));
+              return;
+            case 'input.setUrl':
+            case 'input.setCount':
+            case 'input.submit':
+              // Route to Business Input screen. If we're not on it, go there first.
+              if (analysis) {
+                setAnalysis(null);
+                setActiveReportId(null);
+                setAnalyzedUrl(null);
+              }
+              setShowLanding(false);
+              setActiveLandingTab('analyze');
+              setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('jarvis:input', { detail: { action, args } }));
+              }, 60);
+              return;
+            case 'savedReports.load':
+            case 'savedReports.delete':
+              // Ensure we're on the saved-reports screen so the listener is mounted.
+              setShowLanding(false);
+              setActiveLandingTab('saved-library');
+              setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('jarvis:savedReports', { detail: { action, args } }));
+              }, 60);
+              return;
+            case 'scroll.up':
+              window.scrollBy({ top: -Math.round(window.innerHeight * 0.85), behavior: 'smooth' });
+              return;
+            case 'scroll.down':
+              window.scrollBy({ top: Math.round(window.innerHeight * 0.85), behavior: 'smooth' });
+              return;
+            case 'scroll.top':
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+              return;
+            case 'scroll.bottom':
+              window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
+              return;
+            case 'readCurrentScreen':
+              // No action — Jarvis's reply already contains the read-out.
+              return;
+            default:
+              // Unknown action — no-op
+              return;
+          }
+        }}
+      />
     </div>
   );
 }

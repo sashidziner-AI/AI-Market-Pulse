@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef, useState } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import gsap from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { ScrollToPlugin } from 'gsap/ScrollToPlugin';
@@ -912,8 +912,72 @@ function WatchSection() {
   const goFullscreen = () => {
     const v = videoRef.current;
     if (!v) return;
-    if (v.requestFullscreen) void v.requestFullscreen();
+    // Auto-play + unmute when entering fullscreen — expected UX for a "watch
+    // in fullscreen" gesture. If the user hasn't started yet, this doubles
+    // as the play action too.
+    if (v.paused) {
+      v.muted = false;
+      setMuted(false);
+      void v.play();
+      setStarted(true);
+    }
+    // Standard, then Safari (both desktop and iOS), then MS legacy.
+    const anyV = v as any;
+    if (v.requestFullscreen) {
+      void v.requestFullscreen().catch(() => {
+        if (typeof anyV.webkitEnterFullscreen === 'function') anyV.webkitEnterFullscreen();
+      });
+    } else if (typeof anyV.webkitEnterFullscreen === 'function') {
+      anyV.webkitEnterFullscreen();
+    } else if (typeof anyV.webkitRequestFullscreen === 'function') {
+      anyV.webkitRequestFullscreen();
+    } else if (typeof anyV.msRequestFullscreen === 'function') {
+      anyV.msRequestFullscreen();
+    }
   };
+
+  // Jarvis voice bridge — listen for landing-scoped action events and route
+  // them to the appropriate section behavior. Voice commands like "play the
+  // intro video" or "scroll to features" reach us via this listener.
+  useEffect(() => {
+    function handleJarvis(evt: Event) {
+      const detail = (evt as CustomEvent).detail as { action: string } | undefined;
+      const action = detail?.action;
+      if (!action) return;
+      const scrollTo = (id: string) => {
+        const el = document.getElementById(id);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      };
+      if (action === 'landing.playIntroVideo') {
+        scrollTo('watch');
+        // Give the scroll a moment before starting playback for a smoother feel.
+        setTimeout(() => {
+          const v = videoRef.current;
+          if (!v) return;
+          // Unmute for the intentional voice-triggered play (browser autoplay
+          // policy allows because this is a user-initiated gesture chain).
+          v.muted = false;
+          setMuted(false);
+          void v.play();
+          setStarted(true);
+        }, 500);
+      } else if (action === 'landing.pauseIntroVideo') {
+        const v = videoRef.current;
+        if (v && !v.paused) v.pause();
+      } else if (action === 'landing.fullscreenIntroVideo') {
+        scrollTo('watch');
+        setTimeout(() => { goFullscreen(); }, 400);
+      } else if (action === 'landing.scrollToWatch') {
+        scrollTo('watch');
+      } else if (action === 'landing.scrollToFeatures') {
+        scrollTo('features');
+      } else if (action === 'landing.scrollToCta') {
+        scrollTo('cta');
+      }
+    }
+    window.addEventListener('jarvis:landing', handleJarvis);
+    return () => window.removeEventListener('jarvis:landing', handleJarvis);
+  }, []);
 
   return (
     <section
@@ -991,20 +1055,42 @@ function WatchSection() {
 
               {/* Play overlay — visible until the user has started the video */}
               {!started && (
-                <button
-                  onClick={togglePlay}
-                  aria-label="Play intro video"
-                  className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-gradient-to-b from-black/30 via-black/40 to-black/60 group cursor-pointer transition-opacity"
-                >
-                  <span className="relative flex items-center justify-center">
-                    <span className="absolute w-24 h-24 rounded-full bg-orange-500/30 blur-2xl group-hover:bg-orange-500/50 transition-all" />
-                    <span className="relative w-20 h-20 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-[0_8px_32px_rgba(245,130,32,0.55)] group-hover:scale-110 transition-transform">
-                      <Play className="w-8 h-8 text-white ml-1" fill="currentColor" />
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-gradient-to-b from-black/30 via-black/40 to-black/60">
+                  <button
+                    onClick={togglePlay}
+                    aria-label="Play intro video"
+                    className="group flex flex-col items-center gap-4 cursor-pointer"
+                  >
+                    <span className="relative flex items-center justify-center">
+                      <span className="absolute w-24 h-24 rounded-full bg-orange-500/30 blur-2xl group-hover:bg-orange-500/50 transition-all" />
+                      <span className="relative w-20 h-20 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center shadow-[0_8px_32px_rgba(245,130,32,0.55)] group-hover:scale-110 transition-transform">
+                        <Play className="w-8 h-8 text-white ml-1" fill="currentColor" />
+                      </span>
                     </span>
-                  </span>
-                  <span className="text-white text-sm font-semibold tracking-wide drop-shadow">
-                    Watch the 2-minute tour
-                  </span>
+                    <span className="text-white text-sm font-semibold tracking-wide drop-shadow">
+                      Watch the 2-minute tour
+                    </span>
+                  </button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); goFullscreen(); }}
+                    aria-label="Watch fullscreen"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 backdrop-blur border border-white/20 text-white/90 text-xs font-medium cursor-pointer transition-colors"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" /> Fullscreen
+                  </button>
+                </div>
+              )}
+
+              {/* Always-visible fullscreen shortcut — top-right corner of the frame.
+                  Complements the hover-only controls bar so fullscreen is reachable
+                  the moment playback starts, no matter where the cursor is. */}
+              {started && (
+                <button
+                  onClick={goFullscreen}
+                  aria-label="Fullscreen"
+                  className="absolute top-3 right-3 w-9 h-9 rounded-full bg-black/40 hover:bg-black/60 backdrop-blur flex items-center justify-center text-white cursor-pointer transition-colors opacity-70 hover:opacity-100"
+                >
+                  <Maximize2 className="w-4 h-4" />
                 </button>
               )}
 
@@ -1182,6 +1268,7 @@ function CtaSection({
   return (
     <section
       ref={secRef}
+      id="cta"
       className="relative overflow-hidden bg-[#0e0e0f] text-white"
       style={{ minHeight: '88svh' }}
     >

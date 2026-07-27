@@ -145,15 +145,15 @@ interface DashboardProps {
   onBack?: () => void;
 }
 
-// Default name suggestion for a new saved report. Uses the ICP target
-// industry (up to the first two, joined) — e.g. "AEC Services" — falling
-// back to the seller's businessName only when no industries are known.
+// Default name for a new saved report. Uses the EXACT primary target industry
+// identified in the analysis (targetIndustries[0]) — e.g. "AEC Services".
+// No concatenation with a second industry; joining creates a "combined label"
+// that reads as a made-up category rather than the real detected one. Falls
+// back to the seller's businessName only when no industry is known.
 export function getDefaultReportName(analysis: BusinessAnalysis | null | undefined): string {
   if (!analysis) return '';
-  const industries = (analysis.targetIndustries || []).filter(Boolean);
-  if (industries.length > 0) {
-    return industries.slice(0, 2).join(' / ');
-  }
+  const industries = (analysis.targetIndustries || []).map(s => (s || '').trim()).filter(Boolean);
+  if (industries.length > 0) return industries[0];
   return analysis.businessName || '';
 }
 
@@ -361,6 +361,66 @@ export function Dashboard({
   }, [analysisSignature]);
   const [uploadedFile, setUploadedFile] = useState<{ name: string; content?: string } | null>(null);
   const [activeTab, setActiveTab] = useState<'recommendations' | 'pipeline' | 'clusters' | 'partner-pathways' | 'leads'>('recommendations');
+
+  // Jarvis voice bridge — voice commands reach us through window CustomEvents.
+  // Whitelist-check tab names so a rogue payload can't set an invalid tab.
+  useEffect(() => {
+    const validTabs = new Set(['recommendations', 'pipeline', 'clusters', 'partner-pathways', 'leads']);
+    function handleJarvis(evt: Event) {
+      const detail = (evt as CustomEvent).detail as { action: string; args?: any } | undefined;
+      if (!detail) return;
+      const { action, args } = detail;
+      if (action === 'dashboard.tab' && args?.tab && validTabs.has(args.tab)) {
+        setActiveTab(args.tab);
+      } else if (action === 'dashboard.refresh') {
+        onRefreshDiscovery();
+      } else if (action === 'dashboard.saveReport') {
+        onSaveReport?.('');
+      } else if (action === 'dashboard.closeDetail') {
+        setSelectedAccountId(null);
+      } else if (action === 'dashboard.openAccount') {
+        // Resolve args.query against the current accounts list.
+        // Supports numeric position ("1", "first", "second", "third", etc.)
+        // and fuzzy substring name match.
+        const q = String(args?.query ?? '').trim().toLowerCase();
+        if (!q) return;
+        const wordToIndex: Record<string, number> = {
+          first: 0, one: 0, '1st': 0,
+          second: 1, two: 1, '2nd': 1,
+          third: 2, three: 2, '3rd': 2,
+          fourth: 3, four: 3, '4th': 3,
+          fifth: 4, five: 4, '5th': 4,
+          sixth: 5, six: 5, seventh: 6, seven: 6,
+          eighth: 7, eight: 7, ninth: 8, nine: 8,
+          tenth: 9, ten: 9,
+        };
+        const list = accounts;
+        let idx = -1;
+        // Try numeric parse
+        const numMatch = q.match(/\b(\d{1,2})\b/);
+        if (numMatch) idx = parseInt(numMatch[1], 10) - 1;
+        // Try word-to-index
+        if (idx < 0) {
+          for (const key of Object.keys(wordToIndex)) {
+            if (q.includes(key)) { idx = wordToIndex[key]; break; }
+          }
+        }
+        // Try fuzzy name match
+        if (idx < 0) {
+          idx = list.findIndex((a: any) =>
+            (a.name || '').toLowerCase().includes(q) ||
+            (a.domain || '').toLowerCase().includes(q)
+          );
+        }
+        if (idx >= 0 && idx < list.length) {
+          setSelectedAccountId(list[idx].id);
+        }
+      }
+    }
+    window.addEventListener('jarvis:dashboard', handleJarvis);
+    return () => window.removeEventListener('jarvis:dashboard', handleJarvis);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accounts, onRefreshDiscovery, onSaveReport]);
   const [channelPartners, setChannelPartners] = useState<SellerChannelPartner[]>(() => {
     try {
       const saved = localStorage.getItem('gtm_channel_partners');
@@ -4717,13 +4777,30 @@ export function Dashboard({
                 </div>
               </div>
 
+              {/* Industry Category — auto-derived from the current analysis.
+                  Sourced from analysis.targetIndustries[0] so the label always
+                  matches the exact industry the pipeline identified. */}
+              {(() => {
+                const detectedIndustry = (analysis?.targetIndustries || []).find(s => (s || '').trim());
+                if (!detectedIndustry) return null;
+                return (
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">Industry Category</span>
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 text-indigo-700 dark:text-indigo-300 text-xs font-semibold">
+                      <Sparkles className="w-3 h-3" />
+                      {detectedIndustry}
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div className="space-y-2">
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">Report / Outreach Name</label>
                 <input
                   type="text"
                   value={reportNameInput}
                   onChange={(e) => setReportNameInput(e.target.value)}
-                  placeholder="e.g. Outreach - APAC Market Expansion"
+                  placeholder={getDefaultReportName(analysis) || 'e.g. Outreach - APAC Market Expansion'}
                   className="w-full h-11 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-sans font-semibold text-slate-800 dark:text-slate-200"
                 />
               </div>
