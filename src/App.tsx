@@ -11,7 +11,7 @@ import { LandingPage } from './components/LandingPage';
 import { BusinessAnalysis, TargetAccount, DetailedAnalysis } from './types';
 import { Toaster, toast } from 'sonner';
 import { Rocket, Globe, FileText, House } from 'lucide-react';
-import { ThemeToggle, applyTheme } from './components/ThemeToggle';
+import { ThemeToggle, applyTheme } from './components/ThemeToggle'; // applyTheme still used by Jarvis theme actions
 import { JarvisOrb, JarvisAction } from './components/JarvisOrb';
 
 export default function App() {
@@ -62,11 +62,17 @@ export default function App() {
   // Always show the landing page on every fresh page load.
   const [showLanding, setShowLanding] = useState<boolean>(true);
 
-  // Auto-switch theme: dark for landing/analyze screens, light for dashboard.
+  // Per-screen theme:
+  //   Landing (marketing)         → dark
+  //   Analyze Website (input URL) → dark
+  //   Dashboard (analysis result) → light
+  //   Saved Reports library       → light (with its own dark header wrapper)
+  // Collapses to: dark whenever there is no analysis loaded AND we are not
+  // on the Saved Reports tab; light everywhere else.
   useEffect(() => {
-    const isDashboard = !!analysis && !showLanding && activeLandingTab !== 'saved-library';
-    applyTheme(isDashboard ? 'light' : 'dark');
-  }, [analysis, showLanding, activeLandingTab]);
+    const isDark = !analysis && activeLandingTab !== 'saved-library';
+    applyTheme(isDark ? 'dark' : 'light');
+  }, [activeLandingTab, showLanding, analysis]);
   const dismissLanding = () => {
     setShowLanding(false);
   };
@@ -426,7 +432,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen text-zinc-900 dark:text-zinc-100 bg-stone-50 dark:bg-[#1F1F20] font-sans selection:bg-orange-100 selection:text-orange-900 dark:selection:bg-orange-900/30 dark:selection:text-orange-100 flex flex-col justify-start">
-      <Toaster position="top-center" expand={true} richColors />
+      <Toaster position="top-right" expand={true} richColors />
 
       {/* Marketing landing — shown first for new visitors. Fully self-hosted
           header (its own nav + theme toggle), so the shared analyze-screen
@@ -443,8 +449,13 @@ export default function App() {
       ) : (
         <>
 
-      {/* Dynamic Navigation Header for Workspace Landing Screen */}
+      {/* Dynamic Navigation Header for Workspace Landing Screen.
+          On the Saved Reports page we want a dark header even though the body
+          is in light mode. Wrapping the sticky container in a `.dark` scope
+          lets every `dark:` variant below activate independently of the
+          document-level theme. */}
       {!analysis && (
+        <div className={activeLandingTab === 'saved-library' ? 'dark' : 'contents'}>
         <header className="w-full bg-stone-50/90 dark:bg-[#1F1F20]/90 backdrop-blur-md border-b border-stone-200/60 dark:border-white/[0.06] sticky top-0 z-40 transition-all">
           <div className="max-w-6xl mx-auto px-6 h-24 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
@@ -461,7 +472,7 @@ export default function App() {
                   className="font-normal text-[18px] tracking-tight text-zinc-900 dark:text-zinc-100"
                   style={{ letterSpacing: '-0.02em' }}
                 >
-                  <span className="text-white">AI</span> Market Pulse
+                  <span className="text-orange-600 dark:text-white">AI</span> Market Pulse
                 </span>
                 <span className="mt-0.5 text-[8.5px] font-mono uppercase tracking-[0.14em] text-orange-600 dark:text-orange-400">
                   by Vee Technologies
@@ -471,7 +482,12 @@ export default function App() {
 
             <div className="flex items-center gap-3">
               <button
-                onClick={() => setShowLanding(true)}
+                onClick={() => {
+                  // Home must escape ANY workspace tab (analyze / saved-library)
+                  // and drop the user back on the marketing landing page.
+                  setActiveLandingTab('analyze');
+                  setShowLanding(true);
+                }}
                 className="inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg text-zinc-500 dark:text-zinc-400 hover:text-orange-600 dark:hover:text-orange-400 hover:bg-stone-100 dark:hover:bg-white/[0.05] cursor-pointer transition-all"
               >
                 <House className="w-3.5 h-3.5" />
@@ -511,6 +527,7 @@ export default function App() {
             </div>
           </div>
         </header>
+        </div>
       )}
 
       {/* Page Content Router.

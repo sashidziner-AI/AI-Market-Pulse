@@ -167,14 +167,8 @@ export function LeadsTab({ analysisDomains }: { analysisDomains?: string[] } = {
   const [expanded, setExpanded] = React.useState<string | null>(null);
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [copiedId, setCopiedId] = React.useState<string | null>(null);
-  // Default: scope to current analysis whenever we have accounts to filter by.
-  // This makes the tab reflect the current URL analysis on load, while a
-  // one-click toggle reveals the full lifetime BD pipeline.
   const hasAnalysisScope = (analysisDomains?.length ?? 0) > 0;
-  const [scopeToAnalysis, setScopeToAnalysis] = React.useState(hasAnalysisScope);
-  React.useEffect(() => {
-    setScopeToAnalysis(hasAnalysisScope);
-  }, [hasAnalysisScope]);
+  const [scopeToAnalysis, setScopeToAnalysis] = React.useState(false);
   const analysisDomainSet = React.useMemo(
     () => new Set((analysisDomains ?? []).map((d) => d.trim().toLowerCase())),
     [analysisDomains],

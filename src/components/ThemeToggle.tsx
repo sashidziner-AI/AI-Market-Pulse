@@ -12,12 +12,13 @@ export function applyTheme(theme: 'light' | 'dark') {
   try { localStorage.setItem('gtm_theme', theme); } catch {}
 }
 
-// Initialize on first load: stored pref → OS pref → dark default.
+// Initialize on first load: stored pref → dark default.
+// (Per-screen overrides in App.tsx may still flip this — Saved Reports forces
+// light regardless of stored preference. The stored pref applies elsewhere.)
 (function initTheme() {
   try {
     const stored = localStorage.getItem('gtm_theme');
     if (stored === 'light' || stored === 'dark') { applyTheme(stored); return; }
-    if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) { applyTheme('dark'); return; }
   } catch {}
   applyTheme('dark');
 })();

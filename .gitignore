@@ -10,3 +10,4 @@ logs/
 .playwright-mcp/
 data/
 *.db
+outputs/

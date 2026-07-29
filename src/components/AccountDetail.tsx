@@ -1683,7 +1683,8 @@ export function AccountDetail({
             </div>
           </section>
 
-          {account.domain && (
+          {/* Email Pattern widget hidden by user request — restore by unwrapping this block. */}
+          {false && account.domain && (
             <div className="mb-6">
               <EmailPatternWidget domain={account.domain} companyName={account.name} />
             </div>

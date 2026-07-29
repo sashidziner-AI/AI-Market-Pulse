@@ -62,10 +62,10 @@ export function JarvisOrb({ getContext, onAction }: Props) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [supported] = useState<boolean>(!!getSpeechRecognitionCtor());
-  // Hands-free wake word is ALWAYS ON at page load. The ear-icon toggle acts
-  // as a session-only pause (e.g. if the user is joining a meeting) — every
-  // reload re-arms wake detection so "Hey Jarvis" just works.
-  const [handsFree, setHandsFree] = useState<boolean>(true);
+  // Click-to-talk by default — user must tap the orb to speak. The ear icon
+  // is an opt-in toggle for hands-free "Hey Jarvis" wake detection (kept for
+  // users who want it, but off on load so the mic isn't hot without consent).
+  const [handsFree, setHandsFree] = useState<boolean>(false);
 
   const commandRecRef = useRef<any>(null);
   const wakeRecRef = useRef<any>(null);
@@ -529,21 +529,20 @@ export function JarvisOrb({ getContext, onAction }: Props) {
     };
   }, []);
 
-  // First-visit hint — one-time toast telling the user Jarvis is listening so
-  // they know they can just say "Hey Jarvis" without touching anything.
+  // First-visit hint — one-time toast telling the user how to talk to Jarvis.
   useEffect(() => {
-    if (!supported || !handsFree) return;
+    if (!supported) return;
     try {
       if (localStorage.getItem('jarvis_intro_shown') === 'true') return;
       localStorage.setItem('jarvis_intro_shown', 'true');
     } catch { return; }
     setTimeout(() => {
-      toast('Jarvis is listening', {
-        description: 'Say "Hey Jarvis" any time. Grant mic access when prompted.',
+      toast('Talk to Jarvis', {
+        description: 'Tap the orb (bottom-right) to speak. Enable the ear icon for hands-free "Hey Jarvis".',
         duration: 6000,
       });
     }, 800);
-  }, [supported, handsFree]);
+  }, [supported]);
 
   const handleOrbClick = () => {
     if (!open) setOpen(true);
