@@ -3152,12 +3152,16 @@ export function Dashboard({
                 </div>
               </div>
             ) : activeTab === 'pipeline' ? (
-              /* GTM Kanban Sprint Board View */
+              /* GTM Kanban Sprint Board View
+                 Responsive layout:
+                   - Mobile (<sm): stack columns vertically, each full-width, auto height.
+                   - sm+:         horizontal kanban with x-scroll + snap; min column widths
+                                  ramp up (300→340→360) so 3 columns fit on tablet/desktop. */
               viewMode === 'grid' ? (
-                <div className="flex flex-row gap-6 font-sans overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-slate-300 w-full snap-x">
-                  <div className="min-w-[280px] sm:min-w-[320px] lg:min-w-[350px] flex-1 snap-start">
-                    <PipelineColumn 
-                      title="To Engage" 
+                <div className="flex flex-col sm:flex-row gap-3 sm:gap-5 font-sans sm:overflow-x-auto pb-4 sm:scrollbar-thin sm:scrollbar-thumb-slate-300 w-full sm:snap-x">
+                  <div className="w-full sm:w-auto sm:min-w-[300px] md:min-w-[340px] lg:min-w-[360px] sm:flex-1 sm:snap-start">
+                    <PipelineColumn
+                      title="To Engage"
                       description="Newly identified accounts"
                       count={filteredAccounts.filter(a => (a.status === 'new' || !a.status) && !a.isDisqualified).length}
                       accounts={filteredAccounts.filter(a => (a.status === 'new' || !a.status) && !a.isDisqualified)}
@@ -3168,10 +3172,10 @@ export function Dashboard({
                       onDelete={handleDeleteAccountDirectly}
                     />
                   </div>
-                  
-                  <div className="min-w-[280px] sm:min-w-[320px] lg:min-w-[350px] flex-1 snap-start">
-                    <PipelineColumn 
-                      title="Reviewing" 
+
+                  <div className="w-full sm:w-auto sm:min-w-[300px] md:min-w-[340px] lg:min-w-[360px] sm:flex-1 sm:snap-start">
+                    <PipelineColumn
+                      title="Reviewing"
                       description="Pre-outreach target audits"
                       count={filteredAccounts.filter(a => a.status === 'viewed' && !a.isDisqualified).length}
                       accounts={filteredAccounts.filter(a => a.status === 'viewed' && !a.isDisqualified)}
@@ -3183,9 +3187,9 @@ export function Dashboard({
                     />
                   </div>
 
-                  <div className="min-w-[280px] sm:min-w-[320px] lg:min-w-[350px] flex-1 snap-start">
-                    <PipelineColumn 
-                      title="Enrolled" 
+                  <div className="w-full sm:w-auto sm:min-w-[300px] md:min-w-[340px] lg:min-w-[360px] sm:flex-1 sm:snap-start">
+                    <PipelineColumn
+                      title="Enrolled"
                       description="Campaign triggered / Outreach sent"
                       count={filteredAccounts.filter(a => a.status === 'contacted' && !a.isDisqualified).length}
                       accounts={filteredAccounts.filter(a => a.status === 'contacted' && !a.isDisqualified)}
@@ -5409,7 +5413,7 @@ function PipelineColumn({
   onDelete?: (id: string, event: React.MouseEvent) => void
 }) {
   return (
-    <div className="bg-slate-100 dark:bg-slate-800/70 p-4 rounded-2xl flex flex-col h-[calc(100vh-250px)] min-h-[480px] border border-slate-200 dark:border-slate-700/50 shadow-inner">
+    <div className="bg-slate-100 dark:bg-slate-800/70 p-4 rounded-2xl flex flex-col h-auto sm:h-[calc(100vh-250px)] max-h-[70vh] sm:max-h-none min-h-[360px] sm:min-h-[480px] border border-slate-200 dark:border-slate-700/50 shadow-inner">
       <div className="mb-4">
         <div className="flex items-center justify-between mb-1">
           <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm flex items-center gap-2">
@@ -5421,11 +5425,12 @@ function PipelineColumn({
       </div>
 
       <ScrollArea className="flex-1 -mx-2 px-2">
-        <div className="space-y-4 pb-4">
+        <div className="space-y-3 pb-4">
           {accounts.map(account => (
-            <AccountCard 
-              key={account.id} 
-              account={account} 
+            <AccountCard
+              key={account.id}
+              account={account}
+              compact
               targetRoles={targetRoles}
               onStatusChange={onUpdateStatus ? (newStatus) => onUpdateStatus({ ...account, status: newStatus }) : undefined}
               onDelete={onDelete}
