@@ -77,7 +77,7 @@ export function EmailPatternWidget({ domain, companyName }: { domain: string; co
     } finally {
       setLoading(null);
     }
-  }, [domain]);
+  }, [domain, companyName]);
 
   const guessEmail = React.useCallback(async () => {
     if (!firstName.trim() || !lastName.trim() || !domain) return;

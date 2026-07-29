@@ -246,14 +246,29 @@ export function Dashboard({
   // autoStart=true so the AI initiates the conversation without user input.
   // We only fire one at a time — if multiple came due (e.g. after a long
   // sleep) we handle the earliest and let the next tick handle the rest.
+  //
+  // `analysis` is mirrored into a ref so the tick reads the CURRENT analysis
+  // even when the user swaps reports mid-schedule — otherwise the effect's
+  // closure would send stale sellerName/valueProp to Vapi.
+  const analysisRef = React.useRef(analysis);
+  useEffect(() => { analysisRef.current = analysis; }, [analysis]);
+  // Same refs pattern for accounts + scheduledCalls: keeps the tick reading
+  // current values without tearing down the 15s interval every time an
+  // account edit (bulk CRM sync, status change) mutates the array.
+  const accountsRef = React.useRef(accounts);
+  useEffect(() => { accountsRef.current = accounts; }, [accounts]);
+  const scheduledCallsRef = React.useRef(scheduledCalls);
+  useEffect(() => { scheduledCallsRef.current = scheduledCalls; }, [scheduledCalls]);
+  const voiceCallAccountIdRef = React.useRef(voiceCallAccountId);
+  useEffect(() => { voiceCallAccountIdRef.current = voiceCallAccountId; }, [voiceCallAccountId]);
   useEffect(() => {
     const tick = () => {
       // Bail if a call is already open — don't stack modals on top of a live
       // call. The current call will end, the user will close, and the next
       // poll will pick up any still-pending schedule.
-      if (voiceCallAccountId) return;
+      if (voiceCallAccountIdRef.current) return;
       const now = Date.now();
-      const due = scheduledCalls
+      const due = scheduledCallsRef.current
         .filter(s => s.status === 'pending' && new Date(s.scheduledFor).getTime() <= now)
         .sort((a, b) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime());
       if (due.length === 0) return;
@@ -261,7 +276,7 @@ export function Dashboard({
       // Confirm the referenced account still exists — the pipeline may have
       // been cleared. If it's gone, mark the schedule failed so it doesn't
       // keep firing every tick forever.
-      const acc = accounts.find(a => a.id === fire.accountId);
+      const acc = accountsRef.current.find(a => a.id === fire.accountId);
       if (!acc) {
         setScheduledCalls(prev => prev.map(s =>
           s.id === fire.id
@@ -291,8 +306,8 @@ export function Dashboard({
                 fitReason: acc.fitReason,
                 signals: acc.signals,
                 industry: acc.industry,
-                sellerName: analysis?.businessName,
-                sellerValueProp: analysis?.valueProp,
+                sellerName: analysisRef.current?.businessName,
+                sellerValueProp: analysisRef.current?.valueProp,
               }),
             });
             const body = await res.json();
@@ -318,7 +333,9 @@ export function Dashboard({
     tick(); // fire on mount too so a just-passed schedule doesn't wait 15s
     const int = setInterval(tick, 15_000);
     return () => clearInterval(int);
-  }, [scheduledCalls, voiceCallAccountId, accounts]);
+    // Empty deps: the interval runs for the lifetime of the Dashboard, and
+    // the tick reads state via refs above so it always sees fresh values.
+  }, []);
 
   const pendingSchedules = scheduledCalls.filter(s => s.status === 'pending');
   const existingScheduleForVoiceCall = voiceCallAccountId
@@ -736,6 +753,7 @@ export function Dashboard({
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      URL.revokeObjectURL(url);
       toast.success(`Successfully exported ${sortedFilteredAccounts.length} accounts to CSV!`);
     } catch (e: any) {
       toast.error("Export failed: " + e.message);
@@ -1799,6 +1817,7 @@ export function Dashboard({
                   document.body.appendChild(link);
                   link.click();
                   document.body.removeChild(link);
+                  URL.revokeObjectURL(url);
                   toast.success("Accounts template CSV downloaded!");
                 }}
               >

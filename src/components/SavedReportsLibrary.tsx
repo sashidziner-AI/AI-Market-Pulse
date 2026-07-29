@@ -135,6 +135,7 @@ export function SavedReportsLibrary({
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      URL.revokeObjectURL(url);
       toast.success(`Successfully exported ${reportAccounts.length} accounts to CSV!`);
     } catch (e: any) {
       toast.error("Export failed: " + e.message);

@@ -9,13 +9,60 @@ import { createServer as createViteServer } from "vite";
 import Anthropic from "@anthropic-ai/sdk";
 import OpenAI from "openai";
 import jwt from "jsonwebtoken";
+import rateLimit from "express-rate-limit";
 
 dotenv.config();
 
 const app = express();
-const PORT = 3000;
+// Override with PORT=xxxx in .env to avoid EADDRINUSE when a prior dev
+// process is still holding 3000 (or when running two branches side by side).
+const PORT = Number(process.env.PORT) || 3000;
 
 app.use(express.json());
+
+// ─── Rate limiting ──────────────────────────────────────────────────────────
+// Two tiers protect against credit-burn / DoS on the AI endpoints:
+//   * apiLimiter  — every /api/* route (generous default)
+//   * aiLimiter   — tighter cap on the token-heavy AI endpoints only
+// Trust proxy so X-Forwarded-For is honored when behind a reverse proxy in
+// production. Standard headers on so clients see the RateLimit-* response
+// headers per RFC 9331.
+app.set("trust proxy", 1);
+
+const apiLimiter = rateLimit({
+  windowMs: 60_000,           // 1 minute
+  limit: 120,                 // 120 req/min/IP across all /api/* routes
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "Too many requests. Slow down and retry in a minute." },
+});
+
+const aiLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 20,                  // 20 AI calls/min/IP — enough for a real user
+  standardHeaders: "draft-7",
+  legacyHeaders: false,
+  message: { error: "AI rate limit reached (20/min). Wait and retry." },
+});
+
+// Apply the general limiter to every /api/* route. Individual expensive
+// endpoints layer on aiLimiter for stricter caps.
+app.use("/api", apiLimiter);
+for (const route of [
+  "/api/analyze-business",
+  "/api/discover-accounts",
+  "/api/analyze-account",
+  "/api/cluster-accounts",
+  "/api/enrich-stakeholder",
+  "/api/enrichment/sweep",
+  "/api/analyze-social",
+  "/api/jarvis/chat",
+  "/api/jarvis/tts",
+  "/api/learn-email-pattern",
+  "/api/guess-email",
+]) {
+  app.use(route, aiLimiter);
+}
 
 // In-Memory Caches to completely avoid redundant AI API quota consumption
 const businessCache = new Map<string, any>();
@@ -5940,8 +5987,12 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+  // Bind to loopback by default so a curious neighbour on the same Wi-Fi
+  // can't hit our AI endpoints and burn credits. Set HOST=0.0.0.0 in .env
+  // when you actually want LAN access (e.g. demoing to a room / phone test).
+  const HOST = process.env.HOST || "127.0.0.1";
+  app.listen(PORT, HOST, () => {
+    console.log(`Server running on http://${HOST === "0.0.0.0" ? "localhost" : HOST}:${PORT}${HOST === "0.0.0.0" ? " (also exposed on LAN via 0.0.0.0)" : ""}`);
   });
 }
 

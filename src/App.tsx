@@ -3,12 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BusinessInput } from './components/BusinessInput';
 import { Dashboard, getDefaultReportName } from './components/Dashboard';
 import { SavedReportsLibrary } from './components/SavedReportsLibrary';
 import { LandingPage } from './components/LandingPage';
-import { BusinessAnalysis, TargetAccount, DetailedAnalysis } from './types';
+import { BusinessAnalysis, TargetAccount, DetailedAnalysis, SavedReport } from './types';
 import { Toaster, toast } from 'sonner';
 import { Rocket, Globe, FileText, House } from 'lucide-react';
 import { ThemeToggle, applyTheme } from './components/ThemeToggle'; // applyTheme still used by Jarvis theme actions
@@ -31,7 +31,7 @@ export default function App() {
       return [];
     }
   });
-  const [savedReports, setSavedReports] = useState<any[]>(() => {
+  const [savedReports, setSavedReports] = useState<SavedReport[]>(() => {
     try {
       const saved = localStorage.getItem('gtm_saved_reports');
       return saved ? JSON.parse(saved) : [];
@@ -62,15 +62,50 @@ export default function App() {
   // Always show the landing page on every fresh page load.
   const [showLanding, setShowLanding] = useState<boolean>(true);
 
+  // Map of in-flight deep-analysis AbortControllers keyed by account id. Used
+  // to cancel a running /api/analyze-account stream if the user closes the
+  // detail view, re-clicks the same account, or navigates back to the input
+  // screen — otherwise the reader keeps consuming bytes (and burning tokens)
+  // long after the UI has stopped listening.
+  const deepAnalysisAbortersRef = useRef<Map<string, AbortController>>(new Map());
+  const abortDeepAnalysis = (id?: string) => {
+    const map = deepAnalysisAbortersRef.current;
+    if (id) {
+      const ctrl = map.get(id);
+      if (ctrl) { try { ctrl.abort(); } catch {} map.delete(id); }
+      return;
+    }
+    for (const ctrl of map.values()) { try { ctrl.abort(); } catch {} }
+    map.clear();
+  };
+
+  // Wrap localStorage writes so a QuotaExceeded / private-mode failure surfaces
+  // to the user instead of silently dropping their data. Only shows the toast
+  // once per session so we don't spam every autosave tick.
+  const quotaWarnedRef = useRef(false);
+  const safeSetItem = (key: string, value: string) => {
+    try {
+      localStorage.setItem(key, value);
+    } catch (err) {
+      console.warn(`[persist] localStorage.setItem failed for ${key}:`, err);
+      if (!quotaWarnedRef.current) {
+        quotaWarnedRef.current = true;
+        toast.error('Browser storage is full — new saves may be lost. Delete old saved reports to make space.', {
+          duration: 10000,
+        });
+      }
+    }
+  };
+
   // Per-screen theme:
   //   Landing (marketing)         → dark
   //   Analyze Website (input URL) → dark
+  //   Saved Reports library       → dark
   //   Dashboard (analysis result) → light
-  //   Saved Reports library       → light (with its own dark header wrapper)
-  // Collapses to: dark whenever there is no analysis loaded AND we are not
-  // on the Saved Reports tab; light everywhere else.
+  // Rule: dark whenever there's no analysis loaded; light once a dashboard
+  // is showing.
   useEffect(() => {
-    const isDark = !analysis && activeLandingTab !== 'saved-library';
+    const isDark = !analysis;
     applyTheme(isDark ? 'dark' : 'light');
   }, [activeLandingTab, showLanding, analysis]);
   const dismissLanding = () => {
@@ -78,60 +113,43 @@ export default function App() {
   };
 
   useEffect(() => {
-    try {
-      if (analysis) {
-        localStorage.setItem('gtm_analysis', JSON.stringify(analysis));
-      } else {
-        localStorage.removeItem('gtm_analysis');
-      }
-    } catch (e) {
-      console.log(e);
+    if (analysis) {
+      safeSetItem('gtm_analysis', JSON.stringify(analysis));
+    } else {
+      try { localStorage.removeItem('gtm_analysis'); } catch {}
     }
   }, [analysis]);
 
   useEffect(() => {
-    try {
-      if (analyzedUrl) {
-        localStorage.setItem('gtm_analyzed_url', analyzedUrl);
-      } else {
-        localStorage.removeItem('gtm_analyzed_url');
-      }
-    } catch (e) {
-      console.log(e);
+    if (analyzedUrl) {
+      safeSetItem('gtm_analyzed_url', analyzedUrl);
+    } else {
+      try { localStorage.removeItem('gtm_analyzed_url'); } catch {}
     }
   }, [analyzedUrl]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('gtm_accounts', JSON.stringify(accounts));
-    } catch (e) {
-      console.log(e);
-    }
+    safeSetItem('gtm_accounts', JSON.stringify(accounts));
   }, [accounts]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('gtm_saved_reports', JSON.stringify(savedReports));
-    } catch (e) {
-      console.log(e);
-    }
+    safeSetItem('gtm_saved_reports', JSON.stringify(savedReports));
   }, [savedReports]);
 
   useEffect(() => {
-    try {
-      if (activeReportId) {
-        localStorage.setItem('gtm_active_report_id', activeReportId);
-      } else {
-        localStorage.removeItem('gtm_active_report_id');
-      }
-    } catch (e) {
-      console.log(e);
+    if (activeReportId) {
+      safeSetItem('gtm_active_report_id', activeReportId);
+    } else {
+      try { localStorage.removeItem('gtm_active_report_id'); } catch {}
     }
   }, [activeReportId]);
 
   // Debounced auto-save of the loaded saved-report draft when accounts change
   // (e.g. after CRM sync marks accounts as synced). Debouncing collapses a
   // burst of onUpdateAccount calls into a single report save.
+  // `analysis` is intentionally in the deps: if the user swaps analyses while
+  // a save is pending, we want the tick to save against the fresh analysis,
+  // not the one that was current when the accounts array changed.
   useEffect(() => {
     if (!activeReportId || !analysis || accounts.length === 0) return;
     const t = setTimeout(() => {
@@ -139,7 +157,7 @@ export default function App() {
     }, 300);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accounts, activeReportId]);
+  }, [accounts, activeReportId, analysis]);
 
   const handleSaveReport = (name: string, customAnalysis?: BusinessAnalysis, customAccounts?: TargetAccount[]) => {
     const finalAnalysis = customAnalysis || analysis;
@@ -189,6 +207,7 @@ export default function App() {
   const handleDeleteReport = (id: string) => {
     setSavedReports(prev => prev.filter(r => r.id !== id));
     if (activeReportId === id) {
+      abortDeepAnalysis();
       setActiveReportId(null);
       setAnalysis(null);
       setAccounts([]);
@@ -220,6 +239,10 @@ export default function App() {
     // old accounts + old activeReportId briefly visible until discovery lands.
     // Also flip on isDiscovering so the Dashboard shows skeletons immediately,
     // covering the gap between "business analyzed" and "accounts populated".
+    // A brand-new analysis discards every in-flight deep dive from the
+    // previous session — otherwise their stream events would land against
+    // stale account ids.
+    abortDeepAnalysis();
     setAccounts([]);
     setActiveReportId(null);
     setAnalyzedUrl(url);
@@ -327,6 +350,13 @@ export default function App() {
     const account = accounts.find(a => a.id === id);
     if (!account || account.analysis) return;
 
+    // If a prior deep-dive for this same id is still running (e.g. rapid
+    // re-click), cancel it before starting a fresh one so we never race two
+    // readers into the same account.
+    abortDeepAnalysis(id);
+    const controller = new AbortController();
+    deepAnalysisAbortersRef.current.set(id, controller);
+
     // Attach a transient progress object so AccountDetail can render a live
     // "AI is thinking..." banner while the 3 parallel sub-calls stream events.
     const startProgress = () => {
@@ -365,6 +395,7 @@ export default function App() {
           domain: account.domain,
           businessContext: analysis,
         }),
+        signal: controller.signal,
       });
 
       if (!response.body) {
@@ -426,7 +457,17 @@ export default function App() {
       ));
     } catch (error: any) {
       clearProgress();
-      toast.error('Deep analysis failed: ' + error.message);
+      // AbortError is intentional (user closed detail / navigated away) —
+      // don't scare them with an error toast for their own action.
+      if (error?.name !== 'AbortError') {
+        toast.error('Deep analysis failed: ' + error.message);
+      }
+    } finally {
+      // Only clear this aborter if it's still the current one — a fresh call
+      // for the same id will have replaced it in the map already.
+      if (deepAnalysisAbortersRef.current.get(id) === controller) {
+        deepAnalysisAbortersRef.current.delete(id);
+      }
     }
   };
 
@@ -449,13 +490,8 @@ export default function App() {
       ) : (
         <>
 
-      {/* Dynamic Navigation Header for Workspace Landing Screen.
-          On the Saved Reports page we want a dark header even though the body
-          is in light mode. Wrapping the sticky container in a `.dark` scope
-          lets every `dark:` variant below activate independently of the
-          document-level theme. */}
+      {/* Dynamic Navigation Header for Workspace Landing Screen. */}
       {!analysis && (
-        <div className={activeLandingTab === 'saved-library' ? 'dark' : 'contents'}>
         <header className="w-full bg-stone-50/90 dark:bg-[#1F1F20]/90 backdrop-blur-md border-b border-stone-200/60 dark:border-white/[0.06] sticky top-0 z-40 transition-all">
           <div className="max-w-6xl mx-auto px-6 h-24 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
@@ -527,7 +563,6 @@ export default function App() {
             </div>
           </div>
         </header>
-        </div>
       )}
 
       {/* Page Content Router.
@@ -583,6 +618,7 @@ export default function App() {
           }}
           onShowSavedReports={() => setActiveLandingTab('saved-library')}
           onBack={() => {
+            abortDeepAnalysis();
             setAnalysis(null);
             setActiveReportId(null);
             setAnalyzedUrl(null);
@@ -635,6 +671,7 @@ export default function App() {
               setActiveLandingTab('analyze');
               if (analysis) {
                 // If a dashboard is loaded, clear it so the input screen shows.
+                abortDeepAnalysis();
                 setAnalysis(null);
                 setActiveReportId(null);
                 setAnalyzedUrl(null);
@@ -653,6 +690,7 @@ export default function App() {
               return;
             case 'navigate.back':
               if (analysis) {
+                abortDeepAnalysis();
                 setAnalysis(null);
                 setActiveReportId(null);
                 setAnalyzedUrl(null);
@@ -719,6 +757,7 @@ export default function App() {
             case 'input.submit':
               // Route to Business Input screen. If we're not on it, go there first.
               if (analysis) {
+                abortDeepAnalysis();
                 setAnalysis(null);
                 setActiveReportId(null);
                 setAnalyzedUrl(null);

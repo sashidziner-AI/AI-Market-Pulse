@@ -1175,6 +1175,10 @@ function CtaSection({
     const sec = secRef.current;
     if (!sec) return;
 
+    // Native setTimeout / setInterval ids started inside the typewriter — the
+    // gsap.context() cleanup below only unwinds gsap timers, not these.
+    const timers = new Set<ReturnType<typeof setTimeout>>();
+
     const ctx = gsap.context(() => {
       if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
         gsap.set(['.cta-chip', '.cta-headline', '.cta-sub', '.cta-btns', '.cta-input-row'], { opacity: 1 });
@@ -1213,7 +1217,11 @@ function CtaSection({
       // Slow spin on the dashed orbit circle
       gsap.to('.orbit-spin', { rotation: 360, duration: 28, repeat: -1, ease: 'none', transformOrigin: '50% 50%' });
 
-      // Typewriter on the mock URL field
+      // Typewriter on the mock URL field.
+      // Every native timer we start here is tracked in `timers` so the outer
+      // useLayoutEffect cleanup can kill them on unmount — gsap.context()
+      // handles gsap timers but NOT plain setInterval/setTimeout, so without
+      // this the typewriter kept writing textContent to a detached node.
       const typedEl = typeRef.current;
       if (!typedEl) return;
       let idx = 0;
@@ -1225,18 +1233,25 @@ function CtaSection({
           charPos++;
           if (charPos >= url.length) {
             clearInterval(interval);
-            setTimeout(() => {
+            timers.delete(interval);
+            const pause = setTimeout(() => {
+              timers.delete(pause);
               const eraseInterval = setInterval(() => {
                 typedEl.textContent = (typedEl.textContent || '').slice(0, -1);
                 if (!typedEl.textContent) {
                   clearInterval(eraseInterval);
+                  timers.delete(eraseInterval);
                   idx++;
-                  setTimeout(type, 320);
+                  const nextRun = setTimeout(type, 320);
+                  timers.add(nextRun);
                 }
               }, 35);
+              timers.add(eraseInterval);
             }, 1800);
+            timers.add(pause);
           }
         }, 55);
+        timers.add(interval);
       };
       // Start typewriter after the input row animates in
       gsap.delayedCall(1.1, type);
@@ -1262,7 +1277,14 @@ function CtaSection({
       }
     }, sec);
 
-    return () => ctx.revert();
+    return () => {
+      for (const t of timers) {
+        clearTimeout(t);
+        clearInterval(t as any);
+      }
+      timers.clear();
+      ctx.revert();
+    };
   }, []);
 
   return (
