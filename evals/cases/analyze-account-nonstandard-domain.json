@@ -1,0 +1,20 @@
+{
+  "name": "analyze-account-nonstandard-domain",
+  "endpoint": "/api/analyze-account",
+  "description": "Non-standard TLD should not crash the pipeline. Still expect a full response shape.",
+  "input": {
+    "domain": "notion.so",
+    "businessContext": {
+      "businessName": "TeamPulse",
+      "overview": "Team engagement analytics",
+      "targetIndustries": ["Productivity", "SaaS"]
+    }
+  },
+  "expectations": [
+    { "type": "hasField", "path": "score" },
+    { "type": "hasField", "path": "rationale" },
+    { "type": "arrayLengthAtLeast", "path": "buyerPersonas", "min": 2 },
+    { "type": "arrayLengthAtLeast", "path": "competitors", "min": 1 },
+    { "type": "hasField", "path": "multiThreadingStrategy.economicBuyer.role" }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "name": "analyze-business-fintech",
+  "endpoint": "/api/analyze-business",
+  "description": "Payments/fintech domain should surface compliance and integration-relevant buying signals.",
+  "input": {
+    "url": "https://plaid.com"
+  },
+  "expectations": [
+    { "type": "hasField", "path": "businessName" },
+    { "type": "matchField", "path": "businessName", "regex": "plaid" },
+    { "type": "arrayLengthAtLeast", "path": "targetIndustries", "min": 2 },
+    { "type": "matchField", "path": "icp.title", "regex": ".*" },
+    {
+      "type": "llmJudge",
+      "path": "icp.buyingSignals",
+      "rubric": "Buying signals for a financial-data infrastructure company should reference concrete triggers like: new product launches requiring bank connections, PSD2/open-banking regulatory shifts, fraud/KYC pain, embedded finance rollouts, or migration off legacy aggregators. Generic 'growing team' signals score low.",
+      "passingScore": 6
+    }
+  ]
+}

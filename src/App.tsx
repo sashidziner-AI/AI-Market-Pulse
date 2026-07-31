@@ -3,14 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BusinessInput } from './components/BusinessInput';
-import { Dashboard } from './components/Dashboard';
+import { Dashboard, getDefaultReportName } from './components/Dashboard';
 import { SavedReportsLibrary } from './components/SavedReportsLibrary';
-import { BusinessAnalysis, TargetAccount, DetailedAnalysis } from './types';
+import { LandingPage } from './components/LandingPage';
+import { BusinessAnalysis, TargetAccount, DetailedAnalysis, SavedReport } from './types';
 import { Toaster, toast } from 'sonner';
-import { Rocket, Globe, FileText } from 'lucide-react';
-import { ThemeToggle } from './components/ThemeToggle';
+import { Rocket, Globe, FileText, House } from 'lucide-react';
+import { ThemeToggle, applyTheme } from './components/ThemeToggle'; // applyTheme still used by Jarvis theme actions
+import { JarvisOrb, JarvisAction } from './components/JarvisOrb';
 
 export default function App() {
   const [analysis, setAnalysis] = useState<BusinessAnalysis | null>(() => {
@@ -29,7 +31,7 @@ export default function App() {
       return [];
     }
   });
-  const [savedReports, setSavedReports] = useState<any[]>(() => {
+  const [savedReports, setSavedReports] = useState<SavedReport[]>(() => {
     try {
       const saved = localStorage.getItem('gtm_saved_reports');
       return saved ? JSON.parse(saved) : [];
@@ -44,49 +46,118 @@ export default function App() {
       return null;
     }
   });
+  // Persisted so the Industry Discovery panel can derive the seller's
+  // country (from the URL TLD) and their own domain (to filter self-matches
+  // out of Google Maps results). Rehydrates on reload just like `analysis`.
+  const [analyzedUrl, setAnalyzedUrl] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('gtm_analyzed_url') || null;
+    } catch {
+      return null;
+    }
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [isDiscovering, setIsDiscovering] = useState(false);
   const [activeLandingTab, setActiveLandingTab] = useState<'analyze' | 'saved-library'>('analyze');
+  // Always show the landing page on every fresh page load.
+  const [showLanding, setShowLanding] = useState<boolean>(true);
+
+  // Map of in-flight deep-analysis AbortControllers keyed by account id. Used
+  // to cancel a running /api/analyze-account stream if the user closes the
+  // detail view, re-clicks the same account, or navigates back to the input
+  // screen — otherwise the reader keeps consuming bytes (and burning tokens)
+  // long after the UI has stopped listening.
+  const deepAnalysisAbortersRef = useRef<Map<string, AbortController>>(new Map());
+  const abortDeepAnalysis = (id?: string) => {
+    const map = deepAnalysisAbortersRef.current;
+    if (id) {
+      const ctrl = map.get(id);
+      if (ctrl) { try { ctrl.abort(); } catch {} map.delete(id); }
+      return;
+    }
+    for (const ctrl of map.values()) { try { ctrl.abort(); } catch {} }
+    map.clear();
+  };
+
+  // Wrap localStorage writes so a QuotaExceeded / private-mode failure surfaces
+  // to the user instead of silently dropping their data. Only shows the toast
+  // once per session so we don't spam every autosave tick.
+  const quotaWarnedRef = useRef(false);
+  const safeSetItem = (key: string, value: string) => {
+    try {
+      localStorage.setItem(key, value);
+    } catch (err) {
+      console.warn(`[persist] localStorage.setItem failed for ${key}:`, err);
+      if (!quotaWarnedRef.current) {
+        quotaWarnedRef.current = true;
+        toast.error('Browser storage is full — new saves may be lost. Delete old saved reports to make space.', {
+          duration: 10000,
+        });
+      }
+    }
+  };
+
+  // Per-screen theme:
+  //   Landing (marketing)         → dark
+  //   Analyze Website (input URL) → dark
+  //   Saved Reports library       → dark
+  //   Dashboard (analysis result) → light
+  // Rule: dark whenever there's no analysis loaded; light once a dashboard
+  // is showing.
+  useEffect(() => {
+    const isDark = !analysis;
+    applyTheme(isDark ? 'dark' : 'light');
+  }, [activeLandingTab, showLanding, analysis]);
+  const dismissLanding = () => {
+    setShowLanding(false);
+  };
 
   useEffect(() => {
-    try {
-      if (analysis) {
-        localStorage.setItem('gtm_analysis', JSON.stringify(analysis));
-      } else {
-        localStorage.removeItem('gtm_analysis');
-      }
-    } catch (e) {
-      console.log(e);
+    if (analysis) {
+      safeSetItem('gtm_analysis', JSON.stringify(analysis));
+    } else {
+      try { localStorage.removeItem('gtm_analysis'); } catch {}
     }
   }, [analysis]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('gtm_accounts', JSON.stringify(accounts));
-    } catch (e) {
-      console.log(e);
+    if (analyzedUrl) {
+      safeSetItem('gtm_analyzed_url', analyzedUrl);
+    } else {
+      try { localStorage.removeItem('gtm_analyzed_url'); } catch {}
     }
+  }, [analyzedUrl]);
+
+  useEffect(() => {
+    safeSetItem('gtm_accounts', JSON.stringify(accounts));
   }, [accounts]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem('gtm_saved_reports', JSON.stringify(savedReports));
-    } catch (e) {
-      console.log(e);
-    }
+    safeSetItem('gtm_saved_reports', JSON.stringify(savedReports));
   }, [savedReports]);
 
   useEffect(() => {
-    try {
-      if (activeReportId) {
-        localStorage.setItem('gtm_active_report_id', activeReportId);
-      } else {
-        localStorage.removeItem('gtm_active_report_id');
-      }
-    } catch (e) {
-      console.log(e);
+    if (activeReportId) {
+      safeSetItem('gtm_active_report_id', activeReportId);
+    } else {
+      try { localStorage.removeItem('gtm_active_report_id'); } catch {}
     }
   }, [activeReportId]);
+
+  // Debounced auto-save of the loaded saved-report draft when accounts change
+  // (e.g. after CRM sync marks accounts as synced). Debouncing collapses a
+  // burst of onUpdateAccount calls into a single report save.
+  // `analysis` is intentionally in the deps: if the user swaps analyses while
+  // a save is pending, we want the tick to save against the fresh analysis,
+  // not the one that was current when the accounts array changed.
+  useEffect(() => {
+    if (!activeReportId || !analysis || accounts.length === 0) return;
+    const t = setTimeout(() => {
+      handleSaveReport("", analysis, accounts);
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accounts, activeReportId, analysis]);
 
   const handleSaveReport = (name: string, customAnalysis?: BusinessAnalysis, customAccounts?: TargetAccount[]) => {
     const finalAnalysis = customAnalysis || analysis;
@@ -98,7 +169,15 @@ export default function App() {
     }
 
     const reportId = activeReportId || `report-${Date.now()}`;
-    const reportName = name || `Outreach Plan: ${finalAnalysis.businessName}`;
+    // Preserve the existing report's name when auto-updating (e.g. blueprint
+    // edits or account deletions call handleSaveReport with an empty name).
+    // Only fall back to the industry-derived default when creating a brand-new
+    // report and the caller didn't provide an explicit name.
+    const existingName = savedReports.find(r => r.id === reportId)?.name;
+    const reportName =
+      name?.trim() ||
+      existingName ||
+      getDefaultReportName(finalAnalysis);
 
     const newReport = {
       id: reportId,
@@ -128,6 +207,7 @@ export default function App() {
   const handleDeleteReport = (id: string) => {
     setSavedReports(prev => prev.filter(r => r.id !== id));
     if (activeReportId === id) {
+      abortDeepAnalysis();
       setActiveReportId(null);
       setAnalysis(null);
       setAccounts([]);
@@ -152,18 +232,31 @@ export default function App() {
     toast.success("Saved report renamed successfully!");
   };
 
-  const analyzeBusiness = async (url: string) => {
+  const analyzeBusiness = async (url: string, accountCount: number = 10) => {
     setIsLoading(true);
+    // Clear stale state from any previous analysis BEFORE the fetch. Otherwise,
+    // when setAnalysis fires with the new blueprint, Dashboard mounts with the
+    // old accounts + old activeReportId briefly visible until discovery lands.
+    // Also flip on isDiscovering so the Dashboard shows skeletons immediately,
+    // covering the gap between "business analyzed" and "accounts populated".
+    // A brand-new analysis discards every in-flight deep dive from the
+    // previous session — otherwise their stream events would land against
+    // stale account ids.
+    abortDeepAnalysis();
+    setAccounts([]);
+    setActiveReportId(null);
+    setAnalyzedUrl(url);
+    setIsDiscovering(true);
     try {
       const response = await fetch('/api/analyze-business', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),
       });
-      
+
       const data = await response.json();
       if (data.error) throw new Error(data.error);
-      
+
       setAnalysis(data);
       if (data.isFallback) {
         toast.warning('OpenAI API quota exceeded or API Key is missing. Loaded high-fidelity simulated business blueprint.', {
@@ -173,25 +266,29 @@ export default function App() {
       } else {
         toast.success('Business logic mapped successfully');
       }
-      
-      // Auto-start discovery after business analysis
-      discoverAccounts(data);
+
+      // Auto-start discovery after business analysis with the user's picked count
+      discoverAccounts(data, accountCount);
     } catch (error: any) {
+      // Discovery never runs on failure, so clear the pre-warm flag we set
+      // above; otherwise the Dashboard would sit on skeletons forever.
+      setIsDiscovering(false);
       toast.error('Failed to analyze business: ' + error.message);
     } finally {
       setIsLoading(false);
     }
   };
 
-  const discoverAccounts = async (businessData: BusinessAnalysis) => {
+  const discoverAccounts = async (businessData: BusinessAnalysis, accountCount: number = 10) => {
     setIsDiscovering(true);
     try {
       const response = await fetch('/api/discover-accounts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          businessContext: businessData, 
-          icp: businessData.icp 
+        body: JSON.stringify({
+          businessContext: businessData,
+          icp: businessData.icp,
+          accountCount,
         }),
       });
       
@@ -212,6 +309,36 @@ export default function App() {
       } else {
         toast.success(`${formattedAccounts.length} high-potential accounts discovered`);
       }
+
+      // Fire-and-forget lead pipelines so the Leads tab fills without a
+      // manual click. Both hit /api endpoints that are safe to fail silently.
+      //   1. Immediate sweep — pull real Hunter matches for DM personas
+      //      across the top ~3 accounts right now. Cap keeps quota safe.
+      //   2. Persistent enrollment — same accounts get added to the
+      //      persona-discovery cron queue, so nightly runs keep growing
+      //      the leads DB even without further user interaction.
+      const enrolledAccounts = formattedAccounts
+        .filter((a: any) => a?.domain && a?.name)
+        .map((a: any) => ({ domain: a.domain, name: a.name }));
+      if (enrolledAccounts.length > 0) {
+        void fetch('/api/enrichment/sweep', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accounts: enrolledAccounts.slice(0, 3), cap: 12 }),
+        })
+          .then((r) => r.json())
+          .then((r) => {
+            if (r?.leadsCreated > 0) {
+              toast.success(`Auto-discovered ${r.leadsCreated} lead${r.leadsCreated === 1 ? '' : 's'} across ${enrolledAccounts.slice(0, 3).length} accounts. Open the Leads tab.`, { duration: 5000 });
+            }
+          })
+          .catch(() => {});
+        void fetch('/api/scheduler/enroll', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ accounts: enrolledAccounts }),
+        }).catch(() => {});
+      }
     } catch (error: any) {
       toast.error('Discovery failed: ' + error.message);
     } finally {
@@ -223,61 +350,192 @@ export default function App() {
     const account = accounts.find(a => a.id === id);
     if (!account || account.analysis) return;
 
+    // If a prior deep-dive for this same id is still running (e.g. rapid
+    // re-click), cancel it before starting a fresh one so we never race two
+    // readers into the same account.
+    abortDeepAnalysis(id);
+    const controller = new AbortController();
+    deepAnalysisAbortersRef.current.set(id, controller);
+
+    // Attach a transient progress object so AccountDetail can render a live
+    // "AI is thinking..." banner while the 3 parallel sub-calls stream events.
+    const startProgress = () => {
+      setAccounts(prev => prev.map(a =>
+        a.id === id
+          ? { ...a, analysisProgress: { messages: ['Starting deep-dive analysis...'], searches: [] } }
+          : a
+      ));
+    };
+    const pushProgress = (patch: { message?: string; search?: string }) => {
+      setAccounts(prev => prev.map(a => {
+        if (a.id !== id) return a;
+        const prevProgress = a.analysisProgress ?? { messages: [], searches: [] };
+        return {
+          ...a,
+          analysisProgress: {
+            messages: patch.message ? [...prevProgress.messages, patch.message] : prevProgress.messages,
+            searches: patch.search ? [...prevProgress.searches, patch.search] : prevProgress.searches,
+          },
+        };
+      }));
+    };
+    const clearProgress = () => {
+      setAccounts(prev => prev.map(a =>
+        a.id === id ? { ...a, analysisProgress: undefined } : a
+      ));
+    };
+
     try {
-      const response = await fetch('/api/analyze-account', {
+      startProgress();
+
+      const response = await fetch('/api/analyze-account?stream=1', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          domain: account.domain, 
-          businessContext: analysis 
+        body: JSON.stringify({
+          domain: account.domain,
+          businessContext: analysis,
         }),
+        signal: controller.signal,
       });
-      
-      const data = await response.json();
-      if (data.error) throw new Error(data.error);
 
-      if (data.isFallback) {
-        toast.warning('API limits reached. Loaded optimized competitor displacement profiles for this account.', {
-          duration: 6000
-        });
+      if (!response.body) {
+        // Streaming not supported by the runtime — fall back to a single JSON body.
+        const data = await response.json();
+        clearProgress();
+        if (data.error) throw new Error(data.error);
+        setAccounts(prev => prev.map(a => a.id === id ? { ...a, analysis: data as DetailedAnalysis } : a));
+        return;
       }
 
-      setAccounts(prev => prev.map(a => 
-        a.id === id ? { ...a, analysis: data as DetailedAnalysis } : a
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finalPayload: DetailedAnalysis | null = null;
+
+      // Read NDJSON events line-by-line. Each line is a JSON object.
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        let newlineIdx: number;
+        while ((newlineIdx = buffer.indexOf('\n')) !== -1) {
+          const line = buffer.slice(0, newlineIdx).trim();
+          buffer = buffer.slice(newlineIdx + 1);
+          if (!line) continue;
+          try {
+            const event = JSON.parse(line);
+            if (event.type === 'status' && event.message) {
+              pushProgress({ message: event.message });
+            } else if (event.type === 'search' && event.query) {
+              pushProgress({ search: event.query });
+            } else if (event.type === 'sub_done' && event.subCall) {
+              pushProgress({ message: `Finished ${event.subCall} (${Math.round(event.durationMs / 1000)}s)` });
+            } else if (event.type === 'result' && event.payload) {
+              finalPayload = event.payload as DetailedAnalysis;
+            } else if (event.type === 'error' && event.message) {
+              throw new Error(event.message);
+            }
+          } catch (parseErr) {
+            // Malformed event line — skip; better than crashing the stream.
+            console.warn('Stream parse failed:', line);
+          }
+        }
+      }
+
+      clearProgress();
+      if (!finalPayload) {
+        throw new Error('Stream ended without a result event');
+      }
+      if ((finalPayload as any).isFallback) {
+        toast.warning('API limits reached. Loaded optimized competitor displacement profiles for this account.', {
+          duration: 6000,
+        });
+      }
+      setAccounts(prev => prev.map(a =>
+        a.id === id ? { ...a, analysis: finalPayload as DetailedAnalysis } : a
       ));
     } catch (error: any) {
-      toast.error('Deep analysis failed: ' + error.message);
+      clearProgress();
+      // AbortError is intentional (user closed detail / navigated away) —
+      // don't scare them with an error toast for their own action.
+      if (error?.name !== 'AbortError') {
+        toast.error('Deep analysis failed: ' + error.message);
+      }
+    } finally {
+      // Only clear this aborter if it's still the current one — a fresh call
+      // for the same id will have replaced it in the map already.
+      if (deepAnalysisAbortersRef.current.get(id) === controller) {
+        deepAnalysisAbortersRef.current.delete(id);
+      }
     }
   };
 
   return (
-    <div className="min-h-screen text-slate-900 dark:text-slate-100 bg-linear-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 font-sans selection:bg-indigo-100 selection:text-indigo-900 dark:selection:bg-indigo-900 dark:selection:text-indigo-100 flex flex-col justify-start">
-      <Toaster position="top-center" expand={true} richColors />
-      
-      {/* Dynamic Navigation Header for Workspace Landing Screen */}
+    <div className="min-h-screen text-zinc-900 dark:text-zinc-100 bg-stone-50 dark:bg-[#1F1F20] font-sans selection:bg-orange-100 selection:text-orange-900 dark:selection:bg-orange-900/30 dark:selection:text-orange-100 flex flex-col justify-start">
+      <Toaster position="top-right" expand={true} richColors />
+
+      {/* Marketing landing — shown first for new visitors. Fully self-hosted
+          header (its own nav + theme toggle), so the shared analyze-screen
+          header below is intentionally suppressed while it's visible. */}
+      {showLanding && !analysis && activeLandingTab !== 'saved-library' ? (
+        <LandingPage
+          onEnter={dismissLanding}
+          onOpenLibrary={() => {
+            dismissLanding();
+            setActiveLandingTab('saved-library');
+          }}
+          hasSavedReports={savedReports.length > 0}
+        />
+      ) : (
+        <>
+
+      {/* Dynamic Navigation Header for Workspace Landing Screen. */}
       {!analysis && (
-        <header className="w-full bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-700/80 sticky top-0 z-40 transition-all shadow-2xs">
-          <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between">
+        <header className="w-full bg-stone-50/90 dark:bg-[#1F1F20]/90 backdrop-blur-md border-b border-stone-200/60 dark:border-white/[0.06] sticky top-0 z-40 transition-all">
+          <div className="max-w-6xl mx-auto px-6 h-24 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-indigo-600 text-white shadow-xs">
-                <Rocket className="w-4 h-4" />
-              </div>
-              <span
-                className="font-extrabold text-sm md:text-base tracking-tight text-slate-900 dark:text-slate-100 hover:opacity-90 cursor-pointer select-none"
+              <img
+                src="/vee-technologies-logo.png"
+                alt="Vee Technologies"
+                className="w-12 h-12 object-contain select-none"
+              />
+              <div
+                className="flex flex-col leading-none hover:opacity-80 cursor-pointer select-none"
                 onClick={() => setActiveLandingTab('analyze')}
               >
-                AI Market Pulse
-              </span>
+                <span
+                  className="font-normal text-[18px] tracking-tight text-zinc-900 dark:text-zinc-100"
+                  style={{ letterSpacing: '-0.02em' }}
+                >
+                  <span className="text-orange-600 dark:text-white">AI</span> Market Pulse
+                </span>
+                <span className="mt-0.5 text-[8.5px] font-mono uppercase tracking-[0.14em] text-orange-600 dark:text-orange-400">
+                  by Vee Technologies
+                </span>
+              </div>
             </div>
 
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl border border-slate-200/60 dark:border-slate-700/60 shadow-inner">
+              <button
+                onClick={() => {
+                  // Home must escape ANY workspace tab (analyze / saved-library)
+                  // and drop the user back on the marketing landing page.
+                  setActiveLandingTab('analyze');
+                  setShowLanding(true);
+                }}
+                className="inline-flex items-center gap-1.5 text-[12px] font-semibold px-3 py-1.5 rounded-lg text-zinc-500 dark:text-zinc-400 hover:text-orange-600 dark:hover:text-orange-400 hover:bg-stone-100 dark:hover:bg-white/[0.05] cursor-pointer transition-all"
+              >
+                <House className="w-3.5 h-3.5" />
+                Home
+              </button>
+              <div className="flex items-center gap-1 bg-stone-100 dark:bg-white/[0.05] p-1 rounded-xl border border-stone-200/60 dark:border-white/[0.07]">
                 <button
                   onClick={() => setActiveLandingTab('analyze')}
-                  className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
+                  className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer ${
                     activeLandingTab === 'analyze'
-                      ? 'bg-white dark:bg-slate-900 dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-3xs'
-                      : 'text-slate-500 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-200'
+                      ? 'bg-white dark:bg-white/[0.08] text-orange-600 dark:text-orange-400 shadow-sm'
+                      : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200'
                   }`}
                 >
                   <Globe className="w-3.5 h-3.5" />
@@ -286,16 +544,16 @@ export default function App() {
 
                 <button
                   onClick={() => setActiveLandingTab('saved-library')}
-                  className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer relative ${
+                  className={`px-3.5 py-1.5 text-xs font-semibold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer relative ${
                     activeLandingTab === 'saved-library'
-                      ? 'bg-white dark:bg-slate-900 dark:bg-slate-700 text-indigo-700 dark:text-indigo-300 shadow-3xs'
-                      : 'text-slate-500 dark:text-slate-300 hover:text-slate-800 dark:hover:text-slate-200'
+                      ? 'bg-white dark:bg-white/[0.08] text-orange-600 dark:text-orange-400 shadow-sm'
+                      : 'text-zinc-500 dark:text-zinc-400 hover:text-zinc-800 dark:hover:text-zinc-200'
                   }`}
                 >
                   <FileText className="w-3.5 h-3.5" />
                   <span>Saved Reports</span>
                   {savedReports.length > 0 && (
-                    <span className="absolute -top-1.5 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-indigo-600 text-[11px] font-bold text-white leading-none scale-90 border border-white dark:border-slate-900 font-mono">
+                    <span className="absolute -top-1.5 -right-1 flex h-4 min-w-4 px-1 items-center justify-center rounded-full bg-orange-500 text-[11px] font-bold text-white leading-none scale-90 border border-stone-50 dark:border-[#1F1F20] font-mono">
                       {savedReports.length}
                     </span>
                   )}
@@ -307,26 +565,32 @@ export default function App() {
         </header>
       )}
 
-      {/* Page Content Router */}
-      {!analysis ? (
-        activeLandingTab === 'analyze' ? (
-          <BusinessInput 
-            onAnalyze={analyzeBusiness} 
-            isLoading={isLoading} 
-          />
-        ) : (
-          <SavedReportsLibrary
-            savedReports={savedReports}
-            onLoadReport={handleLoadReport}
-            onDeleteReport={handleDeleteReport}
-            onUpdateReportMeta={handleUpdateReportMeta}
-            onNavigateToAnalyze={() => setActiveLandingTab('analyze')}
-          />
-        )
+      {/* Page Content Router.
+          Priority: an explicit "Show Reports" navigation (activeLandingTab
+          === 'saved-library') always wins so the library is reachable even
+          from an in-progress dashboard. Falls back to Dashboard when analysis
+          is loaded, else the analyze screen. */}
+      {activeLandingTab === 'saved-library' ? (
+        <SavedReportsLibrary
+          savedReports={savedReports}
+          onLoadReport={(id) => {
+            handleLoadReport(id);
+            setActiveLandingTab('analyze');
+          }}
+          onDeleteReport={handleDeleteReport}
+          onUpdateReportMeta={handleUpdateReportMeta}
+          onNavigateToAnalyze={() => setActiveLandingTab('analyze')}
+        />
+      ) : !analysis ? (
+        <BusinessInput
+          onAnalyze={analyzeBusiness}
+          isLoading={isLoading}
+        />
       ) : (
-        <Dashboard 
-          analysis={analysis} 
-          accounts={accounts} 
+        <Dashboard
+          analysis={analysis}
+          analyzedUrl={analyzedUrl}
+          accounts={accounts}
           isDiscovering={isDiscovering}
           activeReportId={activeReportId}
           savedReports={savedReports}
@@ -334,12 +598,17 @@ export default function App() {
           onRefreshDiscovery={() => discoverAccounts(analysis)}
           onUpdateReportMeta={handleUpdateReportMeta}
           onUpdateAccount={(acc) => {
-            const updated = accounts.map(a => a.id === acc.id ? acc : a);
-            setAccounts(updated);
-            // Auto update saved report draft if currently reading a saved report
-            if (activeReportId) {
-              handleSaveReport("", analysis, updated);
-            }
+            // Functional setState so rapid consecutive updates (e.g. bulk CRM
+            // sync marking 5 accounts as synced in the same tick) each read the
+            // freshest prev state. The stale-closure form (accounts.map(...)) would
+            // let later calls stomp earlier ones and only the last would persist.
+            setAccounts(prev => prev.map(a => a.id === acc.id ? acc : a));
+          }}
+          onAddAccount={(acc) => {
+            // Prepend so newly-added prospects appear at the top of the list.
+            // Guard against duplicate ids (e.g. rapid double-click) to keep the
+            // account map unique.
+            setAccounts(prev => (prev.some(a => a.id === acc.id) ? prev : [acc, ...prev]));
           }}
           onSaveReport={handleSaveReport}
           onUpdateReport={(updatedAnalysis, updatedAccounts) => {
@@ -347,13 +616,188 @@ export default function App() {
             setAccounts(updatedAccounts);
             handleSaveReport("", updatedAnalysis, updatedAccounts);
           }}
+          onShowSavedReports={() => setActiveLandingTab('saved-library')}
           onBack={() => {
+            abortDeepAnalysis();
             setAnalysis(null);
             setActiveReportId(null);
+            setAnalyzedUrl(null);
             toast.info("Returned to seller website input screen");
           }}
         />
       )}
+        </>
+      )}
+
+      <JarvisOrb
+        getContext={() => {
+          const parts: string[] = [];
+          if (analyzedUrl) parts.push(`Analyzed website: ${analyzedUrl}`);
+          if (analysis) {
+            const a: any = analysis;
+            const industry = a?.icp?.industry || a?.industry;
+            const overview = a?.overview || a?.summary;
+            if (industry) parts.push(`Business industry / ICP: ${industry}`);
+            if (overview) parts.push(`Business overview: ${String(overview).slice(0, 400)}`);
+            if (a?.icp) {
+              const icpBits: string[] = [];
+              if (a.icp.companySize) icpBits.push(`company size ${a.icp.companySize}`);
+              if (a.icp.geography) icpBits.push(`geography ${a.icp.geography}`);
+              if (Array.isArray(a.icp.painPoints) && a.icp.painPoints.length) {
+                icpBits.push(`pain points: ${a.icp.painPoints.slice(0, 4).join(', ')}`);
+              }
+              if (icpBits.length) parts.push(`ICP details: ${icpBits.join('; ')}`);
+            }
+          }
+          if (accounts.length > 0) {
+            parts.push(`Discovered accounts (${accounts.length}): ` +
+              accounts.slice(0, 8).map((a: any) => `${a.name || a.domain}${typeof a.fitScore === 'number' ? ` (fit ${a.fitScore})` : ''}`).join(', '));
+          }
+          if (savedReports.length > 0) {
+            parts.push(`Saved reports (${savedReports.length}): ` +
+              savedReports.slice(0, 6).map((r: any) => `"${r.name}"`).join(', '));
+          }
+          parts.push(`Current screen: ${activeLandingTab === 'saved-library' ? 'Saved Reports' : analysis ? 'Dashboard' : showLanding ? 'Landing page' : 'Analyze Website'}`);
+          return parts.join('\n');
+        }}
+        onAction={(a: JarvisAction) => {
+          const { action, args } = a;
+          switch (action) {
+            case 'navigate.home':
+              setShowLanding(true);
+              return;
+            case 'navigate.analyze':
+              setShowLanding(false);
+              setActiveLandingTab('analyze');
+              if (analysis) {
+                // If a dashboard is loaded, clear it so the input screen shows.
+                abortDeepAnalysis();
+                setAnalysis(null);
+                setActiveReportId(null);
+                setAnalyzedUrl(null);
+              }
+              return;
+            case 'navigate.dashboard':
+              setShowLanding(false);
+              setActiveLandingTab('analyze');
+              if (!analysis) {
+                toast.info('No analysis loaded. Analyze a website first.');
+              }
+              return;
+            case 'navigate.savedReports':
+              setShowLanding(false);
+              setActiveLandingTab('saved-library');
+              return;
+            case 'navigate.back':
+              if (analysis) {
+                abortDeepAnalysis();
+                setAnalysis(null);
+                setActiveReportId(null);
+                setAnalyzedUrl(null);
+              } else {
+                setShowLanding(true);
+              }
+              return;
+            case 'theme.toggle': {
+              const cur = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+              applyTheme(cur === 'dark' ? 'light' : 'dark');
+              return;
+            }
+            case 'theme.set': {
+              const mode = (args?.mode as string) === 'light' ? 'light' : 'dark';
+              applyTheme(mode);
+              return;
+            }
+            case 'analyzeUrl': {
+              const url = String(args?.url ?? '').trim();
+              if (!url) { toast.error('Jarvis needed a URL to analyze.'); return; }
+              setShowLanding(false);
+              setActiveLandingTab('analyze');
+              analyzeBusiness(url);
+              return;
+            }
+            case 'loadReport': {
+              const q = String(args?.query ?? '').trim().toLowerCase();
+              if (!q) return;
+              const match = savedReports.find(r => (r.name || '').toLowerCase().includes(q));
+              if (match) {
+                setShowLanding(false);
+                setActiveLandingTab('analyze');
+                handleLoadReport(match.id);
+              } else {
+                toast.error(`No saved report matching "${q}".`);
+              }
+              return;
+            }
+            case 'landing.playIntroVideo':
+            case 'landing.pauseIntroVideo':
+            case 'landing.fullscreenIntroVideo':
+            case 'landing.scrollToWatch':
+            case 'landing.scrollToFeatures':
+            case 'landing.scrollToCta':
+              // Component-scoped — dispatch a window event; LandingPage listens.
+              if (!showLanding) setShowLanding(true);
+              setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('jarvis:landing', { detail: { action, args } }));
+              }, showLanding ? 0 : 300);
+              return;
+            case 'dashboard.tab':
+            case 'dashboard.refresh':
+            case 'dashboard.saveReport':
+            case 'dashboard.openAccount':
+            case 'dashboard.closeDetail':
+              if (!analysis) {
+                toast.info('Open an analysis first — no dashboard is loaded.');
+                return;
+              }
+              window.dispatchEvent(new CustomEvent('jarvis:dashboard', { detail: { action, args } }));
+              return;
+            case 'input.setUrl':
+            case 'input.setCount':
+            case 'input.submit':
+              // Route to Business Input screen. If we're not on it, go there first.
+              if (analysis) {
+                abortDeepAnalysis();
+                setAnalysis(null);
+                setActiveReportId(null);
+                setAnalyzedUrl(null);
+              }
+              setShowLanding(false);
+              setActiveLandingTab('analyze');
+              setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('jarvis:input', { detail: { action, args } }));
+              }, 60);
+              return;
+            case 'savedReports.load':
+            case 'savedReports.delete':
+              // Ensure we're on the saved-reports screen so the listener is mounted.
+              setShowLanding(false);
+              setActiveLandingTab('saved-library');
+              setTimeout(() => {
+                window.dispatchEvent(new CustomEvent('jarvis:savedReports', { detail: { action, args } }));
+              }, 60);
+              return;
+            case 'scroll.up':
+              window.scrollBy({ top: -Math.round(window.innerHeight * 0.85), behavior: 'smooth' });
+              return;
+            case 'scroll.down':
+              window.scrollBy({ top: Math.round(window.innerHeight * 0.85), behavior: 'smooth' });
+              return;
+            case 'scroll.top':
+              window.scrollTo({ top: 0, behavior: 'smooth' });
+              return;
+            case 'scroll.bottom':
+              window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' });
+              return;
+            case 'readCurrentScreen':
+              // No action — Jarvis's reply already contains the read-out.
+              return;
+            default:
+              // Unknown action — no-op
+              return;
+          }
+        }}
+      />
     </div>
   );
 }

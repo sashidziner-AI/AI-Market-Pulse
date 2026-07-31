@@ -1,0 +1,31 @@
+{
+  "name": "analyze-account-linear",
+  "endpoint": "/api/analyze-account",
+  "description": "Deep dive on a modern developer tools company. Should surface plausible personas and real competitor names.",
+  "input": {
+    "domain": "linear.app",
+    "businessContext": {
+      "businessName": "GridPulse",
+      "overview": "Real-time performance analytics for engineering leadership.",
+      "targetIndustries": ["Developer Tools", "SaaS", "DevOps"]
+    }
+  },
+  "expectations": [
+    { "type": "hasField", "path": "score" },
+    { "type": "hasField", "path": "rationale" },
+    { "type": "arrayLengthAtLeast", "path": "buyerPersonas", "min": 2 },
+    { "type": "arrayLengthAtLeast", "path": "competitors", "min": 1 },
+    {
+      "type": "llmJudge",
+      "path": "competitors",
+      "rubric": "The seller is GridPulse (engineering performance analytics). Competitors here means engineering-analytics / observability / dev-productivity vendors that Linear likely USES today — the tools GridPulse would displace. Recognizable good answers: Jellyfish, LinearB, Waydev, Code Climate, Sleuth, Swarmia, Datadog engineering metrics, homegrown dashboards. Score low if the list is cloud infrastructure (AWS, GCP, Algolia) or Linear's own market competitors (Jira, Notion).",
+      "passingScore": 6
+    },
+    {
+      "type": "llmJudge",
+      "path": "buyerPersonas.0.counterNarratives.0",
+      "rubric": "A great counter-narrative names a concrete objection, offers a specific reframe (not generic reassurance), grounds proofPoint in a real analog example or data point, and specifies a moment in the sales conversation. Vague or LLM-boilerplate counter-narratives score low.",
+      "passingScore": 6
+    }
+  ]
+}

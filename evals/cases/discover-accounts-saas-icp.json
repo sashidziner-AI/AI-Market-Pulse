@@ -1,0 +1,31 @@
+{
+  "name": "discover-accounts-saas-icp",
+  "endpoint": "/api/discover-accounts",
+  "description": "Given a SaaS-style ICP (VP Engineering at mid-market SaaS companies), the endpoint should return at least 5 accounts with valid fit/timing scores and one of the three priority flags.",
+  "input": {
+    "businessContext": {
+      "businessName": "PayPipe",
+      "overview": "Payment orchestration platform for high-growth SaaS companies.",
+      "targetIndustries": ["SaaS", "FinTech", "E-commerce"]
+    },
+    "icp": {
+      "title": "VP of Engineering at mid-market SaaS",
+      "description": "Engineering leaders at Series B–D SaaS companies who own payment infrastructure decisions.",
+      "targetRoles": ["VP Engineering", "CTO", "Head of Platform"],
+      "buyingSignals": [
+        "Recent funding round",
+        "Hiring for payments or billing engineers",
+        "Migrating off a legacy payment gateway"
+      ]
+    }
+  },
+  "expectations": [
+    { "type": "arrayLengthAtLeast", "path": "", "min": 5 },
+    { "type": "hasField", "path": "0.name" },
+    { "type": "hasField", "path": "0.domain" },
+    { "type": "hasField", "path": "0.fitScore" },
+    { "type": "hasField", "path": "0.timingScore" },
+    { "type": "hasField", "path": "0.priorityFlag" },
+    { "type": "matchField", "path": "0.priorityFlag", "regex": "^(Immediate Action Required|Warm Track|Nurture Queue|Standard Follow-up|Do Not Pursue)$" }
+  ]
+}

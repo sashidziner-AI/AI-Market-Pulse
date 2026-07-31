@@ -1,0 +1,25 @@
+{
+  "name": "analyze-account-multithreading-quality",
+  "endpoint": "/api/analyze-account",
+  "description": "Multi-threading map should assign unique orders (1-4) and role-specific messaging focuses — not identical boilerplate across the 4 roles.",
+  "input": {
+    "domain": "hubspot.com",
+    "businessContext": {
+      "businessName": "PipeAudit",
+      "overview": "Deal-flow audit + forecast confidence for RevOps teams.",
+      "targetIndustries": ["SaaS", "CRM"]
+    }
+  },
+  "expectations": [
+    { "type": "hasField", "path": "multiThreadingStrategy.accessibleEntryPoint.role" },
+    { "type": "hasField", "path": "multiThreadingStrategy.internalChampion.role" },
+    { "type": "hasField", "path": "multiThreadingStrategy.economicBuyer.role" },
+    { "type": "hasField", "path": "multiThreadingStrategy.technicalGatekeeper.role" },
+    {
+      "type": "llmJudge",
+      "path": "multiThreadingStrategy",
+      "rubric": "A great multi-threading map assigns each of the 4 roles (entry, champion, economic buyer, technical gatekeeper) a distinct real-world role title, unique order 1-4, differentiated messagingFocus per role, and 2-3 coordination rules that name real risks (e.g. 'never CC IT and CFO in the same thread — competing priorities'). Identical or boilerplate content across roles scores low.",
+      "passingScore": 6
+    }
+  ]
+}

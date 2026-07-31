@@ -18,36 +18,60 @@ export interface CalibratedSignal extends AccountSignal {
  * based on industry taxonomy, business description, and naming cues.
  */
 export function detectSectorModel(account: TargetAccount): SectorModel {
-  const ind = (account.industry || '').toLowerCase();
-  const desc = (account.description || '').toLowerCase();
-  const name = (account.name || '').toLowerCase();
-  
-  if (ind.includes('saas') || ind.includes('software') || ind.includes('tech') || ind.includes('cloud') || ind.includes('digital') || desc.includes('saas') || desc.includes('software api')) {
-    if (ind.includes('bio') || ind.includes('health') || ind.includes('medical') || desc.includes('clinical') || desc.includes('fda')) {
-      return 'Biotech';
-    }
-    if (ind.includes('fin') || ind.includes('pay') || ind.includes('bank') || ind.includes('crypto') || ind.includes('token') || desc.includes('crypto')) {
-      return 'Fintech';
-    }
-    return 'SaaS';
-  }
-  
-  if (ind.includes('manufacturing') || ind.includes('industrial') || ind.includes('factory') || ind.includes('supply chain') || ind.includes('logistics') || desc.includes('manufacturing') || desc.includes('factory')) {
-    return 'Manufacturing';
-  }
-  
-  if (ind.includes('fin') || ind.includes('pay') || ind.includes('bank') || ind.includes('financial') || ind.includes('crypto') || ind.includes('token') || desc.includes('decentralized finance') || desc.includes('crypto')) {
-    return 'Fintech';
-  }
-  
-  if (ind.includes('bio') || ind.includes('health') || ind.includes('medical') || ind.includes('diagnostics') || desc.includes('diagnostics') || desc.includes('patient') || desc.includes('fda')) {
+  // Combine every text field that the API actually returns — industry is often
+  // absent from AI-generated accounts (not in the discover-accounts schema), so
+  // we must search description, fitReason, and signals as well.
+  const parts = [
+    account.industry   || '',
+    account.description || '',
+    account.fitReason  || '',
+    account.name       || '',
+    ...(account.signals || []),
+    ...(account.signalsWithDates?.map(s => s.text) || []),
+  ];
+  const all = parts.join(' ').toLowerCase();
+
+  // ── 1. Biotech / Healthcare — before SaaS so "health-tech" doesn't land in SaaS
+  if (
+    /biotech|biopharma|genomic|pharmaceutical|medtech|medical.?device|clinical.?trial|drug.?discovery|life.?science|fda.?approval|patient.?data/.test(all) ||
+    /\b(healthcare|diagnostics)\b/.test(all)
+  ) {
     return 'Biotech';
   }
-  
-  if (ind.includes('aec') || ind.includes('construction') || ind.includes('architecture') || ind.includes('drafting') || ind.includes('engineering') || desc.includes('bim') || desc.includes('architectural')) {
+
+  // ── 2. Fintech — explicit finance/payments words only (not bare 'fin' prefix)
+  if (
+    /\bfintech\b|payment processing|open banking|\bneobank\b|insurtech|cryptocurrency|blockchain|wealth management|decentralized finance|\bkyc\b|\baml\b/.test(all) ||
+    /\b(banking|lending)\s+(platform|services|software)\b/.test(all)
+  ) {
+    return 'Fintech';
+  }
+
+  // ── 3. AEC / Construction — search all fields; 'engineering' is intentionally
+  //    broad here because in B2B GTM the word almost always means AEC or Civil,
+  //    not software engineering (which would need 'saas'/'api'/'developer' qualifiers).
+  if (
+    /\baec\b|construction|architect|civil.?engineer|structural.?engineer|\bdrafter\b|drafting|\bbim\b|revit|autocad|building.?design|urban.?planning|geotechnical|infrastructure.?(project|design|services)|surveying/.test(all) ||
+    /engineering\s+(services|firm|group|company|consultants?|design)/.test(all)
+  ) {
     return 'AEC';
   }
-  
+
+  // ── 4. Manufacturing / Industrial — physical goods, factories, supply chain
+  if (
+    /manufacturing|industrial\b|factory|aerospace|automotive|semiconductor|heavy.?equipment|defence|defense|oil.?(&|and).?gas|\bmining\b|assembly.?line|supply.?chain|warehouse/.test(all)
+  ) {
+    return 'Manufacturing';
+  }
+
+  // ── 5. SaaS / Tech — company must SELL software/platform/API
+  //    Avoid catching digital agencies or cloud-consulting firms.
+  if (
+    /\bsaas\b|software.as.a.service|developer.?(tools?|platform)|api.?first|api.?platform|b2b software|cloud.?native platform|subscription software|enterprise.?software|martech|edtech|proptech|legaltech|adtech|\bdevtools\b|hr.?tech/.test(all)
+  ) {
+    return 'SaaS';
+  }
+
   return 'General';
 }
 
@@ -779,19 +803,19 @@ export function getCalibratedAccountPriorityInfo(
   }
 
   // Flag indicators
-  let priorityFlag: 'Immediate Action Required' | 'Nurture Queue' | 'Standard Follow-up' | 'Do Not Pursue' = 'Standard Follow-up';
+  let priorityFlag: 'Immediate Action Required' | 'Warm Track' | 'Standard Follow-up' | 'Do Not Pursue' = 'Standard Follow-up';
 
   if (reResearchRecommended) {
     priorityFlag = 'Standard Follow-up';
   } else if (fitScore >= 85 && timingScore >= 80) {
     priorityFlag = 'Immediate Action Required';
   } else if (fitScore >= 80 && timingScore < 75) {
-    priorityFlag = 'Nurture Queue';
+    priorityFlag = 'Warm Track';
   }
 
   // Guard rule: Signals > 180 days (stale) must not drive high-urgency without recent corroborations
   if (priorityFlag === 'Immediate Action Required' && !hasRecentCorroboration) {
-    priorityFlag = 'Nurture Queue';
+    priorityFlag = 'Warm Track';
   }
 
   // Load custom partners if running in a client environment

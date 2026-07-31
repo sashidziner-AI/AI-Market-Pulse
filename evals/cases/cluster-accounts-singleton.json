@@ -1,0 +1,25 @@
+{
+  "name": "cluster-accounts-singleton",
+  "endpoint": "/api/cluster-accounts",
+  "description": "With only one account, clustering should degrade gracefully (either one segment or an empty array — never crash).",
+  "input": {
+    "accounts": [
+      {
+        "id": "a-only",
+        "name": "SoloShop",
+        "domain": "soloshop.example.com",
+        "industry": "E-commerce",
+        "employeeCount": 45,
+        "fitScore": 68,
+        "timingScore": 55
+      }
+    ],
+    "businessContext": {
+      "businessName": "PayPipe",
+      "targetIndustries": ["SaaS", "E-commerce"]
+    }
+  },
+  "expectations": [
+    { "type": "hasField", "path": "" }
+  ]
+}

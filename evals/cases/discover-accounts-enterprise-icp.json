@@ -1,0 +1,33 @@
+{
+  "name": "discover-accounts-enterprise-icp",
+  "endpoint": "/api/discover-accounts",
+  "description": "Enterprise-scale ICP should return F500-class real companies, not startups.",
+  "input": {
+    "businessContext": {
+      "businessName": "MacroSecure",
+      "overview": "Enterprise identity governance for Fortune 500 IT organizations.",
+      "targetIndustries": ["Insurance", "Banking", "Healthcare"]
+    },
+    "icp": {
+      "title": "CISO / VP IAM at Fortune 500 regulated enterprises",
+      "description": "Global enterprises with 10,000+ employees in regulated industries.",
+      "targetRoles": ["CISO", "VP IAM", "Chief Compliance Officer"],
+      "buyingSignals": [
+        "Recent breach or audit finding",
+        "Migration from Active Directory to cloud IDP",
+        "M&A integration requiring identity consolidation"
+      ]
+    }
+  },
+  "expectations": [
+    { "type": "arrayLengthAtLeast", "path": "", "min": 5 },
+    { "type": "hasField", "path": "0.name" },
+    { "type": "hasField", "path": "0.domain" },
+    {
+      "type": "llmJudge",
+      "path": "",
+      "rubric": "Accounts should reasonably be large enterprises (10,000+ employees) in insurance, banking, or healthcare — think Anthem, Allianz, JPMorgan, HCA Healthcare, UnitedHealth, Prudential, Cigna, etc. Score low if the list includes obvious SMB or Series A companies.",
+      "passingScore": 6
+    }
+  ]
+}

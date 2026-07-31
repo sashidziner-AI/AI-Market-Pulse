@@ -1,0 +1,60 @@
+{
+  "name": "cluster-accounts-mixed",
+  "endpoint": "/api/cluster-accounts",
+  "description": "Given a small mixed batch of accounts, clustering should produce 2+ named segments each with a unified value message and coordinated outreach angle.",
+  "input": {
+    "accounts": [
+      {
+        "id": "a-shop-1",
+        "name": "MarketWave Retail",
+        "domain": "marketwave.example.com",
+        "industry": "E-commerce",
+        "employeeCount": 350,
+        "fitScore": 82,
+        "timingScore": 78
+      },
+      {
+        "id": "a-shop-2",
+        "name": "Cartly Direct",
+        "domain": "cartly.example.com",
+        "industry": "E-commerce",
+        "employeeCount": 180,
+        "fitScore": 76,
+        "timingScore": 71
+      },
+      {
+        "id": "a-saas-1",
+        "name": "OpsMetric",
+        "domain": "opsmetric.example.com",
+        "industry": "SaaS",
+        "employeeCount": 240,
+        "fitScore": 88,
+        "timingScore": 84
+      },
+      {
+        "id": "a-saas-2",
+        "name": "PulseSignal",
+        "domain": "pulsesignal.example.com",
+        "industry": "SaaS",
+        "employeeCount": 95,
+        "fitScore": 74,
+        "timingScore": 62
+      }
+    ],
+    "businessContext": {
+      "businessName": "PayPipe",
+      "overview": "Payment orchestration platform for high-growth SaaS and e-commerce companies.",
+      "targetIndustries": ["SaaS", "E-commerce"]
+    }
+  },
+  "expectations": [
+    { "type": "arrayLengthAtLeast", "path": "", "min": 2 },
+    { "type": "hasField", "path": "0.clusterName" },
+    { "type": "hasField", "path": "0.characteristicType" },
+    { "type": "arrayLengthAtLeast", "path": "0.sharedCharacteristics", "min": 2 },
+    { "type": "arrayLengthAtLeast", "path": "0.accountIds", "min": 1 },
+    { "type": "arrayLengthAtLeast", "path": "0.sharedPainPoints", "min": 2 },
+    { "type": "hasField", "path": "0.unifiedValueMessage" },
+    { "type": "hasField", "path": "0.coordinatedOutreachAngle" }
+  ]
+}

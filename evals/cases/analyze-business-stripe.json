@@ -1,0 +1,18 @@
+{
+  "name": "analyze-business-stripe",
+  "endpoint": "/api/analyze-business",
+  "description": "ICP synthesis for a well-known payments company should recognize the domain and produce a valid ICP shape with payment/finance-adjacent industries.",
+  "input": {
+    "url": "https://stripe.com"
+  },
+  "expectations": [
+    { "type": "hasField", "path": "businessName" },
+    { "type": "matchField", "path": "businessName", "regex": "stripe" },
+    { "type": "hasField", "path": "overview" },
+    { "type": "arrayLengthAtLeast", "path": "services", "min": 3 },
+    { "type": "arrayLengthAtLeast", "path": "targetIndustries", "min": 2 },
+    { "type": "hasField", "path": "icp.title" },
+    { "type": "arrayLengthAtLeast", "path": "icp.targetRoles", "min": 2 },
+    { "type": "arrayLengthAtLeast", "path": "icp.buyingSignals", "min": 2 }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "name": "cluster-accounts-quality-judge",
+  "endpoint": "/api/cluster-accounts",
+  "description": "Clustering output should produce non-generic unified messages tailored to the segment's shared characteristics.",
+  "input": {
+    "accounts": [
+      { "id": "s1", "name": "Vercel", "industry": "Developer Tools", "employeeCount": 400, "fitScore": 88, "timingScore": 82 },
+      { "id": "s2", "name": "Retool", "industry": "Developer Tools", "employeeCount": 350, "fitScore": 84, "timingScore": 76 },
+      { "id": "s3", "name": "Linear", "industry": "Developer Tools", "employeeCount": 180, "fitScore": 90, "timingScore": 85 },
+      { "id": "s4", "name": "Notion", "industry": "Productivity", "employeeCount": 500, "fitScore": 78, "timingScore": 70 },
+      { "id": "s5", "name": "Figma", "industry": "Design", "employeeCount": 1200, "fitScore": 72, "timingScore": 65 }
+    ],
+    "businessContext": {
+      "businessName": "GridPulse",
+      "overview": "Engineering performance analytics",
+      "targetIndustries": ["Developer Tools", "SaaS"]
+    }
+  },
+  "expectations": [
+    { "type": "arrayLengthAtLeast", "path": "", "min": 2 },
+    { "type": "hasField", "path": "0.clusterName" },
+    { "type": "hasField", "path": "0.unifiedValueMessage" },
+    {
+      "type": "llmJudge",
+      "path": "0.unifiedValueMessage",
+      "rubric": "A great unifiedValueMessage references the shared characteristic that binds this segment (dev-tools scale-up dynamics, engineering velocity metrics, etc.) and offers a specific value angle — not a generic 'we help you grow' message.",
+      "passingScore": 6
+    },
+    {
+      "type": "llmJudge",
+      "path": "0.coordinatedOutreachAngle",
+      "rubric": "A great coordinated outreach angle names a specific campaign type or hook (e.g. 'CTO-focused webinar on scaling engineering velocity metrics past 200 devs'). Vague marketing-speak like 'targeted outreach' scores low.",
+      "passingScore": 6
+    }
+  ]
+}

@@ -1,14 +1,18 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { BusinessAnalysis, TargetAccount } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { AccountCard, getAccountPriorityInfo } from './AccountCard';
 import { AccountDetail } from './AccountDetail';
-import { 
-  BarChart3, Users, Zap, Briefcase, 
+import { VoiceCallModal } from './VoiceCallModal';
+import { MapsPanel } from './MapsPanel';
+import type { VoiceCallState, ScheduledCall } from '../types';
+import {
+  BarChart3, Users, Zap, Briefcase,
   Search, Filter, Plus, FileUp, Download, Play, LayoutGrid, List,
   LayoutDashboard, ListTodo, Radar, Network,
   ChevronDown, ChevronRight, Bell, Database, RefreshCw, CheckCircle2, CloudLightning, ArrowRight, ArrowLeft,
-  Clock, TrendingUp, AlertTriangle, Lightbulb, Compass, Sparkles, FolderOpen, Sliders, Pencil, Trash2
+  Clock, TrendingUp, AlertTriangle, Lightbulb, Compass, Sparkles, FolderOpen, Sliders, Pencil, Trash2, X, BookOpen, MapPin,
+  CalendarClock, Phone
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
@@ -18,11 +22,114 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { computeWeightsRecalibration, SellerChannelPartner, DEFAULT_CHANNEL_PARTNERS, computePathwayAssessment } from '../utils/calibration';
+import * as crmMirror from '../utils/crmMirror';
+import { LeadsTab } from './LeadsTab';
+import { UserCheck } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
-import { PieChart, Pie, Cell, BarChart, Bar, ResponsiveContainer, Tooltip } from 'recharts';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
+
+// Classic 3-face 3D bar shape for recharts
+const ThreeDBar = ({ x, y, width, height, fill, topColor, sideColor, depth = 5 }: {
+  x: number; y: number; width: number; height: number;
+  fill: string; topColor: string; sideColor: string; depth?: number;
+}) => {
+  if (!height || height <= 0 || !width || width <= 0) return null;
+  const d = Math.min(depth, width * 0.55);
+  return (
+    <g>
+      <rect x={x} y={y} width={width} height={height} fill={fill} />
+      <polygon points={`${x},${y} ${x+d},${y-d} ${x+width+d},${y-d} ${x+width},${y}`} fill={topColor} />
+      <polygon points={`${x+width},${y} ${x+width+d},${y-d} ${x+width+d},${y+height-d} ${x+width},${y+height}`} fill={sideColor} />
+    </g>
+  );
+};
+
+// Country → states/provinces. Countries not in this map have no state-level picker.
+const COUNTRY_STATES: Record<string, string[]> = {
+  'United States': [
+    'Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado', 'Connecticut', 'Delaware',
+    'Florida', 'Georgia', 'Hawaii', 'Idaho', 'Illinois', 'Indiana', 'Iowa', 'Kansas', 'Kentucky',
+    'Louisiana', 'Maine', 'Maryland', 'Massachusetts', 'Michigan', 'Minnesota', 'Mississippi',
+    'Missouri', 'Montana', 'Nebraska', 'Nevada', 'New Hampshire', 'New Jersey', 'New Mexico',
+    'New York', 'North Carolina', 'North Dakota', 'Ohio', 'Oklahoma', 'Oregon', 'Pennsylvania',
+    'Rhode Island', 'South Carolina', 'South Dakota', 'Tennessee', 'Texas', 'Utah', 'Vermont',
+    'Virginia', 'Washington', 'West Virginia', 'Wisconsin', 'Wyoming',
+  ],
+  'Canada': [
+    'Alberta', 'British Columbia', 'Manitoba', 'New Brunswick', 'Newfoundland and Labrador',
+    'Nova Scotia', 'Ontario', 'Prince Edward Island', 'Quebec', 'Saskatchewan',
+    'Northwest Territories', 'Nunavut', 'Yukon',
+  ],
+  'India': [
+    'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat',
+    'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka', 'Kerala', 'Madhya Pradesh',
+    'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab', 'Rajasthan',
+    'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal',
+    'Delhi', 'Jammu and Kashmir', 'Ladakh', 'Puducherry',
+  ],
+  'United Kingdom': ['England', 'Scotland', 'Wales', 'Northern Ireland'],
+  'Australia': [
+    'New South Wales', 'Queensland', 'South Australia', 'Tasmania', 'Victoria', 'Western Australia',
+    'Australian Capital Territory', 'Northern Territory',
+  ],
+  'Germany': [
+    'Baden-Württemberg', 'Bavaria', 'Berlin', 'Brandenburg', 'Bremen', 'Hamburg', 'Hesse',
+    'Lower Saxony', 'Mecklenburg-Vorpommern', 'North Rhine-Westphalia', 'Rhineland-Palatinate',
+    'Saarland', 'Saxony', 'Saxony-Anhalt', 'Schleswig-Holstein', 'Thuringia',
+  ],
+  'Brazil': [
+    'Acre', 'Alagoas', 'Amapá', 'Amazonas', 'Bahia', 'Ceará', 'Distrito Federal',
+    'Espírito Santo', 'Goiás', 'Maranhão', 'Mato Grosso', 'Mato Grosso do Sul', 'Minas Gerais',
+    'Pará', 'Paraíba', 'Paraná', 'Pernambuco', 'Piauí', 'Rio de Janeiro',
+    'Rio Grande do Norte', 'Rio Grande do Sul', 'Rondônia', 'Roraima', 'Santa Catarina',
+    'São Paulo', 'Sergipe', 'Tocantins',
+  ],
+  'Mexico': [
+    'Aguascalientes', 'Baja California', 'Baja California Sur', 'Campeche', 'Chiapas', 'Chihuahua',
+    'Coahuila', 'Colima', 'Durango', 'Guanajuato', 'Guerrero', 'Hidalgo', 'Jalisco', 'México',
+    'Mexico City', 'Michoacán', 'Morelos', 'Nayarit', 'Nuevo León', 'Oaxaca', 'Puebla',
+    'Querétaro', 'Quintana Roo', 'San Luis Potosí', 'Sinaloa', 'Sonora', 'Tabasco', 'Tamaulipas',
+    'Tlaxcala', 'Veracruz', 'Yucatán', 'Zacatecas',
+  ],
+};
+
+// Full sovereign country list (~195) used by the ICP Exclusion geography multi-select.
+const COUNTRIES: string[] = [
+  'Afghanistan', 'Albania', 'Algeria', 'Andorra', 'Angola', 'Antigua and Barbuda', 'Argentina',
+  'Armenia', 'Australia', 'Austria', 'Azerbaijan', 'Bahamas', 'Bahrain', 'Bangladesh', 'Barbados',
+  'Belarus', 'Belgium', 'Belize', 'Benin', 'Bhutan', 'Bolivia', 'Bosnia and Herzegovina',
+  'Botswana', 'Brazil', 'Brunei', 'Bulgaria', 'Burkina Faso', 'Burundi', 'Cabo Verde', 'Cambodia',
+  'Cameroon', 'Canada', 'Central African Republic', 'Chad', 'Chile', 'China', 'Colombia',
+  'Comoros', 'Congo (Brazzaville)', 'Congo (Kinshasa)', 'Costa Rica', 'Croatia', 'Cuba', 'Cyprus',
+  'Czech Republic', 'Denmark', 'Djibouti', 'Dominica', 'Dominican Republic', 'Ecuador', 'Egypt',
+  'El Salvador', 'Equatorial Guinea', 'Eritrea', 'Estonia', 'Eswatini', 'Ethiopia', 'Fiji',
+  'Finland', 'France', 'Gabon', 'Gambia', 'Georgia', 'Germany', 'Ghana', 'Greece', 'Grenada',
+  'Guatemala', 'Guinea', 'Guinea-Bissau', 'Guyana', 'Haiti', 'Honduras', 'Hungary', 'Iceland',
+  'India', 'Indonesia', 'Iran', 'Iraq', 'Ireland', 'Israel', 'Italy', 'Ivory Coast', 'Jamaica',
+  'Japan', 'Jordan', 'Kazakhstan', 'Kenya', 'Kiribati', 'Kosovo', 'Kuwait', 'Kyrgyzstan', 'Laos',
+  'Latvia', 'Lebanon', 'Lesotho', 'Liberia', 'Libya', 'Liechtenstein', 'Lithuania', 'Luxembourg',
+  'Madagascar', 'Malawi', 'Malaysia', 'Maldives', 'Mali', 'Malta', 'Marshall Islands',
+  'Mauritania', 'Mauritius', 'Mexico', 'Micronesia', 'Moldova', 'Monaco', 'Mongolia', 'Montenegro',
+  'Morocco', 'Mozambique', 'Myanmar', 'Namibia', 'Nauru', 'Nepal', 'Netherlands', 'New Zealand',
+  'Nicaragua', 'Niger', 'Nigeria', 'North Korea', 'North Macedonia', 'Norway', 'Oman', 'Pakistan',
+  'Palau', 'Palestine', 'Panama', 'Papua New Guinea', 'Paraguay', 'Peru', 'Philippines', 'Poland',
+  'Portugal', 'Qatar', 'Romania', 'Russia', 'Rwanda', 'Saint Kitts and Nevis', 'Saint Lucia',
+  'Saint Vincent and the Grenadines', 'Samoa', 'San Marino', 'Sao Tome and Principe',
+  'Saudi Arabia', 'Senegal', 'Serbia', 'Seychelles', 'Sierra Leone', 'Singapore', 'Slovakia',
+  'Slovenia', 'Solomon Islands', 'Somalia', 'South Africa', 'South Korea', 'South Sudan', 'Spain',
+  'Sri Lanka', 'Sudan', 'Suriname', 'Sweden', 'Switzerland', 'Syria', 'Taiwan', 'Tajikistan',
+  'Tanzania', 'Thailand', 'Timor-Leste', 'Togo', 'Tonga', 'Trinidad and Tobago', 'Tunisia',
+  'Turkey', 'Turkmenistan', 'Tuvalu', 'Uganda', 'Ukraine', 'United Arab Emirates',
+  'United Kingdom', 'United States', 'Uruguay', 'Uzbekistan', 'Vanuatu', 'Vatican City',
+  'Venezuela', 'Vietnam', 'Yemen', 'Zambia', 'Zimbabwe',
+];
 
 interface DashboardProps {
   analysis: BusinessAnalysis;
+  // Original URL the user submitted for analysis. Passed through to the
+  // Industry Discovery panel so it can derive the seller's country (from the
+  // TLD) and filter the seller's own domain out of Google Maps results.
+  analyzedUrl?: string | null;
   accounts: TargetAccount[];
   isDiscovering: boolean;
   activeReportId?: string | null;
@@ -30,31 +137,307 @@ interface DashboardProps {
   onAnalyzeAccount: (id: string) => void;
   onRefreshDiscovery: () => void;
   onUpdateAccount?: (account: TargetAccount) => void;
+  onAddAccount?: (account: TargetAccount) => void;
   onSaveReport?: (name: string, customAnalysis?: BusinessAnalysis, customAccounts?: TargetAccount[]) => string;
   onUpdateReport?: (updatedAnalysis: BusinessAnalysis, updatedAccounts: TargetAccount[]) => void;
   onUpdateReportMeta?: (id: string, name: string) => void;
+  onShowSavedReports?: () => void;
   onBack?: () => void;
 }
 
-export function Dashboard({ 
-  analysis, 
-  accounts, 
-  isDiscovering, 
+// Default name for a new saved report. Uses the EXACT primary target industry
+// identified in the analysis (targetIndustries[0]) — e.g. "AEC Services".
+// No concatenation with a second industry; joining creates a "combined label"
+// that reads as a made-up category rather than the real detected one. Falls
+// back to the seller's businessName only when no industry is known.
+export function getDefaultReportName(analysis: BusinessAnalysis | null | undefined): string {
+  if (!analysis) return '';
+  const industries = (analysis.targetIndustries || []).map(s => (s || '').trim()).filter(Boolean);
+  if (industries.length > 0) return industries[0];
+  return analysis.businessName || '';
+}
+
+export function Dashboard({
+  analysis,
+  analyzedUrl,
+  accounts,
+  isDiscovering,
   activeReportId,
   savedReports = [],
   onAnalyzeAccount,
   onRefreshDiscovery,
   onUpdateAccount,
+  onAddAccount,
   onSaveReport,
   onUpdateReport,
   onUpdateReportMeta,
+  onShowSavedReports,
   onBack
 }: DashboardProps) {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
+  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains('dark'));
+  useEffect(() => {
+    const obs = new MutationObserver(() => setIsDark(document.documentElement.classList.contains('dark')));
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => obs.disconnect();
+  }, []);
+
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const [voiceCallAccountId, setVoiceCallAccountId] = useState<string | null>(null);
+  // When the AI Call Scheduler poller fires a due call, it stashes the
+  // triggering schedule here so the VoiceCallModal mounts with autoStart=true
+  // AND the same script/contact captured at schedule time. Cleared when the
+  // user closes the modal.
+  const [autoStartSchedule, setAutoStartSchedule] = useState<ScheduledCall | null>(null);
+
+  // Pending/triggered AI call schedules. Persisted so schedules survive tab
+  // reloads. The poller below advances 'pending' → 'triggered' when a call is
+  // launched, and keeps a bounded history so users can see what happened.
+  const [scheduledCalls, setScheduledCalls] = useState<ScheduledCall[]>(() => {
+    try {
+      const raw = localStorage.getItem('gtm_scheduled_calls');
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? (parsed as ScheduledCall[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('gtm_scheduled_calls', JSON.stringify(scheduledCalls));
+    } catch {
+      // ignore quota / private-mode issues
+    }
+  }, [scheduledCalls]);
+
+  const scheduleCall = (schedule: Omit<ScheduledCall, 'id' | 'status' | 'createdAt'>) => {
+    setScheduledCalls(prev => {
+      // Only one pending schedule per account — a new one supersedes the old.
+      // Older pending schedules for the same account are marked 'cancelled'
+      // so the audit trail shows they were replaced, not silently dropped.
+      const cancelled = prev.map(s =>
+        s.accountId === schedule.accountId && s.status === 'pending'
+          ? { ...s, status: 'cancelled' as const, cancelledAt: new Date().toISOString() }
+          : s
+      );
+      const next: ScheduledCall = {
+        ...schedule,
+        id: `sched-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      };
+      return [...cancelled, next];
+    });
+  };
+
+  const cancelScheduledCall = (scheduleId: string) => {
+    setScheduledCalls(prev => prev.map(s =>
+      s.id === scheduleId && s.status === 'pending'
+        ? { ...s, status: 'cancelled', cancelledAt: new Date().toISOString() }
+        : s
+    ));
+    toast.success('Scheduled AI call cancelled.');
+  };
+
+  // Poller: every 15s, scan for pending schedules whose UTC instant has been
+  // reached. When one fires, mark it 'triggered' and open the modal with
+  // autoStart=true so the AI initiates the conversation without user input.
+  // We only fire one at a time — if multiple came due (e.g. after a long
+  // sleep) we handle the earliest and let the next tick handle the rest.
+  //
+  // `analysis` is mirrored into a ref so the tick reads the CURRENT analysis
+  // even when the user swaps reports mid-schedule — otherwise the effect's
+  // closure would send stale sellerName/valueProp to Vapi.
+  const analysisRef = React.useRef(analysis);
+  useEffect(() => { analysisRef.current = analysis; }, [analysis]);
+  // Same refs pattern for accounts + scheduledCalls: keeps the tick reading
+  // current values without tearing down the 15s interval every time an
+  // account edit (bulk CRM sync, status change) mutates the array.
+  const accountsRef = React.useRef(accounts);
+  useEffect(() => { accountsRef.current = accounts; }, [accounts]);
+  const scheduledCallsRef = React.useRef(scheduledCalls);
+  useEffect(() => { scheduledCallsRef.current = scheduledCalls; }, [scheduledCalls]);
+  const voiceCallAccountIdRef = React.useRef(voiceCallAccountId);
+  useEffect(() => { voiceCallAccountIdRef.current = voiceCallAccountId; }, [voiceCallAccountId]);
+  useEffect(() => {
+    const tick = () => {
+      // Bail if a call is already open — don't stack modals on top of a live
+      // call. The current call will end, the user will close, and the next
+      // poll will pick up any still-pending schedule.
+      if (voiceCallAccountIdRef.current) return;
+      const now = Date.now();
+      const due = scheduledCallsRef.current
+        .filter(s => s.status === 'pending' && new Date(s.scheduledFor).getTime() <= now)
+        .sort((a, b) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime());
+      if (due.length === 0) return;
+      const fire = due[0];
+      // Confirm the referenced account still exists — the pipeline may have
+      // been cleared. If it's gone, mark the schedule failed so it doesn't
+      // keep firing every tick forever.
+      const acc = accountsRef.current.find(a => a.id === fire.accountId);
+      if (!acc) {
+        setScheduledCalls(prev => prev.map(s =>
+          s.id === fire.id
+            ? { ...s, status: 'failed', failureReason: 'Account no longer in pipeline.', triggeredAt: new Date().toISOString() }
+            : s
+        ));
+        return;
+      }
+      setScheduledCalls(prev => prev.map(s =>
+        s.id === fire.id ? { ...s, status: 'triggered', triggeredAt: new Date().toISOString() } : s
+      ));
+      // Phone-mode: dial via Vapi through the server, no modal needed. The
+      // browser doesn't have to be focused (though the tab does have to be
+      // alive for setInterval to keep firing).
+      if (fire.mode === 'phone' && fire.phoneNumber) {
+        (async () => {
+          try {
+            const res = await fetch('/api/voice-call/start', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                accountId: acc.id,
+                accountName: acc.name,
+                contactName: fire.contactName,
+                phoneNumber: fire.phoneNumber,
+                script: fire.script,
+                fitReason: acc.fitReason,
+                signals: acc.signals,
+                industry: acc.industry,
+                sellerName: analysisRef.current?.businessName,
+                sellerValueProp: analysisRef.current?.valueProp,
+              }),
+            });
+            const body = await res.json();
+            if (!res.ok) throw new Error(body?.error || `Dial failed (HTTP ${res.status})`);
+            setScheduledCalls(prev => prev.map(s =>
+              s.id === fire.id ? { ...s, vapiCallId: body.callId } : s
+            ));
+            toast.success(`Ringing ${fire.phoneNumber} — ${fire.accountName}`);
+          } catch (err: any) {
+            setScheduledCalls(prev => prev.map(s =>
+              s.id === fire.id ? { ...s, status: 'failed', failureReason: err?.message || 'Dial failed' } : s
+            ));
+            toast.error(`Scheduled dial failed for ${fire.accountName}: ${err?.message || 'unknown error'}`);
+          }
+        })();
+        return;
+      }
+      // Browser-mode: pop the WebRTC modal in autoStart mode.
+      setAutoStartSchedule(fire);
+      setVoiceCallAccountId(fire.accountId);
+      toast.info(`Scheduled AI call launching now — ${fire.accountName}`);
+    };
+    tick(); // fire on mount too so a just-passed schedule doesn't wait 15s
+    const int = setInterval(tick, 15_000);
+    return () => clearInterval(int);
+    // Empty deps: the interval runs for the lifetime of the Dashboard, and
+    // the tick reads state via refs above so it always sees fresh values.
+  }, []);
+
+  const pendingSchedules = scheduledCalls.filter(s => s.status === 'pending');
+  const existingScheduleForVoiceCall = voiceCallAccountId
+    ? pendingSchedules.find(s => s.accountId === voiceCallAccountId) || null
+    : null;
+  const [isSchedulesOpen, setIsSchedulesOpen] = useState(false);
+  // Driver for the "+ New Scheduled Call" account picker inside the schedules
+  // dialog. Reset to '' each time the dialog closes so it doesn't preserve a
+  // stale selection across opens.
+  const [newScheduleAccountId, setNewScheduleAccountId] = useState<string>('');
+  useEffect(() => {
+    if (!isSchedulesOpen) setNewScheduleAccountId('');
+  }, [isSchedulesOpen]);
+
+  // Industry Discovery side-panel state:
+  //   isMapsPanelOpen — whether the panel is visible.
+  //   mapsSearchGeneration — bumped whenever the analyzed services/industries
+  //     change so MapsPanel invalidates any in-flight fetches and re-queries.
+  const [isMapsPanelOpen, setIsMapsPanelOpen] = useState(false);
+  const [mapsSearchGeneration, setMapsSearchGeneration] = useState(0);
+
+  // Re-run the discovery search whenever the seller's analyzed services or
+  // target industries change (e.g. Edit Blueprint updated the ICP). The
+  // panel itself is driven by `analysis`, not by the account list, so we
+  // key generation on the analysis signature rather than account ids.
+  const analysisSignature = React.useMemo(
+    () =>
+      [
+        analysis?.businessName || '',
+        (analysis?.services || []).slice(0, 6).join('|'),
+        (analysis?.targetIndustries || []).slice(0, 6).join('|'),
+      ].join('~'),
+    [analysis?.businessName, analysis?.services, analysis?.targetIndustries]
+  );
+  const prevAnalysisSigRef = React.useRef<string>('');
+  React.useEffect(() => {
+    if (analysisSignature === prevAnalysisSigRef.current) return;
+    prevAnalysisSigRef.current = analysisSignature;
+    setMapsSearchGeneration(g => g + 1);
+  }, [analysisSignature]);
   const [uploadedFile, setUploadedFile] = useState<{ name: string; content?: string } | null>(null);
-  const [activeTab, setActiveTab] = useState<'recommendations' | 'pipeline' | 'clusters' | 'partner-pathways'>('recommendations');
+  const [activeTab, setActiveTab] = useState<'recommendations' | 'pipeline' | 'clusters' | 'partner-pathways' | 'leads'>('recommendations');
+
+  // Jarvis voice bridge — voice commands reach us through window CustomEvents.
+  // Whitelist-check tab names so a rogue payload can't set an invalid tab.
+  useEffect(() => {
+    const validTabs = new Set(['recommendations', 'pipeline', 'clusters', 'partner-pathways', 'leads']);
+    function handleJarvis(evt: Event) {
+      const detail = (evt as CustomEvent).detail as { action: string; args?: any } | undefined;
+      if (!detail) return;
+      const { action, args } = detail;
+      if (action === 'dashboard.tab' && args?.tab && validTabs.has(args.tab)) {
+        setActiveTab(args.tab);
+      } else if (action === 'dashboard.refresh') {
+        onRefreshDiscovery();
+      } else if (action === 'dashboard.saveReport') {
+        onSaveReport?.('');
+      } else if (action === 'dashboard.closeDetail') {
+        setSelectedAccountId(null);
+      } else if (action === 'dashboard.openAccount') {
+        // Resolve args.query against the current accounts list.
+        // Supports numeric position ("1", "first", "second", "third", etc.)
+        // and fuzzy substring name match.
+        const q = String(args?.query ?? '').trim().toLowerCase();
+        if (!q) return;
+        const wordToIndex: Record<string, number> = {
+          first: 0, one: 0, '1st': 0,
+          second: 1, two: 1, '2nd': 1,
+          third: 2, three: 2, '3rd': 2,
+          fourth: 3, four: 3, '4th': 3,
+          fifth: 4, five: 4, '5th': 4,
+          sixth: 5, six: 5, seventh: 6, seven: 6,
+          eighth: 7, eight: 7, ninth: 8, nine: 8,
+          tenth: 9, ten: 9,
+        };
+        const list = accounts;
+        let idx = -1;
+        // Try numeric parse
+        const numMatch = q.match(/\b(\d{1,2})\b/);
+        if (numMatch) idx = parseInt(numMatch[1], 10) - 1;
+        // Try word-to-index
+        if (idx < 0) {
+          for (const key of Object.keys(wordToIndex)) {
+            if (q.includes(key)) { idx = wordToIndex[key]; break; }
+          }
+        }
+        // Try fuzzy name match
+        if (idx < 0) {
+          idx = list.findIndex((a: any) =>
+            (a.name || '').toLowerCase().includes(q) ||
+            (a.domain || '').toLowerCase().includes(q)
+          );
+        }
+        if (idx >= 0 && idx < list.length) {
+          setSelectedAccountId(list[idx].id);
+        }
+      }
+    }
+    window.addEventListener('jarvis:dashboard', handleJarvis);
+    return () => window.removeEventListener('jarvis:dashboard', handleJarvis);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accounts, onRefreshDiscovery, onSaveReport]);
   const [channelPartners, setChannelPartners] = useState<SellerChannelPartner[]>(() => {
     try {
       const saved = localStorage.getItem('gtm_channel_partners');
@@ -176,6 +559,9 @@ export function Dashboard({
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [reportNameInput, setReportNameInput] = useState('');
 
+  // Confirm-delete-account modal state
+  const [pendingDeleteAccountId, setPendingDeleteAccountId] = useState<string | null>(null);
+
   const [isEditReportOpen, setIsEditReportOpen] = useState(false);
   const [editBusinessName, setEditBusinessName] = useState(analysis?.businessName || '');
   const [editOverview, setEditOverview] = useState(analysis?.overview || '');
@@ -271,16 +657,23 @@ export function Dashboard({
 
   const handleDeleteAccountDirectly = (accId: string, event: React.MouseEvent) => {
     event.stopPropagation();
-    const updated = accounts.filter(a => a.id !== accId);
+    setPendingDeleteAccountId(accId);
+  };
+
+  const handleConfirmDeleteAccount = () => {
+    if (!pendingDeleteAccountId) return;
+    const updated = accounts.filter(a => a.id !== pendingDeleteAccountId);
     if (onUpdateReport) {
       onUpdateReport(analysis, updated);
       toast.success("Discovered account suggestion removed from report.");
     }
+    setPendingDeleteAccountId(null);
   };
 
   const triggerSaveReportInitiation = () => {
-    // If active loaded report, find its current name. Otherwise default to GTM Outreach Plan: CompanyName
-    let currentName = `Outreach Plan: ${analysis.businessName}`;
+    // If active loaded report, find its current name. Otherwise derive the
+    // default from the ICP target industry (falling back to businessName).
+    let currentName = getDefaultReportName(analysis);
     if (activeReportId && savedReports.length > 0) {
       const match = savedReports.find(r => r.id === activeReportId);
       if (match) currentName = match.name;
@@ -360,6 +753,7 @@ export function Dashboard({
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
+      URL.revokeObjectURL(url);
       toast.success(`Successfully exported ${sortedFilteredAccounts.length} accounts to CSV!`);
     } catch (e: any) {
       toast.error("Export failed: " + e.message);
@@ -416,8 +810,33 @@ export function Dashboard({
     'Bankruptcy',
     'Cash-Strap Strain'
   ]);
-  const [hideDisqualified, setHideDisqualified] = useState<boolean>(false);
-  const [isICPExclusionPanelExpanded, setIsICPExclusionPanelExpanded] = useState<boolean>(false);
+  const [isICPExclusionModalOpen, setIsICPExclusionModalOpen] = useState<boolean>(false);
+  const [countrySearchQuery, setCountrySearchQuery] = useState<string>('');
+  const [pendingCountrySelections, setPendingCountrySelections] = useState<string[]>([]);
+  const [pendingStateSelect, setPendingStateSelect] = useState<string>('');
+  const [industryInputValue, setIndustryInputValue] = useState<string>('');
+  const [financialInputValue, setFinancialInputValue] = useState<string>('');
+  const [isScoringGuideOpen, setIsScoringGuideOpen] = useState<boolean>(false);
+  const [isFilterMenuOpen, setIsFilterMenuOpen] = useState<boolean>(false);
+  const filterMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isFilterMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (filterMenuRef.current && !filterMenuRef.current.contains(e.target as Node)) {
+        setIsFilterMenuOpen(false);
+      }
+    };
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsFilterMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEsc);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEsc);
+    };
+  }, [isFilterMenuOpen]);
 
   // CRM Integration States
   const getCrmName = (type: string) => {
@@ -437,22 +856,440 @@ export function Dashboard({
   };
 
   const [isCrmOpen, setIsCrmOpen] = useState(false);
-  const [crmConnected, setCrmConnected] = useState<'none' | 'hubspot' | 'salesforce' | 'pipedrive' | 'prospectaccel'>('none');
-  const [selectedCrmType, setSelectedCrmType] = useState<'hubspot' | 'salesforce' | 'pipedrive' | 'prospectaccel'>('hubspot');
+  const [crmConnected, setCrmConnected] = useState<'none' | 'hubspot' | 'salesforce' | 'pipedrive' | 'prospectaccel'>(() => {
+    try {
+      const stored = localStorage.getItem('gtm_crm_session');
+      if (stored) return (JSON.parse(stored).provider || 'none');
+    } catch {}
+    return 'none';
+  });
+  const [selectedCrmType, setSelectedCrmType] = useState<'hubspot' | 'salesforce' | 'pipedrive' | 'prospectaccel'>('prospectaccel');
   const [crmStep, setCrmStep] = useState<1 | 2>(1);
   const [isCrmLoading, setIsCrmLoading] = useState(false);
   const [crmApiKey, setCrmApiKey] = useState('');
   const [crmUrl, setCrmUrl] = useState('');
+  const [crmSessionId, setCrmSessionId] = useState<string | null>(() => {
+    try {
+      const stored = localStorage.getItem('gtm_crm_session');
+      if (stored) return JSON.parse(stored).sessionId || null;
+    } catch {}
+    return null;
+  });
+  const [crmLastSync, setCrmLastSync] = useState<{ pushed: number; failed: number; at: string } | null>(null);
+  type CrmSyncItem = {
+    account: string;
+    domain?: string;
+    status: 'pending' | 'syncing' | 'success' | 'failed';
+    message?: string;
+    recordId?: string | number;
+    httpStatus?: number;
+    responsePreview?: string;
+    payloadSent?: Record<string, unknown>;
+    endpoint?: string;
+  };
+  const [crmSyncProgress, setCrmSyncProgress] = useState<CrmSyncItem[]>([]);
+  const [crmSyncActive, setCrmSyncActive] = useState(false);
+  const [crmSyncExpandedIdx, setCrmSyncExpandedIdx] = useState<number | null>(null);
 
-  const handleConnectCrm = () => {
+  const handleConnectCrm = async () => {
+    if (selectedCrmType === 'prospectaccel') {
+      if (!crmUrl.trim() || !crmApiKey.trim()) {
+        toast.error('Enter both the CRM endpoint URL and the signing secret.');
+        return;
+      }
+      setIsCrmLoading(true);
+      try {
+        const res = await fetch('/api/crm/connect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            provider: 'prospectaccel',
+            endpoint: crmUrl.trim(),
+            secret: crmApiKey.trim(),
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Connection failed');
+
+        localStorage.setItem('gtm_crm_session', JSON.stringify({
+          provider: 'prospectaccel',
+          sessionId: data.sessionId,
+          endpoint: crmUrl.trim(),
+          connectedAt: data.connectedAt,
+        }));
+        setCrmSessionId(data.sessionId);
+        setCrmConnected('prospectaccel');
+        setIsCrmOpen(false);
+        setCrmStep(1);
+        setCrmApiKey('');
+        if (data.warning) {
+          toast.warning(`Connected to ${data.accountName}, but ${data.warning}`, { duration: 8000 });
+        } else {
+          toast.success(`Connected to ${data.accountName}. Ready to sync accounts.`);
+        }
+      } catch (err: any) {
+        toast.error(`Connection failed: ${err.message}`);
+      } finally {
+        setIsCrmLoading(false);
+      }
+      return;
+    }
+
+    // Other providers still use the mock demo flow for now
     setIsCrmLoading(true);
     setTimeout(() => {
       setIsCrmLoading(false);
       setCrmConnected(selectedCrmType);
       setIsCrmOpen(false);
       setCrmStep(1);
-      toast.success(`${getCrmName(selectedCrmType)} connected successfully! Buyer intent signals are now syncing.`);
+      toast.success(`${getCrmName(selectedCrmType)} connected successfully! (demo)`);
     }, 1500);
+  };
+
+  // Run ONE pass over the given accounts against /api/crm/sync?stream=1.
+  // Returns which accounts succeeded and which failed. Also updates the
+  // progress panel and hydrates the CRM mirror + persists success markers
+  // as each successful event arrives. Throws only on unrecoverable transport
+  // errors (401/network) — per-account failures are returned in `failed`.
+  const runCrmSyncPass = async (
+    accountsToTry: TargetAccount[],
+    indexOffsets: Map<string, number>
+  ): Promise<{
+    succeeded: { account: TargetAccount; recordId: string | number | undefined }[];
+    failed: { account: TargetAccount; message: string }[];
+  }> => {
+    const succeeded: { account: TargetAccount; recordId: string | number | undefined }[] = [];
+    const failed: { account: TargetAccount; message: string }[] = [];
+
+    const res = await fetch('/api/crm/sync?stream=1', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sessionId: crmSessionId, accounts: accountsToTry }),
+    });
+
+    if (res.status === 401) {
+      localStorage.removeItem('gtm_crm_session');
+      setCrmSessionId(null);
+      setCrmConnected('none');
+      setIsCrmOpen(true);
+      throw new Error('AUTH_EXPIRED');
+    }
+    if (!res.ok) {
+      let data: any = {};
+      try { data = await res.json(); } catch {}
+      throw new Error(data.error || `Sync failed (HTTP ${res.status})`);
+    }
+    if (!res.body) throw new Error('Stream not supported by browser');
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let idx: number;
+      while ((idx = buffer.indexOf('\n')) !== -1) {
+        const line = buffer.slice(0, idx).trim();
+        buffer = buffer.slice(idx + 1);
+        if (!line) continue;
+        let evt: any;
+        try { evt = JSON.parse(line); } catch { continue; }
+
+        // `evt.index` is relative to `accountsToTry` (this pass), but the
+        // progress panel is keyed to the full toPush list — map through the
+        // caller-supplied offset table.
+        const local = accountsToTry[evt.index];
+        const panelIndex = local ? indexOffsets.get(local.id) : undefined;
+
+        if (evt.type === 'account_start' && panelIndex != null) {
+          setCrmSyncProgress(prev => prev.map((p, i) => i === panelIndex ? { ...p, status: 'syncing' } : p));
+        } else if (evt.type === 'account_done' && local) {
+          if (panelIndex != null) {
+            setCrmSyncProgress(prev => prev.map((p, i) =>
+              i === panelIndex
+                ? {
+                    ...p,
+                    status: evt.status === 'success' ? 'success' : 'failed',
+                    message: evt.message,
+                    recordId: evt.recordId,
+                    httpStatus: evt.httpStatus,
+                    responsePreview: evt.responsePreview,
+                    payloadSent: evt.payloadSent,
+                    endpoint: evt.endpoint,
+                  }
+                : p
+            ));
+          }
+          if (evt.status === 'success') {
+            // Persist sync marker + upsert into CRM mirror immediately so the
+            // UI reflects "In CRM" even before the whole batch completes.
+            if (onUpdateAccount) {
+              const record = crmMirror.upsert({
+                id: evt.recordId,
+                provider: 'prospectaccel',
+                name: local.name,
+                domain: local.domain,
+                course: (local.industry || local.fitReason || '').slice(0, 99),
+              });
+              onUpdateAccount({
+                ...local,
+                crmSyncedAt: new Date().toISOString(),
+                crmRecordId: record.id,
+                crmProvider: 'prospectaccel',
+                crmRecord: record,
+              });
+            }
+            succeeded.push({ account: local, recordId: evt.recordId });
+          } else {
+            failed.push({ account: local, message: evt.message || 'unknown error' });
+          }
+        }
+      }
+    }
+
+    return { succeeded, failed };
+  };
+
+  // Shared push routine. Pushes every eligible account in ONE user action:
+  // - Streams the initial batch
+  // - Automatically retries any per-account failures up to MAX_ATTEMPTS times
+  // - Emits a single final toast reflecting the true end-state
+  // - Persists success markers + hydrates the CRM mirror as each success lands
+  //   so the Market Pulse UI reflects "In CRM" the moment it's true
+  const pushAccountsToCrm = async (
+    toPush: TargetAccount[],
+    opts?: { source?: 'bulk' | 'single'; skippedExistingCount?: number }
+  ) => {
+    if (crmConnected !== 'prospectaccel' || !crmSessionId) {
+      setIsCrmLoading(true);
+      setTimeout(() => {
+        setIsCrmLoading(false);
+        toast.success('CRM Database has been fully synchronized with current GTM Waves.');
+      }, 1200);
+      return;
+    }
+
+    if (toPush.length === 0) {
+      toast.error('Nothing to push — the selected accounts are already synced.');
+      return;
+    }
+
+    const MAX_ATTEMPTS = 3;
+    const BACKOFF_MS = [0, 800, 1800]; // between attempts 1→2 and 2→3
+
+    setIsCrmLoading(true);
+    setCrmSyncActive(true);
+    setCrmSyncProgress(toPush.map(a => ({
+      account: a.name,
+      domain: a.domain,
+      status: 'pending' as const,
+    })));
+
+    // Stable id → panel-index lookup so retry passes update the same rows.
+    const indexOffsets = new Map<string, number>();
+    toPush.forEach((a, i) => indexOffsets.set(a.id, i));
+
+    const succeededIds = new Set<string>();
+    let pending = [...toPush];
+    let lastError: string | undefined;
+    let attemptsUsed = 0;
+
+    try {
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS && pending.length > 0; attempt++) {
+        if (attempt > 1) {
+          await new Promise(r => setTimeout(r, BACKOFF_MS[attempt - 1] ?? 1000));
+          // Reset previously-failed rows to 'pending' so the panel shows the
+          // retry is happening rather than freezing on the failed state.
+          setCrmSyncProgress(prev => prev.map(p => {
+            const stillPending = pending.some(a => a.name === p.account && a.domain === p.domain);
+            return stillPending ? { ...p, status: 'pending', message: undefined } : p;
+          }));
+        }
+        attemptsUsed = attempt;
+
+        const { succeeded, failed } = await runCrmSyncPass(pending, indexOffsets);
+        succeeded.forEach(s => succeededIds.add(s.account.id));
+        pending = failed.map(f => f.account);
+        if (failed.length > 0) lastError = failed[failed.length - 1].message;
+      }
+
+      const succeededCount = succeededIds.size;
+      const failedCount = pending.length;
+
+      setCrmLastSync({
+        pushed: succeededCount,
+        failed: failedCount,
+        at: new Date().toISOString(),
+      });
+
+      // Single final toast reflecting the true end-state — no interim noise.
+      const skipped = opts?.skippedExistingCount ?? 0;
+      if (failedCount === 0) {
+        if (opts?.source === 'single' && toPush.length === 1) {
+          toast.success(`${toPush[0].name} synced to CRM.`);
+        } else {
+          const skippedNote = skipped > 0 ? ` (${skipped} already existed)` : '';
+          const retryNote = attemptsUsed > 1 ? ` (recovered via ${attemptsUsed - 1} auto-retr${attemptsUsed - 1 === 1 ? 'y' : 'ies'})` : '';
+          toast.success(`Synced ${succeededCount} account${succeededCount === 1 ? '' : 's'} to your CRM${skippedNote}.${retryNote}`);
+        }
+      } else {
+        toast.error(
+          `Sync incomplete: ${succeededCount} synced, ${failedCount} failed after ${MAX_ATTEMPTS} attempts. Last error: ${lastError || 'unknown'}`,
+          { duration: 10000 }
+        );
+      }
+    } catch (err: any) {
+      if (err?.message === 'AUTH_EXPIRED') {
+        toast.error('CRM session expired. Please reconnect.', { duration: 6000 });
+      } else {
+        toast.error(`Sync failed: ${err.message}`);
+      }
+    } finally {
+      setIsCrmLoading(false);
+      setTimeout(() => setCrmSyncActive(false), 30000);
+    }
+  };
+
+  // Check the CRM mirror before pushing. If a matching record already exists
+  // (by domain / email domain / name / linkedin), hydrate the account with the
+  // existing CRM data and skip the network push. Returns true if a match was
+  // found and applied — caller should not push this account.
+  const applyExistingCrmMatch = (account: TargetAccount): boolean => {
+    if (account.crmSyncedAt) return true;
+    const match = crmMirror.findMatch({
+      name: account.name,
+      domain: account.domain,
+    });
+    if (!match) return false;
+    if (onUpdateAccount) {
+      onUpdateAccount({
+        ...account,
+        crmSyncedAt: match.updatedAt,
+        crmRecordId: match.id,
+        crmProvider: match.provider,
+        crmRecord: match,
+      });
+    }
+    return true;
+  };
+
+  const handleTriggerCrmSync = async () => {
+    const eligible = accounts.filter(a => !a.isDisqualified);
+    const alreadySynced = eligible.filter(a => a.crmSyncedAt);
+    const notSynced = eligible.filter(a => !a.crmSyncedAt);
+
+    // Split notSynced into matched-in-mirror vs truly new.
+    const matchedInMirror: TargetAccount[] = [];
+    const toPush: TargetAccount[] = [];
+    for (const a of notSynced) {
+      const match = crmMirror.findMatch({ name: a.name, domain: a.domain });
+      if (match) {
+        matchedInMirror.push(a);
+        if (onUpdateAccount) {
+          onUpdateAccount({
+            ...a,
+            crmSyncedAt: match.updatedAt,
+            crmRecordId: match.id,
+            crmProvider: match.provider,
+            crmRecord: match,
+          });
+        }
+      } else {
+        toPush.push(a);
+      }
+    }
+
+    if (eligible.length === 0) {
+      toast.error('No qualified accounts to sync. Adjust ICP exclusions and try again.');
+      return;
+    }
+    if (toPush.length === 0) {
+      toast.info('No new records to sync. All matched accounts already exist in the CRM.');
+      return;
+    }
+    // Only the final consolidated toast from pushAccountsToCrm is shown.
+    const skippedExistingCount = alreadySynced.length + matchedInMirror.length;
+    await pushAccountsToCrm(toPush, { source: 'bulk', skippedExistingCount });
+  };
+
+  const handleSyncSingleAccount = async (account: TargetAccount) => {
+    if (account.crmSyncedAt) {
+      toast.info('This account has already been added to the CRM.');
+      return;
+    }
+    if (account.isDisqualified) {
+      toast.error('Disqualified accounts cannot be pushed to the CRM.');
+      return;
+    }
+    if (applyExistingCrmMatch(account)) {
+      toast.info(`${account.name} already exists in the CRM — record hydrated instead of pushed.`);
+      return;
+    }
+    await pushAccountsToCrm([account], { source: 'single' });
+  };
+
+  // Refresh CRM state for a single account by re-reading from the mirror.
+  const handleRefreshCrmStatus = (account: TargetAccount) => {
+    if (!account.crmRecordId) {
+      toast.info('This account has not been pushed to the CRM yet.');
+      return;
+    }
+    const fresh = crmMirror.refresh(account.crmRecordId);
+    if (!fresh) {
+      toast.warning('Record not found in CRM mirror — it may have been deleted.');
+      return;
+    }
+    if (onUpdateAccount) {
+      onUpdateAccount({
+        ...account,
+        crmSyncedAt: fresh.updatedAt,
+        crmRecord: fresh,
+      });
+    }
+    toast.success('CRM status refreshed.');
+  };
+
+  // Update CRM record with fresh research data from AI Market Pulse.
+  const handleUpdateCrmRecord = (account: TargetAccount) => {
+    if (!account.crmRecordId) {
+      toast.error('No CRM record to update.');
+      return;
+    }
+    const patched = crmMirror.patch(account.crmRecordId, crmMirror.toUpsertInput(account));
+    if (!patched) {
+      toast.error('Failed to update CRM record — not found.');
+      return;
+    }
+    if (onUpdateAccount) {
+      onUpdateAccount({
+        ...account,
+        crmSyncedAt: patched.updatedAt,
+        crmRecord: patched,
+      });
+    }
+    toast.success('CRM record updated with latest research.');
+  };
+
+  const handleDisconnectCrm = async () => {
+    if (crmSessionId) {
+      try {
+        await fetch('/api/crm/disconnect', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: crmSessionId }),
+        });
+      } catch {}
+    }
+    localStorage.removeItem('gtm_crm_session');
+    setCrmSessionId(null);
+    setCrmConnected('none');
+    setCrmStep(1);
+    setIsCrmOpen(false);
+    setCrmLastSync(null);
+    toast.info('CRM disconnected.');
   };
 
   // Live Dynamic Disqualification Evaluation Engine
@@ -549,17 +1386,12 @@ export function Dashboard({
   // Cohesive filter/search matching
   const filteredAccounts = React.useMemo(() => {
     return evaluatedAccounts.filter(account => {
-      // If hiding disqualified accounts, actively filter them out from scoring views
-      if (hideDisqualified && account.isDisqualified) {
-        return false;
-      }
-
       // Prioritization Queue Filter logic
       const info = getAccountPriorityInfo(account);
       if (priorityFilter === 'immediate' && info.priorityFlag !== 'Immediate Action Required') {
         return false;
       }
-      if (priorityFilter === 'nurture' && info.priorityFlag !== 'Nurture Queue') {
+      if (priorityFilter === 'nurture' && info.priorityFlag !== 'Warm Track') {
         return false;
       }
       if (priorityFilter === 'standard' && info.priorityFlag !== 'Standard Follow-up') {
@@ -606,13 +1438,21 @@ export function Dashboard({
               account.signals?.some(s => s.toLowerCase().includes('funding') || s.toLowerCase().includes('series') || s.toLowerCase().includes('raised') || s.toLowerCase().includes('acquired') || s.toLowerCase().includes('expansion'));
             return hasFundingKeyword;
           }
+          if (filter === 'InCrm') {
+            // "In CRM" = account has been successfully pushed and stamped with
+            // crmSyncedAt (source of truth), regardless of provider.
+            return !!account.crmSyncedAt;
+          }
+          if (filter === 'Excludes') {
+            return !account.isDisqualified;
+          }
           return true;
         });
       }
 
       return true;
     });
-  }, [evaluatedAccounts, hideDisqualified, searchQuery, selectedFilters, priorityFilter]);
+  }, [evaluatedAccounts, searchQuery, selectedFilters, priorityFilter]);
 
   // Sort: Put disqualified ones at the bottom of standard list so they don't block high-priority
   const sortedFilteredAccounts = React.useMemo(() => {
@@ -644,7 +1484,7 @@ export function Dashboard({
         doNotPursue++;
       } else if (info.priorityFlag === 'Immediate Action Required') {
         immediate++;
-      } else if (info.priorityFlag === 'Nurture Queue') {
+      } else if (info.priorityFlag === 'Warm Track') {
         nurture++;
       } else {
         standard++;
@@ -726,17 +1566,23 @@ export function Dashboard({
       <aside className="w-64 border-r border-white/[0.06] bg-[#2A2A2B] sticky top-0 h-screen hidden lg:flex flex-col flex-shrink-0">
         <div className="p-5">
           <div className="flex items-center gap-2 mb-8">
-            <div className="w-6 h-6 rounded-md bg-gradient-to-br from-amber-400 via-orange-500 to-orange-600 flex items-center justify-center shadow-[0_1px_2px_rgba(245,130,32,0.5)]">
-              <span className="text-white text-[10px] font-bold">M</span>
+            <img
+              src="/vee-technologies-logo.png"
+              alt="Vee Technologies"
+              className="w-12 h-12 object-contain"
+            />
+            <div className="flex flex-col leading-none">
+              <span className="font-normal text-zinc-100 tracking-tight text-[18px]" style={{ letterSpacing: '-0.02em' }}><span className="text-white">AI</span> Market Pulse</span>
+              <span className="mt-0.5 text-[8.5px] font-mono uppercase tracking-[0.14em] text-orange-400">by Vee Technologies</span>
             </div>
-            <span className="font-semibold text-zinc-100 tracking-tight text-[13px]" style={{ letterSpacing: '-0.02em' }}>AI Market Pulse</span>
           </div>
 
           <nav className="space-y-1">
-            <SidebarItem icon={<LayoutDashboard />} label="Market Pulse" active={activeTab === 'recommendations'} onClick={() => setActiveTab('recommendations')} />
-            <SidebarItem icon={<Users />} label="Smart Clusters" active={activeTab === 'clusters'} onClick={() => setActiveTab('clusters')} />
+            <SidebarItem icon={<LayoutDashboard />} label="Analysis" active={activeTab === 'recommendations'} onClick={() => setActiveTab('recommendations')} />
+            <SidebarItem icon={<Users />} label="Target Segments" active={activeTab === 'clusters'} onClick={() => setActiveTab('clusters')} />
             <SidebarItem icon={<Network />} label="Partner Pathways" active={activeTab === 'partner-pathways'} onClick={() => setActiveTab('partner-pathways')} />
             <SidebarItem icon={<ListTodo />} label="GTM Pipeline" active={activeTab === 'pipeline'} onClick={() => setActiveTab('pipeline')} />
+            <SidebarItem icon={<UserCheck />} label="Leads" active={activeTab === 'leads'} onClick={() => setActiveTab('leads')} />
           </nav>
 
           {crmConnected !== 'none' && (
@@ -799,13 +1645,21 @@ export function Dashboard({
                 </Button>
               )}
               <h2 className="font-semibold text-zinc-100 text-sm md:text-base lg:text-lg tracking-tight">
-                {activeTab === 'recommendations' ? 'Market Pulse' :
-                 activeTab === 'clusters' ? 'Strategic Account Clusters' :
-                 activeTab === 'partner-pathways' ? 'Partner Referral & Warm Pathways' : 'Pipeline'}
+                {activeTab === 'recommendations' ? 'Analysis' :
+                 activeTab === 'clusters' ? 'Strategic Account Segments' :
+                 activeTab === 'partner-pathways' ? 'Partner Referral & Warm Pathways' :
+                 activeTab === 'leads' ? 'Lead Lifecycle & Enrichment' : 'Pipeline'}
               </h2>
-              <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-mono font-bold text-[12px] px-2 py-0.5 rounded-full">
-                {filteredAccounts.length} Leads
-              </Badge>
+              {isDiscovering && accounts.length === 0 ? (
+                <Badge variant="secondary" className="bg-orange-500/15 text-orange-300 border border-orange-500/20 font-mono font-bold text-[12px] px-2 py-0.5 rounded-full flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-orange-400 animate-pulse" />
+                  Scanning…
+                </Badge>
+              ) : (
+                <Badge variant="secondary" className="bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 font-mono font-bold text-[12px] px-2 py-0.5 rounded-full">
+                  {filteredAccounts.length} Leads
+                </Badge>
+              )}
             </div>
 
             <div className="flex items-center gap-3">
@@ -852,10 +1706,21 @@ export function Dashboard({
                   </button>
                 </div>
               ) : (
-                <span className="text-[13px] bg-amber-500/10 border border-amber-500/25 text-amber-300 px-2.5 py-0.5 rounded-md font-bold font-sans flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 bg-amber-400 rounded-full shrink-0 animate-pulse" />
-                  <span>Interactive Outreach Draft</span>
-                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsICPExclusionModalOpen(true)}
+                  className="h-8 text-[13px] font-bold gap-1 px-3 rounded-lg border-white/[0.08] hover:bg-white/[0.06] text-zinc-300 hover:text-zinc-100 cursor-pointer bg-transparent shrink-0"
+                  title="Open ICP Exclusion & Automated Disqualification Engine"
+                >
+                  <Filter className="w-3.5 h-3.5 text-zinc-400" />
+                  <span>ICP Exclusion Criteria</span>
+                  {priorityOverview.doNotPursue > 0 && (
+                    <span className="ml-1 inline-flex items-center px-1.5 py-0 rounded text-[10px] font-bold text-red-300 bg-red-500/15 border border-red-500/25">
+                      {priorityOverview.doNotPursue}
+                    </span>
+                  )}
+                </Button>
               )}
             </div>
 
@@ -873,6 +1738,34 @@ export function Dashboard({
                   <span>{activeReportId ? 'Save As' : 'Save Scope'}</span>
                 </Button>
               )}
+              {activeReportId && onShowSavedReports && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onShowSavedReports}
+                  className="h-8 text-[13px] font-bold gap-1 px-3 rounded-lg border-white/[0.08] hover:bg-white/[0.06] text-zinc-300 hover:text-zinc-100 cursor-pointer bg-transparent shrink-0"
+                  title="Open the saved reports library"
+                >
+                  <BookOpen className="w-3.5 h-3.5 text-zinc-400" />
+                  <span>Show Reports</span>
+                </Button>
+              )}
+              {analysis && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsMapsPanelOpen(open => !open)}
+                  className={`h-8 text-[13px] font-bold gap-1 px-3 rounded-lg border cursor-pointer shrink-0 transition-all ${
+                    isMapsPanelOpen
+                      ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-200 hover:bg-emerald-500/20'
+                      : 'border-white/[0.08] hover:bg-white/[0.06] text-zinc-300 hover:text-zinc-100 bg-transparent'
+                  }`}
+                  title="Discover companies on Google Maps matching this industry & services"
+                >
+                  <MapPin className={`w-3.5 h-3.5 ${isMapsPanelOpen ? 'text-emerald-300' : 'text-zinc-400'}`} />
+                  <span>Industry Discovery</span>
+                </Button>
+              )}
               {onUpdateReport && (
                 <Button
                   variant="outline"
@@ -883,6 +1776,27 @@ export function Dashboard({
                 >
                   <Sliders className="w-3.5 h-3.5 text-zinc-400" />
                   <span>Edit Blueprint</span>
+                </Button>
+              )}
+
+              {accounts.length > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsSchedulesOpen(true)}
+                  className={`h-8 text-[13px] font-bold gap-1 px-3 rounded-lg cursor-pointer shrink-0 ${
+                    pendingSchedules.length > 0
+                      ? 'border-orange-500/40 bg-orange-500/10 hover:bg-orange-500/20 text-orange-200 hover:text-orange-100'
+                      : 'border-white/[0.08] hover:bg-white/[0.06] text-zinc-300 hover:text-zinc-100 bg-transparent'
+                  }`}
+                  title={pendingSchedules.length > 0 ? 'View, cancel, or add scheduled AI calls' : 'Schedule an AI call to any account'}
+                >
+                  <CalendarClock className={`w-3.5 h-3.5 ${pendingSchedules.length > 0 ? 'text-orange-300' : 'text-zinc-400'}`} />
+                  <span>
+                    {pendingSchedules.length > 0
+                      ? `Scheduled AI Calls · ${pendingSchedules.length}`
+                      : 'Schedule AI Call'}
+                  </span>
                 </Button>
               )}
 
@@ -903,6 +1817,7 @@ export function Dashboard({
                   document.body.appendChild(link);
                   link.click();
                   document.body.removeChild(link);
+                  URL.revokeObjectURL(url);
                   toast.success("Accounts template CSV downloaded!");
                 }}
               >
@@ -935,7 +1850,12 @@ export function Dashboard({
           </div>
         </header>
 
-        <section className="p-8 flex-1">
+        <motion.section
+          className="p-8 flex-1"
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+        >
           <div className="max-w-full mx-auto space-y-8">
             {analysis.isFallback && (
               <div className="p-4 rounded-xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/70 dark:bg-amber-950/40 flex items-start gap-3 shadow-xs animate-in fade-in duration-300">
@@ -1055,7 +1975,7 @@ export function Dashboard({
 
                 const compositionData = [
                   { name: 'Immediate', value: priorityOverview.immediate, fill: '#f43f5e' },
-                  { name: 'Nurture', value: priorityOverview.nurture, fill: '#14b8a6' },
+                  { name: 'Warm Track', value: priorityOverview.nurture, fill: '#14b8a6' },
                   { name: 'Standard', value: priorityOverview.standard, fill: '#94a3b8' },
                 ].filter(d => d.value > 0);
 
@@ -1075,7 +1995,7 @@ export function Dashboard({
                   if (acc.isDisqualified || info.priorityFlag === 'Do Not Pursue') return;
                   const idx = Math.min(4, Math.floor((acc.fitScore ?? 0) / 20));
                   if (info.priorityFlag === 'Immediate Action Required') immBins[idx].count++;
-                  else if (info.priorityFlag === 'Nurture Queue') nurBins[idx].count++;
+                  else if (info.priorityFlag === 'Warm Track') nurBins[idx].count++;
                   else stdBins[idx].count++;
                 });
 
@@ -1092,45 +2012,45 @@ export function Dashboard({
 
                 return (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* Card 1: All Candidates — HERO DONUT with vertical legend list */}
+                {/* Card 1: Total Pipeline — HERO DONUT with vertical legend list */}
                 <div
                   onClick={() => setPriorityFilter('all')}
-                  className="relative overflow-hidden p-4 rounded-2xl border transition-all cursor-pointer text-left border-[#1d8ecd] bg-gradient-to-br from-[#1d8ecd]/15 to-[#1d8ecd]/[0.05] dark:from-[#1d8ecd]/30 dark:to-[#1d8ecd]/15 ring-1 ring-[#1d8ecd]/30"
+                  className="relative overflow-hidden p-3 rounded-2xl border transition-all cursor-pointer text-left border-[#1d8ecd] bg-gradient-to-br from-[#1d8ecd]/15 to-[#1d8ecd]/[0.05] dark:from-[#1d8ecd]/30 dark:to-[#1d8ecd]/15 ring-1 ring-[#1d8ecd]/30"
                 >
                   <div className="flex items-center gap-1.5 mb-1">
                     <Compass className="w-4 h-4 text-[#1d8ecd]" />
-                    <span className="text-[18px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">All Candidates</span>
+                    <span className="text-[16px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Total Pipeline</span>
                   </div>
-                  <p className="text-[11px] text-slate-600 dark:text-zinc-400 mb-3 leading-snug">
+                  <p className="text-[11px] text-slate-600 dark:text-zinc-400 mb-4 leading-snug">
                     Full pipeline coverage across every priority tier
                   </p>
 
                   <div className="flex items-center gap-3">
-                    {/* Prominent donut on the left */}
-                    <div className="relative w-20 h-20 shrink-0" onClick={(e) => e.stopPropagation()}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Pie
-                            data={compositionData.length ? compositionData : [{ name: 'Empty', value: 1, fill: '#e5e7eb' }]}
-                            cx="50%"
-                            cy="50%"
-                            innerRadius={26}
-                            outerRadius={38}
-                            paddingAngle={compositionData.length > 1 ? 3 : 0}
-                            dataKey="value"
-                            stroke="none"
-                          >
-                            {(compositionData.length ? compositionData : [{ fill: '#e5e7eb' }]).map((d, i) => (
-                              <Cell key={i} fill={d.fill} />
-                            ))}
-                          </Pie>
-                          {compositionData.length > 0 && (
-                            <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
-                          )}
-                        </PieChart>
-                      </ResponsiveContainer>
-                      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                        <span className="text-lg font-semibold font-mono text-slate-900 dark:text-zinc-50 leading-none" style={{ letterSpacing: '-0.03em' }}>{priorityOverview.total}</span>
+                    {/* Enlarged pie — classic 3D tilt */}
+                    <div className="flex flex-col items-center shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <div className="relative w-20 h-20">
+                        <div className="absolute inset-0" style={{ transform: 'perspective(400px) rotateX(15deg)', transformOrigin: 'center 60%', filter: 'drop-shadow(0 4px 3px rgba(0,0,0,0.15))' }}>
+                          <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                              <Pie
+                                data={compositionData.length ? compositionData : [{ name: 'Empty', value: 1, fill: '#e5e7eb' }]}
+                                cx="50%"
+                                cy="50%"
+                                outerRadius={36}
+                                paddingAngle={compositionData.length > 1 ? 3 : 0}
+                                dataKey="value"
+                                stroke="none"
+                              >
+                                {(compositionData.length ? compositionData : [{ fill: '#e5e7eb' }]).map((d, i) => (
+                                  <Cell key={i} fill={d.fill} />
+                                ))}
+                              </Pie>
+                              {compositionData.length > 0 && (
+                                <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
+                              )}
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
                       </div>
                     </div>
                     {/* Vertical legend list */}
@@ -1140,12 +2060,17 @@ export function Dashboard({
                         <span className="font-mono font-semibold text-slate-700 dark:text-zinc-200">{priorityOverview.immediate}</span>
                       </div>
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className="flex items-center gap-1.5 text-slate-600 dark:text-zinc-300"><span className="w-1.5 h-1.5 rounded-full bg-teal-500" />Nurture</span>
+                        <span className="flex items-center gap-1.5 text-slate-600 dark:text-zinc-300"><span className="w-1.5 h-1.5 rounded-full bg-teal-500" />Warm Track</span>
                         <span className="font-mono font-semibold text-slate-700 dark:text-zinc-200">{priorityOverview.nurture}</span>
                       </div>
                       <div className="flex items-center justify-between text-[11px]">
                         <span className="flex items-center gap-1.5 text-slate-600 dark:text-zinc-300"><span className="w-1.5 h-1.5 rounded-full bg-slate-400 dark:bg-slate-500" />Standard</span>
                         <span className="font-mono font-semibold text-slate-700 dark:text-zinc-200">{priorityOverview.standard}</span>
+                      </div>
+                      {/* Total — highlighted below Standard */}
+                      <div className="flex items-center justify-between text-[11px] pt-1 mt-0.5 border-t border-[#1d8ecd]/30">
+                        <span className="flex items-center gap-1.5 font-semibold text-[#1d8ecd]"><span className="w-1.5 h-1.5 rounded-full bg-[#1d8ecd]" />Total</span>
+                        <span className="font-mono font-bold text-[#1d8ecd] bg-[#1d8ecd]/10 px-1.5 py-0.5 rounded">{priorityOverview.total}</span>
                       </div>
                     </div>
                   </div>
@@ -1154,15 +2079,12 @@ export function Dashboard({
                 {/* Card 2: Immediate Action — URGENT ALERT with pulsing accent bar + gradient */}
                 <div
                   onClick={() => setPriorityFilter('immediate')}
-                  className="relative overflow-hidden p-4 rounded-2xl border transition-all cursor-pointer text-left border-rose-500 bg-gradient-to-br from-rose-100 to-rose-50 dark:from-rose-900/30 dark:to-rose-950/20 ring-1 ring-rose-300"
+                  className="relative overflow-hidden p-3 rounded-2xl border-2 transition-all cursor-pointer text-left border-rose-500 bg-gradient-to-br from-rose-100 to-rose-50 dark:from-rose-900/30 dark:to-rose-950/20 ring-1 ring-rose-300"
                 >
-                  {/* Pulsing accent bar at top */}
-                  <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-rose-400 via-rose-500 to-orange-500 animate-pulse" />
-
-                  <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-1.5">
                       <TrendingUp className="w-4 h-4 text-rose-500 dark:text-rose-400" />
-                      <span className="text-[18px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Immediate Action</span>
+                      <span className="text-[16px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Immediate Action</span>
                     </div>
                     {priorityOverview.immediate > 0 && (
                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[9px] font-semibold text-rose-700 dark:text-rose-300 bg-rose-100 dark:bg-rose-500/20 border border-rose-200 dark:border-rose-500/30 uppercase tracking-wider">
@@ -1174,106 +2096,193 @@ export function Dashboard({
                       </span>
                     )}
                   </div>
+                  <p className="text-[11px] text-slate-600 dark:text-zinc-400 mb-4 leading-snug">
+                    Hot buyers ready now — reach out within 48 hours
+                  </p>
 
                   {/* Huge dominant count */}
-                  <div className="text-5xl font-semibold font-mono text-rose-600 dark:text-rose-300 leading-none mb-1" style={{ letterSpacing: '-0.04em' }}>
-                    {priorityOverview.immediate}
+                  <div className="relative z-10 flex items-baseline gap-1 leading-none mb-1">
+                    <span className="text-4xl font-semibold font-mono text-rose-600 dark:text-rose-300" style={{ letterSpacing: '-0.04em' }}>{priorityOverview.immediate}</span>
+                    <span className="text-lg font-mono text-rose-400/70 dark:text-rose-400/60" style={{ letterSpacing: '-0.02em' }}>/{priorityOverview.total}</span>
                   </div>
-                  <div className="text-[11px] text-rose-700/80 dark:text-rose-300/80 mb-3 font-medium">
+                  <div className="relative z-10 text-[11px] text-rose-700/80 dark:text-rose-300/80 font-medium">
                     high-intent accounts
                   </div>
 
-                  {/* Slim bar chart at the bottom */}
-                  <div className="h-8 -mx-1" onClick={(e) => e.stopPropagation()}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={immBins} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                        <Bar dataKey="count" fill="#f43f5e" radius={[2, 2, 0, 0]} />
-                        <Tooltip cursor={{ fill: 'rgba(244,63,94,0.12)' }} contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
-                      </BarChart>
-                    </ResponsiveContainer>
+                  {/* Running spline wave — decorative bottom fill */}
+                  <div className="absolute bottom-0 left-0 right-0 h-24 overflow-hidden pointer-events-none rounded-b-2xl">
+                    <motion.div
+                      className="absolute bottom-0 flex"
+                      style={{ width: '200%' }}
+                      animate={{ x: ['0%', '-50%'] }}
+                      transition={{ duration: 28, repeat: Infinity, ease: 'linear' }}
+                    >
+                      {[0, 1].map(i => (
+                        <svg key={i} viewBox="0 0 800 160" style={{ width: '50%', display: 'block', flexShrink: 0 }} preserveAspectRatio="none">
+                          <path d="M0,100 C67,55 133,145 200,100 C267,55 333,145 400,100 C467,55 533,145 600,100 C667,55 733,145 800,100 L800,160 L0,160 Z" fill="rgba(244,63,94,0.22)" />
+                          <path d="M0,120 C67,85 133,152 200,120 C267,85 333,152 400,120 C467,85 533,152 600,120 C667,85 733,152 800,120 L800,160 L0,160 Z" fill="rgba(244,63,94,0.12)" />
+                        </svg>
+                      ))}
+                    </motion.div>
                   </div>
-                  <div className="mt-1 text-[9px] font-mono uppercase tracking-wider text-rose-500/70 dark:text-rose-300/70">Fit-score distribution</div>
                 </div>
 
-                {/* Card 3: Nurture Queue — CENTERED RADIAL GAUGE dominating the card */}
+                {/* Card 3: Warm Track — CENTERED RADIAL GAUGE dominating the card */}
                 <div
                   onClick={() => setPriorityFilter('nurture')}
-                  className="relative overflow-hidden p-4 rounded-2xl border transition-all cursor-pointer text-left flex flex-col items-center border-teal-500 bg-gradient-to-br from-teal-100 to-teal-50 dark:from-teal-900/40 dark:to-teal-950/20 ring-1 ring-teal-300"
+                  className="relative overflow-hidden p-3 rounded-2xl border transition-all cursor-pointer text-left flex flex-col items-center border-teal-500 bg-gradient-to-br from-teal-100 to-teal-50 dark:from-teal-900/40 dark:to-teal-950/20 ring-1 ring-teal-300"
                 >
-                  <div className="w-full flex items-center gap-1.5 mb-2">
+                  <div className="w-full flex items-center gap-1.5 mb-1">
                     <Clock className="w-4 h-4 text-teal-600 dark:text-teal-300" />
-                    <span className="text-[18px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Nurture Queue</span>
+                    <span className="text-[16px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Warm Track</span>
                   </div>
+                  <p className="w-full text-[11px] text-slate-600 dark:text-zinc-400 mb-4 leading-snug">
+                    Right customer, wrong time — stay in touch until they're ready to buy
+                  </p>
 
-                  {/* Big centered radial gauge */}
-                  <div className="relative w-28 h-28 my-1" onClick={(e) => e.stopPropagation()}>
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={[
-                            { name: 'Nurture', value: priorityOverview.nurture, fill: '#14b8a6' },
-                            { name: 'Rest', value: Math.max(0, priorityOverview.total - priorityOverview.nurture), fill: 'transparent' },
-                          ]}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={42}
-                          outerRadius={54}
-                          startAngle={90}
-                          endAngle={-270}
-                          dataKey="value"
-                          stroke="none"
-                          cornerRadius={6}
-                        />
-                        <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipLabelStyle} itemStyle={tooltipItemStyle} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                    {/* Background ring */}
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <div className="w-[108px] h-[108px] rounded-full border-[12px] border-slate-100 dark:border-white/[0.05] -z-10 absolute" />
-                    </div>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                      <span className="text-2xl font-semibold font-mono text-teal-600 dark:text-teal-300 leading-none" style={{ letterSpacing: '-0.03em' }}>{nurturePct}%</span>
-                      <span className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500 mt-0.5">share</span>
-                    </div>
-                  </div>
-
-                  <div className="w-full mt-2 flex items-center justify-between text-[10px] font-mono text-slate-500 dark:text-zinc-400">
-                    <span>Queued</span>
-                    <span className="font-semibold text-teal-600 dark:text-teal-300">{priorityOverview.nurture}/{priorityOverview.total}</span>
-                  </div>
+                  {/* Speed meter gauge — pure SVG, large, % text on right */}
+                  {(() => {
+                    const W = 170, H = 68;
+                    const cx = W / 2, cy = H - 8;
+                    const innerR = 40, outerR = 62;
+                    const needleLen = outerR - 3;
+                    const angleRad = Math.PI - (nurturePct / 100) * Math.PI;
+                    const nx = cx + needleLen * Math.cos(angleRad);
+                    const ny = cy - needleLen * Math.sin(angleRad);
+                    const tx = cx - 10 * Math.cos(angleRad);
+                    const ty = cy + 10 * Math.sin(angleRad);
+                    const arc = (sDeg: number, eDeg: number) => {
+                      const s = sDeg * Math.PI / 180, e = eDeg * Math.PI / 180;
+                      const ox1 = cx + outerR * Math.cos(s), oy1 = cy - outerR * Math.sin(s);
+                      const ox2 = cx + outerR * Math.cos(e), oy2 = cy - outerR * Math.sin(e);
+                      const ix2 = cx + innerR * Math.cos(e), iy2 = cy - innerR * Math.sin(e);
+                      const ix1 = cx + innerR * Math.cos(s), iy1 = cy - innerR * Math.sin(s);
+                      const lg = Math.abs(sDeg - eDeg) > 180 ? 1 : 0;
+                      return `M${ox1},${oy1} A${outerR},${outerR} 0 ${lg} 1 ${ox2},${oy2} L${ix2},${iy2} A${innerR},${innerR} 0 ${lg} 0 ${ix1},${iy1}Z`;
+                    };
+                    const zones = [
+                      { s: 180, e: 120, fill: isDark ? '#5eead4' : '#99f6e4' },
+                      { s: 120, e: 60,  fill: isDark ? '#14b8a6' : '#2dd4bf' },
+                      { s: 60,  e: 0,   fill: isDark ? '#0f766e' : '#0d9488' },
+                    ];
+                    return (
+                      <div className="flex items-center w-full gap-3 my-1" onClick={(e) => e.stopPropagation()}>
+                        {/* Gauge */}
+                        <div className="relative shrink-0" style={{ width: W, height: H }}>
+                          <svg width={W} height={H} style={{ overflow: 'visible' }}>
+                            {zones.map((z, i) => <path key={i} d={arc(z.s, z.e)} fill={z.fill} />)}
+                            <line x1={tx} y1={ty} x2={nx} y2={ny} stroke="#0d9488" strokeWidth="2.5" strokeLinecap="round" />
+                            <circle cx={cx} cy={cy} r="5" fill="#99f6e4" />
+                            <circle cx={cx} cy={cy} r="2.5" fill="#0d9488" />
+                            <text x={cx - outerR} y={cy + 14} fontSize="8" textAnchor="middle" fill={isDark ? '#6b7280' : '#94a3b8'} fontFamily="ui-monospace,monospace">0%</text>
+                            <text x={cx + outerR} y={cy + 14} fontSize="8" textAnchor="middle" fill={isDark ? '#6b7280' : '#94a3b8'} fontFamily="ui-monospace,monospace">100%</text>
+                          </svg>
+                        </div>
+                        {/* Value + Queued — right side */}
+                        <div className="flex flex-col items-center shrink-0 gap-2">
+                          <div className="flex flex-col items-center">
+                            <span className="text-2xl font-bold font-mono text-teal-600 dark:text-teal-300 leading-none" style={{ letterSpacing: '-0.03em' }}>{nurturePct}%</span>
+                            <span className="text-[9px] font-mono uppercase tracking-widest text-slate-400 dark:text-zinc-500 mt-1">share</span>
+                          </div>
+                          <div className="flex flex-col items-center border-t border-teal-200 dark:border-teal-800 pt-2 w-full">
+                            <div className="flex items-baseline gap-0.5 leading-none">
+                              <span className="text-2xl font-bold font-mono text-teal-600 dark:text-teal-300" style={{ letterSpacing: '-0.04em' }}>{priorityOverview.nurture}</span>
+                              <span className="text-base font-mono text-teal-400/70 dark:text-teal-400/60" style={{ letterSpacing: '-0.02em' }}>/{priorityOverview.total}</span>
+                            </div>
+                            <span className="text-[9px] font-mono uppercase tracking-widest text-slate-400 dark:text-zinc-500 mt-1">queued</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Card 4: Standard follow-up — MINIMAL TYPOGRAPHIC (no chart, tabular list) */}
                 <div
                   onClick={() => setPriorityFilter('standard')}
-                  className="p-4 rounded-2xl border transition-all cursor-pointer text-left border-amber-500 bg-gradient-to-br from-amber-100 to-amber-50 dark:from-amber-900/40 dark:to-amber-950/20 ring-1 ring-amber-300"
+                  className="p-3 rounded-2xl border transition-all cursor-pointer text-left border-amber-500 bg-gradient-to-br from-amber-100 to-amber-50 dark:from-amber-900/40 dark:to-amber-950/20 ring-1 ring-amber-300"
                 >
-                  <div className="flex items-center gap-1.5 mb-2">
+                  <div className="flex items-center gap-1.5 mb-1">
                     <Lightbulb className="w-4 h-4 text-slate-500 dark:text-zinc-400" />
-                    <span className="text-[18px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Standard follow-up</span>
+                    <span className="text-[16px] font-semibold tracking-tight text-slate-900 dark:text-zinc-100">Standard follow-up</span>
                   </div>
+                  <p className="text-[11px] text-slate-600 dark:text-zinc-400 mb-2 leading-snug">
+                    Lower priority — check back with a light touch every few months
+                  </p>
 
                   {/* Big monospace number, no chart */}
-                  <div className="text-4xl font-semibold font-mono text-slate-700 dark:text-zinc-100 leading-none mb-3" style={{ letterSpacing: '-0.03em' }}>
-                    {priorityOverview.standard}
+                  <div className="flex items-baseline gap-2 mb-2">
+                    <span className="text-3xl font-semibold font-mono text-slate-700 dark:text-zinc-100 leading-none" style={{ letterSpacing: '-0.03em' }}>{priorityOverview.standard}</span>
+                    <span className="text-[12px] font-mono text-slate-400 dark:text-zinc-500">/ {priorityOverview.total} total</span>
                   </div>
 
-                  {/* Tabular distribution list (fit-score bins) */}
-                  <div className="border-t border-slate-200/70 dark:border-white/[0.06] pt-2 space-y-1">
-                    {stdBins.map((bin, idx) => (
-                      <div key={idx} className="flex items-center justify-between text-[10px] font-mono text-slate-500 dark:text-zinc-500">
-                        <span>Fit {bin.range}</span>
-                        <span className="flex items-center gap-2">
-                          <span className="w-8 h-0.5 bg-slate-200 dark:bg-white/[0.06] rounded-full overflow-hidden">
-                            <span
-                              className="block h-full bg-slate-500 dark:bg-zinc-400"
-                              style={{ width: `${bin.count === 0 ? 0 : Math.min(100, (bin.count / Math.max(1, Math.max(...stdBins.map(b => b.count)))) * 100)}%` }}
-                            />
-                          </span>
-                          <span className="font-semibold text-slate-700 dark:text-zinc-200 w-3 text-right">{bin.count}</span>
-                        </span>
-                      </div>
-                    ))}
+                  {/* Vertical bar chart — fit-score distribution */}
+                  <div className="border-t border-slate-200/70 dark:border-white/[0.06] pt-2">
+                    <ResponsiveContainer width="100%" height={82}>
+                      <BarChart
+                        data={stdBins.map(b => ({ name: b.range, count: b.count }))}
+                        margin={{ top: 24, right: 6, bottom: 4, left: 4 }}
+                        barCategoryGap="10%"
+                      >
+                        <XAxis
+                          dataKey="name"
+                          tick={{ fontSize: 9, fill: isDark ? '#fde68a' : '#92400e', fontFamily: 'ui-monospace, monospace' }}
+                          axisLine={false}
+                          tickLine={false}
+                          interval={0}
+                        />
+                        <YAxis hide width={0} />
+                        <Tooltip
+                          contentStyle={tooltipStyle}
+                          labelStyle={tooltipLabelStyle}
+                          itemStyle={tooltipItemStyle}
+                          formatter={(v: any) => [v, 'Accounts']}
+                        />
+                        <Bar
+                          dataKey="count"
+                          label={{
+                            content: (props: any) => {
+                              const { x, y, width, value } = props;
+                              if (!value || value <= 0) return null;
+                              return (
+                                <text
+                                  x={(x ?? 0) + (width ?? 0) / 2}
+                                  y={(y ?? 0) - 6 - 5}
+                                  textAnchor="middle"
+                                  fontSize={9}
+                                  fill={isDark ? '#fde68a' : '#92400e'}
+                                  fontFamily="ui-monospace, monospace"
+                                >
+                                  {value}
+                                </text>
+                              );
+                            }
+                          }}
+                          shape={(props: any) => {
+                            if (!props.value || props.value <= 0) {
+                              const stubH = 6;
+                              return (
+                                <rect
+                                  x={props.x} y={props.y - stubH}
+                                  width={props.width} height={stubH}
+                                  fill={isDark ? '#78350f' : '#fed7aa'}
+                                  rx={2}
+                                />
+                              );
+                            }
+                            return (
+                              <ThreeDBar
+                                {...props}
+                                fill={isDark ? '#fbbf24' : '#f59e0b'}
+                                topColor={isDark ? '#fde68a' : '#fcd34d'}
+                                sideColor={isDark ? '#f59e0b' : '#b45309'}
+                                depth={6}
+                              />
+                            );
+                          }}
+                        />
+                      </BarChart>
+                    </ResponsiveContainer>
                   </div>
                 </div>
               </div>
@@ -1282,48 +2291,35 @@ export function Dashboard({
             </div>
             )}
 
-            {/* ICP Exclusion & Disqualification Signal Controls */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl overflow-hidden shadow-xs hover:shadow-sm transition-all text-left">
-              <div 
-                onClick={() => setIsICPExclusionPanelExpanded(!isICPExclusionPanelExpanded)}
-                className="p-5 flex items-center justify-between cursor-pointer bg-slate-50/50 dark:bg-slate-800/50 hover:bg-slate-50/80 transition-colors border-b border-slate-100 dark:border-slate-800 select-none pb-4"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="p-2 bg-red-50 dark:bg-red-950/40 rounded-xl text-red-600 dark:text-red-300 border border-red-100 dark:border-red-800/50 shrink-0">
-                    <AlertTriangle className="w-4 h-4" />
+            {/* ICP Exclusion & Disqualification Signal Controls — Modal */}
+            <Dialog open={isICPExclusionModalOpen} onOpenChange={setIsICPExclusionModalOpen}>
+              <DialogContent className="w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] sm:w-full sm:max-w-2xl md:max-w-3xl lg:max-w-4xl bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-700 rounded-2xl font-sans shadow-sm max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+                <DialogHeader className="space-y-1.5 text-left border-b border-slate-100 dark:border-slate-800 pb-4">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2 bg-red-50 dark:bg-red-950/40 rounded-xl text-red-600 dark:text-red-300 border border-red-100 dark:border-red-800/50 shrink-0">
+                      <AlertTriangle className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <DialogTitle className="text-sm font-semibold text-slate-800 dark:text-slate-200 font-sans leading-snug break-words">
+                        ICP Exclusion & Automated Disqualification Engine
+                      </DialogTitle>
+                      <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold text-red-700 dark:text-red-300 bg-red-100/80 dark:bg-red-900/40 border border-red-200 dark:border-red-800/60">
+                          {priorityOverview.doNotPursue} Account{priorityOverview.doNotPursue === 1 ? '' : 's'} Excluded
+                        </span>
+                        <span className="text-[10px] sm:text-[11px] font-bold font-mono uppercase bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-200 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/60">Live: Active</span>
+                      </div>
+                      <DialogDescription className="text-[12px] sm:text-[13px] text-slate-500 dark:text-slate-300 font-medium font-sans mt-1.5">
+                        Configure thresholds and signal exclusions to isolate poor-fit, low-priority candidates.
+                      </DialogDescription>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex flex-wrap items-center gap-2">
-                      ICP Exclusion & Automated Disqualification Engine
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[12px] font-bold text-red-700 dark:text-red-300 bg-red-100/80 dark:bg-red-900/40 border border-red-200 dark:border-red-800/60">
-                        {priorityOverview.doNotPursue} Account{priorityOverview.doNotPursue === 1 ? '' : 's'} Excluded
-                      </span>
-                    </h3>
-                    <p className="text-[13px] text-slate-500 dark:text-slate-300 font-medium">Configure thresholds and signal exclusions to isolate poor-fit, low-priority candidates.</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
-                  <div className="text-right hidden sm:block">
-                    <span className="text-[12px] font-bold font-mono uppercase bg-emerald-100 dark:bg-emerald-900/40 text-emerald-800 dark:text-emerald-200 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800/60">Live Scoring Exclusion: Active</span>
-                  </div>
-                  <ChevronDown className={`w-4 h-4 text-slate-405 transition-transform duration-300 ${isICPExclusionPanelExpanded ? 'rotate-180' : ''}`} />
-                </div>
-              </div>
+                </DialogHeader>
 
-              <AnimatePresence initial={false}>
-                {isICPExclusionPanelExpanded && (
-                  <motion.div
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: 'auto', opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={{ duration: 0.25, ease: 'easeInOut' }}
-                    className="overflow-hidden border-t border-slate-100 dark:border-slate-800"
-                  >
-                    <div className="p-6 space-y-6">
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-left">
-                        {/* Header / Config controls */}
-                        <div className="space-y-4">
-                          <div>
+                <div className="pt-4 space-y-6">
+                  <div className="space-y-5 text-left">
+                        {/* All 4 exclusion sections stack one per row */}
+                        <div>
                             <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-normal mb-2">1. Company Headcount Exclusions</h4>
                             <div className="p-4 bg-slate-50/70 dark:bg-slate-800/50 rounded-xl border border-slate-150 dark:border-slate-700 space-y-3">
                               <div className="flex justify-between items-center">
@@ -1345,129 +2341,409 @@ export function Dashboard({
 
                           <div>
                             <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-normal mb-2">2. Geographic Boundaries Exclusions</h4>
-                            <div className="p-4 bg-slate-50/70 dark:bg-slate-800/50 rounded-xl border border-slate-150 dark:border-slate-700 space-y-2">
-                              <p className="text-[12px] text-slate-450 mb-2">Exclude campaigns from regions with trade blocks, complex timezone issues, or structural barriers:</p>
-                              <div className="flex flex-wrap gap-1.5">
-                                {['Restricted Eurasia', 'LATAM', 'APAC', 'Eastern Europe', 'Western Europe'].map((geo) => {
-                                  const active = excludedGeographies.includes(geo);
-                                  return (
-                                    <button
-                                      key={geo}
-                                      onClick={() => {
-                                        setExcludedGeographies(prev => 
-                                          prev.includes(geo) ? prev.filter(g => g !== geo) : [...prev, geo]
+                            <div className="p-4 bg-slate-50/70 dark:bg-slate-800/50 rounded-xl border border-slate-150 dark:border-slate-700 space-y-3">
+                              <p className="text-[12px] text-slate-450">Exclude campaigns by country + state, or use quick-add regions for broader blocks:</p>
+
+                              {/* Searchable multi-select country picker */}
+                              {(() => {
+                                const q = countrySearchQuery.trim().toLowerCase();
+                                const filteredCountries = q
+                                  ? COUNTRIES.filter(c => c.toLowerCase().includes(q))
+                                  : COUNTRIES;
+                                const togglePending = (country: string) => {
+                                  setPendingCountrySelections(prev => {
+                                    const next = prev.includes(country) ? prev.filter(c => c !== country) : [...prev, country];
+                                    // state pick is only meaningful when exactly one country is queued — reset otherwise
+                                    if (next.length !== 1) setPendingStateSelect('');
+                                    return next;
+                                  });
+                                };
+                                const stateEligibleCountry =
+                                  pendingCountrySelections.length === 1 && COUNTRY_STATES[pendingCountrySelections[0]]
+                                    ? pendingCountrySelections[0]
+                                    : '';
+                                const commitPending = () => {
+                                  // If exactly 1 country + state selected → save as "State, Country" precision entry.
+                                  if (stateEligibleCountry && pendingStateSelect) {
+                                    const entry = `${pendingStateSelect}, ${stateEligibleCountry}`;
+                                    if (excludedGeographies.includes(entry)) {
+                                      toast.error(`"${entry}" is already excluded.`);
+                                      return;
+                                    }
+                                    setExcludedGeographies(prev => [...prev, entry]);
+                                    setPendingCountrySelections([]);
+                                    setPendingStateSelect('');
+                                    setCountrySearchQuery('');
+                                    toast.success(`Excluded "${entry}". Fit scores updated in real time.`);
+                                    return;
+                                  }
+                                  // Otherwise: bulk country-level exclusion for all pending picks.
+                                  const fresh = pendingCountrySelections.filter(c => !excludedGeographies.includes(c));
+                                  if (fresh.length === 0) {
+                                    toast.error('All selected countries are already excluded.');
+                                    return;
+                                  }
+                                  setExcludedGeographies(prev => [...prev, ...fresh]);
+                                  setPendingCountrySelections([]);
+                                  setPendingStateSelect('');
+                                  setCountrySearchQuery('');
+                                  toast.success(`Excluded ${fresh.length} countr${fresh.length === 1 ? 'y' : 'ies'}. Fit scores updated in real time.`);
+                                };
+                                return (
+                                  <div className="space-y-2">
+                                    {/* Search */}
+                                    <div className="relative">
+                                      <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400 pointer-events-none" />
+                                      <input
+                                        type="text"
+                                        value={countrySearchQuery}
+                                        onChange={(e) => setCountrySearchQuery(e.target.value)}
+                                        placeholder={`Search ${COUNTRIES.length} countries…`}
+                                        className={`w-full h-9 pl-8 ${countrySearchQuery ? 'pr-8' : 'pr-2.5'} rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[13px] text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500`}
+                                      />
+                                      {countrySearchQuery && (
+                                        <button
+                                          type="button"
+                                          onClick={() => setCountrySearchQuery('')}
+                                          title="Clear search"
+                                          className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center rounded-full text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                                        >
+                                          <X className="w-3 h-3" />
+                                        </button>
+                                      )}
+                                    </div>
+
+                                    {/* Scrollable checkbox list */}
+                                    <div className="max-h-48 overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-1.5">
+                                      {filteredCountries.length === 0 ? (
+                                        <div className="text-center text-[12px] text-slate-400 py-4">No countries match "{countrySearchQuery}"</div>
+                                      ) : (
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-x-2 gap-y-0.5">
+                                          {filteredCountries.map(country => {
+                                            const isChecked = pendingCountrySelections.includes(country);
+                                            const isAlreadyExcluded = excludedGeographies.includes(country);
+                                            return (
+                                              <label
+                                                key={country}
+                                                className={`flex items-center gap-1.5 px-1.5 py-1 rounded text-[12px] font-medium transition-colors cursor-pointer select-none ${
+                                                  isAlreadyExcluded
+                                                    ? 'text-red-500 dark:text-red-400 cursor-not-allowed opacity-70'
+                                                    : isChecked
+                                                    ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300'
+                                                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                                }`}
+                                                title={isAlreadyExcluded ? 'Already excluded' : ''}
+                                              >
+                                                <input
+                                                  type="checkbox"
+                                                  checked={isChecked || isAlreadyExcluded}
+                                                  disabled={isAlreadyExcluded}
+                                                  onChange={() => togglePending(country)}
+                                                  className="w-3.5 h-3.5 accent-indigo-600 cursor-pointer disabled:cursor-not-allowed"
+                                                />
+                                                <span className="truncate">{country}</span>
+                                              </label>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    {/* State/region dropdown — activates only when exactly 1 pending country with states */}
+                                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                                      <label className="text-[11px] font-mono uppercase tracking-wider text-slate-400 dark:text-slate-500 sm:shrink-0">
+                                        State / region (optional)
+                                      </label>
+                                      <select
+                                        value={pendingStateSelect}
+                                        onChange={(e) => setPendingStateSelect(e.target.value)}
+                                        disabled={!stateEligibleCountry}
+                                        title={
+                                          pendingCountrySelections.length === 0
+                                            ? 'Pick one country first'
+                                            : pendingCountrySelections.length > 1
+                                            ? 'State picker only works with a single country selected'
+                                            : !stateEligibleCountry
+                                            ? `${pendingCountrySelections[0]} has no state data`
+                                            : ''
+                                        }
+                                        className="flex-1 min-w-0 h-9 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[13px] text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed truncate"
+                                      >
+                                        <option value="">
+                                          {stateEligibleCountry
+                                            ? `— Select state / region in ${stateEligibleCountry} —`
+                                            : pendingCountrySelections.length === 0
+                                            ? '— Pick 1 country to unlock —'
+                                            : pendingCountrySelections.length > 1
+                                            ? '— Reduce to 1 country to enable —'
+                                            : `— ${pendingCountrySelections[0]} has no state data —`}
+                                        </option>
+                                        {stateEligibleCountry &&
+                                          (COUNTRY_STATES[stateEligibleCountry] || []).map(s => (
+                                            <option key={s} value={s}>{s}</option>
+                                          ))}
+                                      </select>
+                                    </div>
+
+                                    {/* Action row */}
+                                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                                      <div className="text-[11px] text-slate-500 dark:text-slate-400">
+                                        {pendingCountrySelections.length === 0
+                                          ? `Showing ${filteredCountries.length} of ${COUNTRIES.length}`
+                                          : pendingStateSelect
+                                          ? <><span className="font-semibold text-indigo-600 dark:text-indigo-300">{pendingStateSelect}, {stateEligibleCountry}</span> ready</>
+                                          : <><span className="font-semibold text-indigo-600 dark:text-indigo-300">{pendingCountrySelections.length}</span> selected</>}
+                                      </div>
+                                      <div className="flex gap-2">
+                                        {(pendingCountrySelections.length > 0 || pendingStateSelect) && (
+                                          <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() => { setPendingCountrySelections([]); setPendingStateSelect(''); }}
+                                            className="h-8 px-3 text-[12px] font-semibold text-slate-500 hover:text-slate-800 cursor-pointer"
+                                          >
+                                            Clear selection
+                                          </Button>
+                                        )}
+                                        <Button
+                                          size="sm"
+                                          variant="default"
+                                          disabled={pendingCountrySelections.length === 0}
+                                          onClick={commitPending}
+                                          className="h-8 px-3 gap-1 bg-indigo-600 hover:bg-indigo-500 text-white text-[12px] font-bold rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                          <Plus className="w-3.5 h-3.5" />
+                                          {stateEligibleCountry && pendingStateSelect
+                                            ? `Add state exclusion`
+                                            : `Add ${pendingCountrySelections.length > 0 ? `${pendingCountrySelections.length} ` : ''}exclusion${pendingCountrySelections.length === 1 ? '' : 's'}`}
+                                        </Button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+
+                              {/* Unified chip list — active exclusions (custom country/state + preset region) first, then remaining presets */}
+                              {(() => {
+                                const PRESET_REGIONS = [
+                                  'Restricted Eurasia', 'LATAM', 'APAC', 'Eastern Europe',
+                                  'Western Europe', 'EMEA', 'Sub-Saharan Africa',
+                                ];
+                                const customActive = excludedGeographies.filter(g => !PRESET_REGIONS.includes(g));
+                                const presetActive = PRESET_REGIONS.filter(g => excludedGeographies.includes(g));
+                                const presetInactive = PRESET_REGIONS.filter(g => !excludedGeographies.includes(g));
+                                const orderedChips = [...customActive, ...presetActive, ...presetInactive];
+                                return (
+                                  <div className="pt-1">
+                                    <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1.5">
+                                      Regions — {excludedGeographies.length} excluded
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {orderedChips.map((geo) => {
+                                        const active = excludedGeographies.includes(geo);
+                                        const isCustom = !PRESET_REGIONS.includes(geo);
+                                        return (
+                                          <button
+                                            key={geo}
+                                            onClick={() => {
+                                              setExcludedGeographies(prev =>
+                                                prev.includes(geo) ? prev.filter(g => g !== geo) : [...prev, geo]
+                                              );
+                                            }}
+                                            title={active ? 'Click to remove from exclusions' : 'Click to add to exclusions'}
+                                            className={`px-2 py-1 rounded text-[12px] font-bold border transition-colors cursor-pointer ${
+                                              active
+                                                ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-950/60'
+                                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:text-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                            }`}
+                                          >
+                                            {active ? '❌ ' : '+ '}{geo}
+                                            {isCustom && <span className="ml-1 text-[9px] font-mono uppercase opacity-70">custom</span>}
+                                          </button>
                                         );
-                                      }}
-                                      className={`px-2 py-1 rounded text-[12px] font-bold border transition-colors cursor-pointer ${
-                                        active 
-                                          ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300' 
-                                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:text-slate-800 hover:bg-slate-105'
-                                      }`}
-                                    >
-                                      {active ? '❌ ' : ''}{geo}
-                                    </button>
-                                  );
-                                })}
-                              </div>
+                                      })}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </div>
-                        </div>
 
-                        <div className="space-y-4">
-                          <div>
+                        <div>
                             <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-normal mb-2">3. Prohibited/Restricted Sectors Exclusions</h4>
-                            <div className="p-4 bg-slate-50/70 dark:bg-slate-800/50 rounded-xl border border-slate-150 dark:border-slate-700 space-y-2">
-                              <p className="text-[12px] text-slate-450 mb-2">Exclude fields experiencing public sovereignty blocks, intense ITAR security, or high general volatility:</p>
-                              <div className="flex flex-wrap gap-1.5">
-                                {['Military / Combat Systems', 'Cryptocurrency / Web3', 'Gambling', 'Local Boutique Design', 'Healthcare Tech', 'Enterprise Software'].map((ind) => {
-                                  const active = excludedIndustries.includes(ind);
-                                  return (
-                                    <button
-                                      key={ind}
-                                      onClick={() => {
-                                        setExcludedIndustries(prev => 
-                                          prev.includes(ind) ? prev.filter(i => i !== ind) : [...prev, ind]
-                                        );
-                                      }}
-                                      className={`px-2 py-1 rounded text-[12px] font-bold border transition-colors cursor-pointer ${
-                                        active 
-                                          ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300' 
-                                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:text-slate-800 hover:bg-slate-105'
-                                      }`}
+                            <div className="p-4 bg-slate-50/70 dark:bg-slate-800/50 rounded-xl border border-slate-150 dark:border-slate-700 space-y-3">
+                              <p className="text-[12px] text-slate-450">Type any industry/sector to exclude (e.g. "Adult Entertainment", "Fossil Fuel Extraction"), or use the quick-add presets:</p>
+
+                              {/* Custom industry input + Add button */}
+                              {(() => {
+                                const commitIndustry = () => {
+                                  const entry = industryInputValue.trim();
+                                  if (!entry) return;
+                                  if (excludedIndustries.some(i => i.toLowerCase() === entry.toLowerCase())) {
+                                    toast.error(`"${entry}" is already excluded.`);
+                                    return;
+                                  }
+                                  setExcludedIndustries(prev => [...prev, entry]);
+                                  setIndustryInputValue('');
+                                  toast.success(`Excluded "${entry}". All account fit scores updated in real time.`);
+                                };
+                                return (
+                                  <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto] gap-2">
+                                    <input
+                                      type="text"
+                                      value={industryInputValue}
+                                      onChange={(e) => setIndustryInputValue(e.target.value)}
+                                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitIndustry(); } }}
+                                      placeholder="e.g. Adult Entertainment, Payday Lending, Firearms"
+                                      className="min-w-0 w-full h-9 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[13px] text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                                    />
+                                    <Button
+                                      size="sm"
+                                      variant="default"
+                                      disabled={!industryInputValue.trim()}
+                                      onClick={commitIndustry}
+                                      className="h-9 px-4 gap-1 bg-indigo-600 hover:bg-indigo-500 text-white text-[13px] font-bold rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed w-full lg:w-auto"
                                     >
-                                      {active ? '❌ ' : ''}{ind}
-                                    </button>
-                                  );
-                                })}
-                              </div>
+                                      <Plus className="w-3.5 h-3.5" />
+                                      Add exclusion
+                                    </Button>
+                                  </div>
+                                );
+                              })()}
+
+                              {/* Unified chip list — active exclusions (custom + preset) first, then remaining presets */}
+                              {(() => {
+                                const PRESET_INDUSTRIES = [
+                                  'Military / Combat Systems', 'Cryptocurrency / Web3', 'Gambling',
+                                  'Adult Entertainment', 'Payday Lending', 'Firearms', 'Tobacco',
+                                  'Fossil Fuel Extraction', 'Local Boutique Design', 'Healthcare Tech', 'Enterprise Software',
+                                ];
+                                const customActive = excludedIndustries.filter(i => !PRESET_INDUSTRIES.includes(i));
+                                const presetActive = PRESET_INDUSTRIES.filter(i => excludedIndustries.includes(i));
+                                const presetInactive = PRESET_INDUSTRIES.filter(i => !excludedIndustries.includes(i));
+                                const orderedChips = [...customActive, ...presetActive, ...presetInactive];
+                                return (
+                                  <div className="pt-1">
+                                    <div className="text-[11px] font-mono uppercase tracking-wider text-slate-400 dark:text-slate-500 mb-1.5">
+                                      Sectors — {excludedIndustries.length} excluded
+                                    </div>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {orderedChips.map((ind) => {
+                                        const active = excludedIndustries.includes(ind);
+                                        const isCustom = !PRESET_INDUSTRIES.includes(ind);
+                                        return (
+                                          <button
+                                            key={ind}
+                                            onClick={() => {
+                                              setExcludedIndustries(prev =>
+                                                prev.includes(ind) ? prev.filter(i => i !== ind) : [...prev, ind]
+                                              );
+                                            }}
+                                            title={active ? 'Click to remove from exclusions' : 'Click to add to exclusions'}
+                                            className={`px-2 py-1 rounded text-[12px] font-bold border transition-colors cursor-pointer ${
+                                              active
+                                                ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-950/60'
+                                                : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:text-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800'
+                                            }`}
+                                          >
+                                            {active ? '❌ ' : '+ '}{ind}
+                                            {isCustom && <span className="ml-1 text-[9px] font-mono uppercase opacity-70">custom</span>}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </div>
 
                           <div>
-                            <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-normal mb-2">4. Technology Incompatibilities & Financial Strains</h4>
-                            <div className="grid grid-cols-2 gap-3 text-left">
-                              <div className="p-3 bg-slate-50/70 dark:bg-slate-800/50 rounded-xl border border-slate-150 dark:border-slate-700">
-                                <span className="text-[12px] font-bold text-slate-500 dark:text-slate-300 block mb-1.5">Legacy Core Tech:</span>
-                                <div className="flex flex-wrap gap-1">
-                                  {['COBOL Mainframe', 'Revit', 'MicroStation'].map(tech => {
-                                    const active = excludedTechStacks.includes(tech);
-                                    return (
+                            <h4 className="text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-normal mb-2">4. Financial Strains Exclusions</h4>
+                            <div className="p-4 bg-slate-50/70 dark:bg-slate-800/50 rounded-xl border border-slate-150 dark:border-slate-700 space-y-3">
+                              <p className="text-[12px] text-slate-450">Type any financial-distress signal to exclude (e.g. "Missed Debt Payments", "Credit Downgrade"), or use the quick-add presets:</p>
+
+                              {/* Custom financial-stress input + Add button */}
+                              {(() => {
+                                const commitFinancial = () => {
+                                  const entry = financialInputValue.trim();
+                                  if (!entry) return;
+                                  if (excludedFinancialStatuses.some(f => f.toLowerCase() === entry.toLowerCase())) {
+                                    toast.error(`"${entry}" is already excluded.`);
+                                    return;
+                                  }
+                                  setExcludedFinancialStatuses(prev => [...prev, entry]);
+                                  setFinancialInputValue('');
+                                  toast.success(`Excluded "${entry}". All account fit scores updated in real time.`);
+                                };
+                                return (
+                                  <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_auto] gap-2">
+                                    <input
+                                      type="text"
+                                      value={financialInputValue}
+                                      onChange={(e) => setFinancialInputValue(e.target.value)}
+                                      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitFinancial(); } }}
+                                      placeholder="e.g. Missed Debt Payments, Credit Downgrade, Restructuring"
+                                      className="min-w-0 w-full h-9 px-2.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-[13px] text-slate-700 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                                    />
+                                    <Button
+                                      size="sm"
+                                      variant="default"
+                                      disabled={!financialInputValue.trim()}
+                                      onClick={commitFinancial}
+                                      className="h-9 px-4 gap-1 bg-indigo-600 hover:bg-indigo-500 text-white text-[13px] font-bold rounded-lg cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed w-full lg:w-auto"
+                                    >
+                                      <Plus className="w-3.5 h-3.5" />
+                                      Add exclusion
+                                    </Button>
+                                  </div>
+                                );
+                              })()}
+
+                              {/* Unified chip list — active exclusions (custom + preset) first, then remaining presets */}
+                              {(() => {
+                                const PRESET_FINANCIAL = [
+                                  'Layoffs', 'Bankruptcy', 'Cash-Strap Strain',
+                                  'Restructuring', 'Credit Downgrade', 'Chapter 11',
+                                  'Missed Debt Payments', 'Cost Cuts', 'Hiring Freeze',
+                                ];
+                                const customActive = excludedFinancialStatuses.filter(f => !PRESET_FINANCIAL.includes(f));
+                                const presetActive = PRESET_FINANCIAL.filter(f => excludedFinancialStatuses.includes(f));
+                                const presetInactive = PRESET_FINANCIAL.filter(f => !excludedFinancialStatuses.includes(f));
+                                const ordered: { label: string; active: boolean; custom: boolean }[] = [
+                                  ...customActive.map(l => ({ label: l, active: true, custom: true })),
+                                  ...presetActive.map(l => ({ label: l, active: true, custom: false })),
+                                  ...presetInactive.map(l => ({ label: l, active: false, custom: false })),
+                                ];
+                                return (
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {ordered.map(({ label, active, custom }) => (
                                       <button
-                                        key={tech}
+                                        key={label}
                                         onClick={() => {
-                                          setExcludedTechStacks(prev => 
-                                            prev.includes(tech) ? prev.filter(t => t !== tech) : [...prev, tech]
+                                          setExcludedFinancialStatuses(prev =>
+                                            prev.includes(label) ? prev.filter(f => f !== label) : [...prev, label]
                                           );
                                         }}
-                                        className={`px-1.5 py-0.5 rounded text-[11px] font-bold border transition-colors cursor-pointer ${
-                                          active ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300 font-semibold shadow-xxs' : 'bg-white dark:bg-slate-900 border-slate-150 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:bg-slate-105'
+                                        className={`px-2 py-0.5 rounded text-[11px] font-bold border transition-colors cursor-pointer ${
+                                          active
+                                            ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300 shadow-xxs'
+                                            : 'bg-white dark:bg-slate-900 border-slate-150 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:bg-slate-105'
                                         }`}
                                       >
-                                        {tech}
+                                        {label}
+                                        {custom && <span className="ml-1 text-[9px] font-semibold uppercase tracking-wide opacity-70">custom</span>}
                                       </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                              
-                              <div className="p-3 bg-slate-50/70 dark:bg-slate-800/50 rounded-xl border border-slate-150 dark:border-slate-700">
-                                <span className="text-[12px] font-bold text-slate-500 dark:text-slate-300 block mb-1.5">Financial Stress:</span>
-                                <div className="flex flex-wrap gap-1">
-                                  {['Layoffs', 'Bankruptcy', 'Cash-Strap Strain'].map(stress => {
-                                    const active = excludedFinancialStatuses.includes(stress);
-                                    return (
-                                      <button
-                                        key={stress}
-                                        onClick={() => {
-                                          setExcludedFinancialStatuses(prev => 
-                                            prev.includes(stress) ? prev.filter(s => s !== stress) : [...prev, stress]
-                                          );
-                                        }}
-                                        className={`px-1.5 py-0.5 rounded text-[11px] font-bold border transition-colors cursor-pointer ${
-                                          active ? 'bg-red-50 dark:bg-red-950/40 border-red-200 dark:border-red-800/60 text-red-700 dark:text-red-300 font-semibold shadow-xxs' : 'bg-white dark:bg-slate-900 border-slate-150 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:bg-slate-105'
-                                        }`}
-                                      >
-                                        {stress}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
+                                    ))}
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </div>
                         </div>
-                      </div>
 
-                      <div className="border-t border-slate-100 dark:border-slate-800 pt-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+                      <div className="border-t border-slate-100 dark:border-slate-800 pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div className="flex items-center gap-3 flex-wrap">
-                          <Button
-                            variant={hideDisqualified ? 'destructive' : 'outline'}
-                            size="sm"
-                            onClick={() => setHideDisqualified(!hideDisqualified)}
-                            className="gap-2 text-[13px] font-semibold h-9 cursor-pointer"
-                          >
-                            {hideDisqualified ? '👁️ Show Excluded Accounts' : '🙈 Hide Disqualified From Grid'}
-                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
@@ -1485,15 +2761,193 @@ export function Dashboard({
                             Clear Exclusions
                           </Button>
                         </div>
-                        <div className="text-right text-[13px] text-slate-500 dark:text-slate-300 font-medium">
+                        <div className="text-left sm:text-right text-[12px] sm:text-[13px] text-slate-500 dark:text-slate-300 font-medium leading-snug">
                           💡 Exclusions automatically override indices: Forced to <span className="font-bold text-red-650 dark:text-red-300 font-mono">0% fit</span> with priority flagged as <span className="font-semibold text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800/60 px-1 rounded">Do Not Pursue</span>.
                         </div>
                       </div>
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            {/* Scoring & Interpretation Guide — Modal */}
+            <Dialog open={isScoringGuideOpen} onOpenChange={setIsScoringGuideOpen}>
+              <DialogContent className="w-[calc(100vw-2rem)] max-w-[calc(100vw-2rem)] sm:w-full sm:max-w-2xl md:max-w-3xl lg:max-w-4xl bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-700 rounded-2xl font-sans shadow-sm max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+                <DialogHeader className="space-y-1.5 text-left border-b border-slate-100 dark:border-slate-800 pb-4">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shrink-0 shadow-sm">
+                      <BookOpen className="w-4 h-4 text-white" />
                     </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
+                    <div className="min-w-0">
+                      <DialogTitle className="text-sm font-semibold text-slate-800 dark:text-slate-200 font-sans leading-snug">
+                        Scoring & Interpretation Guide
+                      </DialogTitle>
+                      <DialogDescription className="text-[12px] sm:text-[13px] text-slate-500 dark:text-slate-300 font-medium font-sans mt-0.5">
+                        How the AI scores each account and what to do with the tiers.
+                      </DialogDescription>
+                    </div>
+                  </div>
+                </DialogHeader>
+
+                <div className="space-y-6 pt-4 text-left">
+                  {/* 1. The two core scores */}
+                  <section className="space-y-2.5">
+                    <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">1. The Two Core Scores</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="p-3 rounded-xl border border-indigo-200 dark:border-indigo-500/30 bg-indigo-50/50 dark:bg-indigo-500/10">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                          <span className="text-[12px] font-bold text-indigo-700 dark:text-indigo-300 uppercase tracking-wider">Fit Score</span>
+                        </div>
+                        <p className="text-[13px] text-slate-700 dark:text-slate-300 leading-relaxed">
+                          <strong>Are they the right kind of customer?</strong> Measures how well the account matches your ICP — industry, size, tech stack, budget shape. Static — doesn't change day-to-day.
+                        </p>
+                      </div>
+                      <div className="p-3 rounded-xl border border-emerald-200 dark:border-emerald-500/30 bg-emerald-50/50 dark:bg-emerald-500/10">
+                        <div className="flex items-center gap-1.5 mb-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          <span className="text-[12px] font-bold text-emerald-700 dark:text-emerald-300 uppercase tracking-wider">Timing Score</span>
+                        </div>
+                        <p className="text-[13px] text-slate-700 dark:text-slate-300 leading-relaxed">
+                          <strong>Are they ready to buy right now?</strong> Reads recent intent signals — funding rounds, leadership changes, job posts, tech migrations. Dynamic — decays as signals age.
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-[12px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                      Signals older than <strong>90 days</strong> start losing weight; anything past <strong>180 days</strong> counts as zero and triggers a "re-research" flag.
+                    </p>
+                  </section>
+
+                  {/* 2. Priority tier ladder */}
+                  <section className="space-y-2.5">
+                    <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">2. Priority Tier Classification</h4>
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                      <table className="w-full text-[13px]">
+                        <thead className="bg-slate-50 dark:bg-slate-800/70">
+                          <tr>
+                            <th className="text-left px-3 py-2 font-semibold text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">Tier</th>
+                            <th className="text-left px-3 py-2 font-semibold text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">Rule</th>
+                            <th className="text-left px-3 py-2 font-semibold text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">What to do</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white dark:bg-slate-900">
+                          <tr className="border-b border-slate-100 dark:border-slate-800">
+                            <td className="px-3 py-2.5 align-top">
+                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-rose-100 dark:bg-rose-500/20 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-500/30">🔴 Immediate</span>
+                            </td>
+                            <td className="px-3 py-2.5 align-top text-slate-700 dark:text-slate-300"><code className="font-mono text-[11px]">fit ≥ 85</code> AND <code className="font-mono text-[11px]">timing ≥ 80</code> AND recent signal</td>
+                            <td className="px-3 py-2.5 align-top text-slate-700 dark:text-slate-300">Reach out within <strong>48 hours</strong></td>
+                          </tr>
+                          <tr className="border-b border-slate-100 dark:border-slate-800">
+                            <td className="px-3 py-2.5 align-top">
+                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-teal-100 dark:bg-teal-500/20 text-teal-700 dark:text-teal-300 border border-teal-200 dark:border-teal-500/30">🟢 Warm Track</span>
+                            </td>
+                            <td className="px-3 py-2.5 align-top text-slate-700 dark:text-slate-300"><code className="font-mono text-[11px]">fit ≥ 80</code> AND <code className="font-mono text-[11px]">timing &lt; 75</code></td>
+                            <td className="px-3 py-2.5 align-top text-slate-700 dark:text-slate-300">Stay in touch, warm them up over weeks</td>
+                          </tr>
+                          <tr className="border-b border-slate-100 dark:border-slate-800">
+                            <td className="px-3 py-2.5 align-top">
+                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30">🟠 Standard</span>
+                            </td>
+                            <td className="px-3 py-2.5 align-top text-slate-700 dark:text-slate-300">Everything else</td>
+                            <td className="px-3 py-2.5 align-top text-slate-700 dark:text-slate-300">Light-touch check-in every few months</td>
+                          </tr>
+                          <tr>
+                            <td className="px-3 py-2.5 align-top">
+                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md text-[11px] font-bold bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-500/30">⛔ Do Not Pursue</span>
+                            </td>
+                            <td className="px-3 py-2.5 align-top text-slate-700 dark:text-slate-300">Hits any ICP exclusion rule</td>
+                            <td className="px-3 py-2.5 align-top text-slate-700 dark:text-slate-300">Skip — not a fit for your business</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="flex gap-2 text-[12px] text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30 p-2.5 rounded-lg">
+                      <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span><strong>Guard rule:</strong> An account that qualifies as Immediate but has no signals in the last 90 days gets demoted to Warm Track — we don't fire urgent outreach off stale intel.</span>
+                    </div>
+                  </section>
+
+                  {/* 3. Timing stage & outreach window */}
+                  <section className="space-y-2.5">
+                    <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">3. What the Timing Score Means in Practice</h4>
+                    <div className="rounded-xl border border-slate-200 dark:border-slate-700 overflow-hidden">
+                      <table className="w-full text-[13px]">
+                        <thead className="bg-slate-50 dark:bg-slate-800/70">
+                          <tr>
+                            <th className="text-left px-3 py-2 font-semibold text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">Timing Score</th>
+                            <th className="text-left px-3 py-2 font-semibold text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">Buying stage</th>
+                            <th className="text-left px-3 py-2 font-semibold text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700">Recommended window</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white dark:bg-slate-900">
+                          <tr className="border-b border-slate-100 dark:border-slate-800">
+                            <td className="px-3 py-2.5 font-mono text-slate-700 dark:text-slate-300">≥ 80</td>
+                            <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">Urgent Decision</td>
+                            <td className="px-3 py-2.5 font-semibold text-rose-600 dark:text-rose-300">Within 48 hours</td>
+                          </tr>
+                          <tr className="border-b border-slate-100 dark:border-slate-800">
+                            <td className="px-3 py-2.5 font-mono text-slate-700 dark:text-slate-300">65 – 79</td>
+                            <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">Active Evaluation</td>
+                            <td className="px-3 py-2.5 font-semibold text-amber-600 dark:text-amber-300">This week</td>
+                          </tr>
+                          <tr className="border-b border-slate-100 dark:border-slate-800">
+                            <td className="px-3 py-2.5 font-mono text-slate-700 dark:text-slate-300">&lt; 65</td>
+                            <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">Early Awareness</td>
+                            <td className="px-3 py-2.5 font-semibold text-teal-600 dark:text-teal-300">This month</td>
+                          </tr>
+                          <tr>
+                            <td className="px-3 py-2.5 font-mono text-slate-700 dark:text-slate-300">All stale</td>
+                            <td className="px-3 py-2.5 text-slate-700 dark:text-slate-300">Re-Research Required</td>
+                            <td className="px-3 py-2.5 font-semibold text-slate-500 dark:text-slate-400">Hold outreach</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+
+                  {/* 4. Priority Index */}
+                  <section className="space-y-2">
+                    <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">4. Priority Index</h4>
+                    <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+                      <div className="text-[13px] font-mono text-indigo-700 dark:text-indigo-300 mb-1">
+                        Priority Index = (Fit Score + Timing Score) ÷ 2
+                      </div>
+                      <p className="text-[13px] text-slate-700 dark:text-slate-300 leading-relaxed">
+                        The single 0–100 number the dashboard uses to sort accounts. Combines "right customer" and "right time" into one line — top of the list means both are strong.
+                      </p>
+                    </div>
+                  </section>
+
+                  {/* 5. Reading the cards */}
+                  <section className="space-y-2.5">
+                    <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">5. Reading Each Card at a Glance</h4>
+                    <ul className="text-[13px] text-slate-700 dark:text-slate-300 space-y-1.5 pl-1">
+                      <li className="flex gap-2"><Compass className="w-4 h-4 text-[#1d8ecd] shrink-0 mt-0.5" /><span><strong>Total Pipeline</strong> — donut of tier composition across all active accounts.</span></li>
+                      <li className="flex gap-2"><TrendingUp className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" /><span><strong>Immediate Action</strong> — count + fit-score distribution of urgent accounts.</span></li>
+                      <li className="flex gap-2"><Clock className="w-4 h-4 text-teal-500 shrink-0 mt-0.5" /><span><strong>Warm Track</strong> — % of pipeline waiting for timing to catch up.</span></li>
+                      <li className="flex gap-2"><Lightbulb className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" /><span><strong>Standard Follow-up</strong> — horizontal bar chart of fit-score distribution for the long-tail set.</span></li>
+                    </ul>
+                  </section>
+
+                  {/* Footer note */}
+                  <div className="flex gap-2 text-[12px] text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 p-2.5 rounded-lg">
+                    <Sparkles className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <span>Scores are recalibrated live whenever you update ICP exclusions, partner mappings, or outreach outcomes — nothing is hard-coded.</span>
+                  </div>
+                </div>
+
+                <DialogFooter className="border-t border-slate-100 dark:border-slate-800 pt-4 mt-2">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => setIsScoringGuideOpen(false)}
+                    className="h-9 px-4 bg-indigo-600 hover:bg-indigo-500 text-white text-[13px] font-bold rounded-lg cursor-pointer"
+                  >
+                    Got it
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
 
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               {/* Search Bar */}
@@ -1509,37 +2963,101 @@ export function Dashboard({
               </div>
               {/* Intelligent Filter Badges & View Switches & Export */}
               <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-center gap-2 overflow-x-auto">
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={() => setSelectedFilters([])}
-                    className={`gap-2 h-8 text-xs text-slate-500 dark:text-slate-300 border rounded-lg ${selectedFilters.length === 0 ? 'bg-slate-105 border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200' : 'border-transparent hover:border-slate-200'}`}
-                  >
-                    <Filter className="w-3.5 h-3.5" /> All
-                  </Button>
-                  <Badge 
-                    variant={selectedFilters.includes('70') ? 'default' : 'outline'} 
-                    onClick={() => handleToggleFilter('70')}
-                    className="h-8 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors border-slate-200 dark:border-slate-700 select-none px-3 font-medium text-xs text-slate-700 dark:text-slate-300"
-                  >
-                    Score 70+
-                  </Badge>
-                  <Badge 
-                    variant={selectedFilters.includes('Enterprise') ? 'default' : 'outline'} 
-                    onClick={() => handleToggleFilter('Enterprise')}
-                    className="h-8 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors border-slate-200 dark:border-slate-700 select-none px-3 font-medium text-xs text-slate-700 dark:text-slate-300"
-                  >
-                    Enterprise
-                  </Badge>
-                  <Badge 
-                    variant={selectedFilters.includes('Funding') ? 'default' : 'outline'} 
-                    onClick={() => handleToggleFilter('Funding')}
-                    className="h-8 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors border-slate-200 dark:border-slate-700 select-none px-3 font-medium text-xs text-slate-700 dark:text-slate-300"
-                  >
-                    Recent Funding
-                  </Badge>
-                </div>
+                {/* Grouped filter dropdown — replaces the old chip row */}
+                {(() => {
+                  const FILTER_OPTIONS: { key: string; label: string; tone?: 'red' }[] = [
+                    { key: '70', label: 'Score 70+' },
+                    { key: 'Enterprise', label: 'Enterprise' },
+                    { key: 'Funding', label: 'Recent Funding' },
+                    { key: 'InCrm', label: 'In CRM' },
+                    { key: 'Excludes', label: 'Excludes ✗', tone: 'red' },
+                  ];
+                  const activeCount = selectedFilters.length;
+                  const summary =
+                    activeCount === 0
+                      ? 'All accounts'
+                      : activeCount === 1
+                        ? FILTER_OPTIONS.find(o => o.key === selectedFilters[0])?.label ?? 'Filter'
+                        : `${activeCount} filters`;
+                  return (
+                    <div ref={filterMenuRef} className="relative">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setIsFilterMenuOpen(o => !o)}
+                        className={`gap-2 h-8 text-xs border rounded-lg px-3 ${activeCount > 0 ? 'bg-indigo-50 dark:bg-indigo-500/10 border-indigo-200 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300' : 'text-slate-500 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-slate-300'}`}
+                      >
+                        <Filter className="w-3.5 h-3.5" />
+                        <span className="font-semibold">{summary}</span>
+                        {activeCount > 0 && (
+                          <span className="inline-flex items-center justify-center min-w-[1.25rem] h-4 px-1 rounded-full bg-indigo-600 text-white text-[10px] font-mono font-bold">
+                            {activeCount}
+                          </span>
+                        )}
+                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isFilterMenuOpen ? 'rotate-180' : ''}`} />
+                      </Button>
+                      {isFilterMenuOpen && (
+                        <div className="absolute left-0 top-full mt-1.5 z-30 w-64 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg overflow-hidden">
+                          <div className="px-3 py-2 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Filter accounts</span>
+                            {activeCount > 0 && (
+                              <button
+                                type="button"
+                                onClick={() => setSelectedFilters([])}
+                                className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                              >
+                                Clear all
+                              </button>
+                            )}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => { setSelectedFilters([]); setIsFilterMenuOpen(false); }}
+                            className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-[13px] text-left transition-colors ${activeCount === 0 ? 'bg-slate-50 dark:bg-slate-800/60 text-slate-900 dark:text-slate-100 font-semibold' : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/40'}`}
+                          >
+                            <span className="flex items-center gap-2">
+                              <Filter className="w-3.5 h-3.5 text-slate-400" />
+                              All accounts
+                            </span>
+                            {activeCount === 0 && <CheckCircle2 className="w-4 h-4 text-indigo-600" />}
+                          </button>
+                          <div className="border-t border-slate-100 dark:border-slate-800" />
+                          {FILTER_OPTIONS.map(opt => {
+                            const active = selectedFilters.includes(opt.key);
+                            const isRed = opt.tone === 'red';
+                            return (
+                              <button
+                                key={opt.key}
+                                type="button"
+                                onClick={() => handleToggleFilter(opt.key)}
+                                className={`w-full flex items-center justify-between gap-2 px-3 py-2 text-[13px] text-left transition-colors ${
+                                  active
+                                    ? isRed
+                                      ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-300 font-semibold'
+                                      : 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 font-semibold'
+                                    : 'text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/40'
+                                }`}
+                              >
+                                <span className="flex items-center gap-2">
+                                  <span className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                                    active
+                                      ? isRed
+                                        ? 'bg-red-600 border-red-600'
+                                        : 'bg-indigo-600 border-indigo-600'
+                                      : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600'
+                                  }`}>
+                                    {active && <CheckCircle2 className="w-3 h-3 text-white" />}
+                                  </span>
+                                  {opt.label}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {(activeTab === 'recommendations' || activeTab === 'pipeline') && (
                   <>
@@ -1592,35 +3110,77 @@ export function Dashboard({
                       <Plus className="w-3.5 h-3.5" />
                       <span>Add Target Account</span>
                     </Button>
+
+                    {/* Scoring & Interpretation Guide */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsScoringGuideOpen(true)}
+                      className="h-8 text-xs font-semibold gap-1.5 px-3 rounded-lg border-slate-250 dark:border-slate-700 hover:bg-indigo-50/50 hover:text-indigo-650 hover:border-indigo-200 cursor-pointer"
+                    >
+                      <BookOpen className="w-3.5 h-3.5 text-indigo-550" />
+                      <span>Guide</span>
+                    </Button>
                   </>
                 )}
               </div>
             </div>
 
             {isDiscovering && accounts.length === 0 ? (
-               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                 {[1,2,3,4,5,6].map(i => (
-                    <div key={i} className="p-5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 shadow-sm space-y-4">
-                        <div className="flex justify-between items-start">
-                            <Skeleton className="h-6 w-32" />
-                            <Skeleton className="h-8 w-12 rounded-lg" />
+              <div className="space-y-5">
+                {/* Discovery progress banner */}
+                <div className="p-4 rounded-2xl border border-orange-200/60 dark:border-orange-500/20 bg-gradient-to-r from-orange-50/80 to-amber-50/30 dark:from-orange-950/30 dark:to-amber-950/10 flex items-start gap-3.5">
+                  <div className="relative flex h-2.5 w-2.5 mt-0.5 shrink-0">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-orange-400 opacity-75" />
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-orange-500" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <p className="text-[13px] font-semibold text-orange-900 dark:text-orange-200">
+                      AI is scanning the web for high-intent accounts…
+                    </p>
+                    <p className="text-[12px] text-orange-700/70 dark:text-orange-300/60">
+                      Running live searches · Scoring ICP fit & timing · Building account profiles
+                    </p>
+                  </div>
+                </div>
+
+                {/* Shimmer skeleton cards matching the real AccountCard layout */}
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {[1,2,3,4,5,6].map(i => (
+                    <div key={i} className="rounded-2xl border border-slate-100 dark:border-white/[0.05] bg-white dark:bg-[#2A2A2B] shadow-xs overflow-hidden flex min-h-[200px]">
+                      <div className="w-36 shrink-0 border-r border-slate-100 dark:border-white/[0.05] bg-slate-50/50 dark:bg-white/[0.02] flex flex-col items-center px-3 py-4 gap-3">
+                        <Skeleton className="h-5 w-20 rounded-md" />
+                        <Skeleton className="h-12 w-12 rounded-full mt-2" />
+                        <Skeleton className="h-5 w-16 rounded-md mt-auto" />
+                      </div>
+                      <div className="flex-1 p-4 space-y-3">
+                        <Skeleton className="h-5 w-3/4" />
+                        <Skeleton className="h-3 w-1/2" />
+                        <div className="space-y-1.5 pt-1">
+                          <Skeleton className="h-3 w-full" />
+                          <Skeleton className="h-3 w-5/6" />
+                          <Skeleton className="h-3 w-4/6" />
                         </div>
-                        <Skeleton className="h-4 w-full" />
-                        <Skeleton className="h-4 w-2/3" />
-                        <div className="flex gap-2">
-                           <Skeleton className="h-6 w-16 rounded-full" />
-                           <Skeleton className="h-6 w-16 rounded-full" />
+                        <div className="flex gap-2 pt-1">
+                          <Skeleton className="h-5 w-16 rounded-full" />
+                          <Skeleton className="h-5 w-20 rounded-full" />
                         </div>
+                      </div>
                     </div>
-                 ))}
-               </div>
+                  ))}
+                </div>
+              </div>
             ) : activeTab === 'pipeline' ? (
-              /* GTM Kanban Sprint Board View */
+              /* GTM Kanban Sprint Board View
+                 Responsive layout:
+                   - Mobile (<sm): stack columns vertically, each full-width, auto height.
+                   - sm+:         horizontal kanban with x-scroll + snap; min column widths
+                                  ramp up (300→340→360) so 3 columns fit on tablet/desktop. */
               viewMode === 'grid' ? (
-                <div className="flex flex-row gap-6 font-sans overflow-x-auto pb-4 scrollbar-thin scrollbar-thumb-slate-300 w-full snap-x">
-                  <div className="min-w-[280px] sm:min-w-[320px] lg:min-w-[350px] flex-1 snap-start">
-                    <PipelineColumn 
-                      title="To Engage" 
+                <div className="flex flex-col sm:flex-row gap-3 sm:gap-5 font-sans sm:overflow-x-auto pb-4 sm:scrollbar-thin sm:scrollbar-thumb-slate-300 w-full sm:snap-x">
+                  <div className="w-full sm:w-auto sm:min-w-[300px] md:min-w-[340px] lg:min-w-[360px] sm:flex-1 sm:snap-start">
+                    <PipelineColumn
+                      title="To Engage"
                       description="Newly identified accounts"
                       count={filteredAccounts.filter(a => (a.status === 'new' || !a.status) && !a.isDisqualified).length}
                       accounts={filteredAccounts.filter(a => (a.status === 'new' || !a.status) && !a.isDisqualified)}
@@ -1631,10 +3191,10 @@ export function Dashboard({
                       onDelete={handleDeleteAccountDirectly}
                     />
                   </div>
-                  
-                  <div className="min-w-[280px] sm:min-w-[320px] lg:min-w-[350px] flex-1 snap-start">
-                    <PipelineColumn 
-                      title="Reviewing" 
+
+                  <div className="w-full sm:w-auto sm:min-w-[300px] md:min-w-[340px] lg:min-w-[360px] sm:flex-1 sm:snap-start">
+                    <PipelineColumn
+                      title="Reviewing"
                       description="Pre-outreach target audits"
                       count={filteredAccounts.filter(a => a.status === 'viewed' && !a.isDisqualified).length}
                       accounts={filteredAccounts.filter(a => a.status === 'viewed' && !a.isDisqualified)}
@@ -1646,9 +3206,9 @@ export function Dashboard({
                     />
                   </div>
 
-                  <div className="min-w-[280px] sm:min-w-[320px] lg:min-w-[350px] flex-1 snap-start">
-                    <PipelineColumn 
-                      title="Enrolled" 
+                  <div className="w-full sm:w-auto sm:min-w-[300px] md:min-w-[340px] lg:min-w-[360px] sm:flex-1 sm:snap-start">
+                    <PipelineColumn
+                      title="Enrolled"
                       description="Campaign triggered / Outreach sent"
                       count={filteredAccounts.filter(a => a.status === 'contacted' && !a.isDisqualified).length}
                       accounts={filteredAccounts.filter(a => a.status === 'contacted' && !a.isDisqualified)}
@@ -1800,7 +3360,7 @@ export function Dashboard({
                    <div className="relative space-y-2 max-w-2xl text-left">
                      <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-300 text-[12px] font-bold uppercase tracking-normal border border-indigo-500/30">
                        <Users className="w-3" />
-                       <span>Cluster Campaign Automation</span>
+                       <span>Segment Campaign Automation</span>
                      </div>
                      <h3 className="text-xl font-semibold tracking-tight text-white font-sans">Coordinated Pattern Targeting</h3>
                      <p className="text-xs text-slate-300 leading-relaxed font-sans font-normal">
@@ -1817,7 +3377,7 @@ export function Dashboard({
                        className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold h-10 px-4 rounded-xl shadow-xs transition-colors flex items-center gap-2 text-xs border-0"
                      >
                        <RefreshCw className={`w-4 h-4 ${isClustering ? 'animate-spin' : ''}`} />
-                       {isClustering ? 'Analyzing Clusters...' : 'Recalculate Clusters'}
+                       {isClustering ? 'Analyzing Segments...' : 'Recalculate Segments'}
                      </Button>
                    </div>
                 </div>
@@ -1845,9 +3405,9 @@ export function Dashboard({
                 ) : clusters.length === 0 ? (
                   <div className="text-center py-24 bg-white dark:bg-slate-900 border border-dashed border-slate-205 rounded-3xl p-6">
                     <Users className="w-12 h-12 text-slate-400 mx-auto mb-4" />
-                    <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 font-sans">No Target Clusters Formed</h3>
+                    <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 font-sans">No Target Segments Formed</h3>
                     <p className="text-xs text-slate-500 dark:text-slate-300 max-w-sm mx-auto mt-1 leading-relaxed font-sans font-normal">
-                      Clusters require active discovered or imported accounts to formulate similarities of scale. Use the "Discovery" tab or upload custom accounts first.
+                      Segments require active discovered or imported accounts to formulate similarities of scale. Use the "Discovery" tab or upload custom accounts first.
                     </p>
                   </div>
                 ) : (
@@ -1948,27 +3508,29 @@ export function Dashboard({
                               <div className="space-y-2 text-left">
                                 <h4 className="text-[13px] font-semibold uppercase tracking-normal text-slate-400 font-sans flex items-center gap-1.5">
                                   <Users className="w-4 h-4 text-slate-400" />
-                                  <span>Mapped Accounts in Cluster ({matchedAccounts.length})</span>
+                                  <span>Mapped Accounts in Segment ({matchedAccounts.length})</span>
                                 </h4>
                                 {matchedAccounts.length === 0 ? (
                                   <p className="text-[13px] text-slate-400 italic py-2 font-normal">No active accounts matched with exclusion rules applied.</p>
                                 ) : (
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                                     {matchedAccounts.map((acc) => (
-                                      <div 
+                                      <div
                                         key={acc.id}
                                         onClick={() => {
                                           onAnalyzeAccount(acc.id);
                                           setSelectedAccountId(acc.id);
                                         }}
-                                        className="flex items-center justify-between p-3 rounded-xl border border-slate-150 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/50 hover:bg-indigo-50/30 hover:border-indigo-200 transition-colors cursor-pointer text-left group"
+                                        className="relative flex items-center justify-between p-3 pl-4 rounded-xl border border-indigo-200/70 dark:border-indigo-500/30 bg-gradient-to-br from-white to-indigo-50/40 dark:from-slate-800/70 dark:to-indigo-950/30 shadow-xs hover:shadow-md hover:border-indigo-400 dark:hover:border-indigo-400 hover:-translate-y-0.5 transition-all cursor-pointer text-left group overflow-hidden"
                                       >
+                                        <span aria-hidden className="absolute left-0 top-0 bottom-0 w-1 bg-gradient-to-b from-indigo-500 to-indigo-600 dark:from-indigo-400 dark:to-indigo-500" />
                                         <div className="space-y-0.5 min-w-0 pr-2">
-                                          <div className="font-bold text-xs text-slate-800 dark:text-slate-200 group-hover:text-indigo-950 truncate">{acc.name}</div>
-                                          <div className="text-[12px] font-mono text-slate-450 truncate">{acc.domain}</div>
+                                          <div className="font-bold text-[13px] text-slate-900 dark:text-slate-100 group-hover:text-indigo-700 dark:group-hover:text-indigo-300 truncate transition-colors">{acc.name}</div>
+                                          <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate">{acc.domain}</div>
                                         </div>
-                                        <span className="text-[12px] font-semibold font-mono text-indigo-650 dark:text-indigo-300 shrink-0">
-                                          {acc.fitScore}% →
+                                        <span className="inline-flex items-center gap-1 shrink-0 px-2 py-0.5 rounded-full bg-indigo-600 text-white text-[11px] font-mono font-bold shadow-xxs group-hover:bg-indigo-500 transition-colors">
+                                          {acc.fitScore}%
+                                          <ChevronRight className="w-3 h-3 -mr-0.5 transition-transform group-hover:translate-x-0.5" />
                                         </span>
                                       </div>
                                     ))}
@@ -2379,6 +3941,8 @@ export function Dashboard({
                   </DialogContent>
                 </Dialog>
               </div>
+            ) : activeTab === 'leads' ? (
+              <LeadsTab analysisDomains={accounts.map((a) => a.domain).filter(Boolean)} />
             ) : viewMode === 'grid' ? (
               /* Standard Pulse/Discovery Grid View */
               <motion.div 
@@ -2387,16 +3951,17 @@ export function Dashboard({
               >
                 <AnimatePresence mode="popLayout">
                   {sortedFilteredAccounts.map((account) => (
-                    <AccountCard 
-                      key={account.id} 
-                      account={account} 
+                    <AccountCard
+                      key={account.id}
+                      account={account}
                       targetRoles={analysis.icp.targetRoles}
                       onStatusChange={onUpdateAccount ? (newStatus) => onUpdateAccount({ ...account, status: newStatus }) : undefined}
                       onDelete={handleDeleteAccountDirectly}
+                      onVoiceCall={(acc) => setVoiceCallAccountId(acc.id)}
                       onClick={(acc) => {
                         onAnalyzeAccount(acc.id);
                         setSelectedAccountId(acc.id);
-                      }} 
+                      }}
                     />
                   ))}
                 </AnimatePresence>
@@ -2453,12 +4018,12 @@ export function Dashboard({
                     scoreText = 'text-rose-700 dark:text-rose-300';
                     chipLabel = 'Immediate';
                     showDot = true;
-                  } else if (info.priorityFlag === 'Nurture Queue') {
+                  } else if (info.priorityFlag === 'Warm Track') {
                     tierBorder = 'border-teal-300/70 dark:border-teal-800/50 hover:border-teal-400 dark:hover:border-teal-700/60';
                     railBg = 'bg-teal-50/40 dark:bg-teal-500/5';
                     chipClass = 'bg-teal-100/70 dark:bg-teal-500/15 border-teal-200 dark:border-teal-500/25 text-teal-700 dark:text-teal-300';
                     scoreText = 'text-teal-700 dark:text-teal-300';
-                    chipLabel = 'Nurture';
+                    chipLabel = 'Warm Track';
                   }
 
                   return (
@@ -2562,38 +4127,236 @@ export function Dashboard({
             )}
 
             {accounts.length === 0 && !isDiscovering && (
-              <div className="flex flex-col items-center justify-center py-20 text-center space-y-4">
-                <div className="p-4 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-400">
-                  <BarChart3 className="w-12 h-12" />
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+                className="flex flex-col items-center justify-center py-24 text-center space-y-5"
+              >
+                <div className="p-5 rounded-2xl bg-gradient-to-br from-orange-50 to-amber-50 dark:from-orange-950/30 dark:to-amber-950/20 border border-orange-100 dark:border-orange-900/30 text-orange-400 dark:text-orange-400">
+                  <Radar className="w-10 h-10" />
                 </div>
-                <div className="space-y-1">
-                  <h3 className="font-semibold text-slate-900 dark:text-slate-100 text-lg">No accounts discovered yet</h3>
-                  <p className="text-slate-500 dark:text-slate-300 max-w-xs text-sm">Run an autonomous discovery to find target accounts based on your business profile.</p>
+                <div className="space-y-1.5">
+                  <h3 className="font-semibold text-zinc-100 text-lg tracking-tight">No accounts discovered yet</h3>
+                  <p className="text-zinc-400 max-w-xs text-[13px] leading-relaxed">Run an autonomous scan to surface high-intent accounts that match your ICP.</p>
                 </div>
-                <Button onClick={onRefreshDiscovery} className="bg-indigo-600">Start Discovery</Button>
-              </div>
+                <Button
+                  onClick={onRefreshDiscovery}
+                  className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white font-semibold shadow-[0_1px_2px_rgba(245,130,32,0.35)] border-0 gap-2"
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  Start Discovery
+                </Button>
+              </motion.div>
             )}
           </div>
-        </section>
+        </motion.section>
       </main>
 
       <AnimatePresence>
         {selectedAccountId && selectedAccount && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setSelectedAccountId(null)}
-              className="fixed inset-0 bg-slate-900/40 backdrop-blur-[2px] z-40 transition-opacity"
-            />
-            <AccountDetail 
-              account={selectedAccount} 
-              onClose={() => setSelectedAccountId(null)} 
-              onUpdateAccount={onUpdateAccount}
-            />
-          </>
+          <AccountDetail
+            account={selectedAccount}
+            onClose={() => setSelectedAccountId(null)}
+            onUpdateAccount={onUpdateAccount}
+            onSyncToCrm={handleSyncSingleAccount}
+            onRefreshCrmStatus={handleRefreshCrmStatus}
+            onUpdateCrmRecord={handleUpdateCrmRecord}
+            crmConnected={crmConnected !== 'none'}
+            crmProviderName={getCrmName(crmConnected)}
+            isCrmLoading={isCrmLoading}
+          />
         )}
+      </AnimatePresence>
+
+      {/* Industry Discovery side panel — runs Google Maps searches using the
+          services + target industries extracted from the seller's analyzed
+          website, surfacing companies that match the same industry & service
+          mix (not a per-account "nearby" search). */}
+      <MapsPanel
+        analysis={analysis}
+        analyzedUrl={analyzedUrl || undefined}
+        open={isMapsPanelOpen}
+        onClose={() => setIsMapsPanelOpen(false)}
+        searchGeneration={mapsSearchGeneration}
+        onAddToPipeline={(payload) => {
+          if (!onAddAccount) return;
+          // Insert the Maps-discovered business as a fresh TargetAccount
+          // with sensible starting scores; user can run analyze-account
+          // later to enrich it fully with AI intelligence.
+          const newAcc: TargetAccount = {
+            id: `maps-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+            name: payload.name,
+            domain: payload.domain || '',
+            description: payload.address ? `Discovered via Google Maps · ${payload.address}` : 'Discovered via Google Maps',
+            fitReason: `Matches ${analysis?.targetIndustries?.[0] || 'your'} industry & service profile on Google Maps`,
+            signals: payload.address ? [`Located at ${payload.address}`] : [],
+            fitScore: 60,
+            timingScore: 50,
+            priorityIndex: 55,
+            priorityFlag: 'Standard Follow-up',
+            outreachAngle: 'Introductory outreach — enrich with a fresh analyze-account run.',
+            status: 'new',
+          };
+          onAddAccount(newAcc);
+        }}
+      />
+
+
+      {/* Scheduled AI Calls — pending queue management + global scheduler */}
+      <Dialog open={isSchedulesOpen} onOpenChange={setIsSchedulesOpen}>
+        <DialogContent className="sm:max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 p-6 rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <CalendarClock className="w-4 h-4 text-orange-500" />
+              Scheduled AI Calls
+            </DialogTitle>
+            <DialogDescription>
+              The AI will launch each conversation at the scheduled time using the selected script. Keep this tab open so the browser can capture your mic and audio.
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Global scheduler entry point — pick any account from the pipeline
+              and jump straight into that account's call scheduler modal. This
+              is the "same scheduling flow, but for all accounts" surface so
+              users don't have to hunt for a specific account card first. */}
+          {accounts.length > 0 && (
+            <div className="p-3 rounded-xl border border-orange-200 dark:border-orange-900/40 bg-orange-50/50 dark:bg-orange-950/15 space-y-2">
+              <div className="flex items-center gap-1.5 text-[10.5px] font-bold tracking-wide uppercase text-orange-700 dark:text-orange-300">
+                <CalendarClock className="w-3.5 h-3.5" />
+                New Scheduled Call
+              </div>
+              <div className="flex gap-2">
+                <select
+                  value={newScheduleAccountId}
+                  onChange={(e) => setNewScheduleAccountId(e.target.value)}
+                  className="flex-1 min-w-0 h-9 px-2 text-[13px] rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-400"
+                >
+                  <option value="">— Pick an account —</option>
+                  {accounts
+                    .slice()
+                    .sort((a, b) => a.name.localeCompare(b.name))
+                    .map((a) => {
+                      const hasSchedule = pendingSchedules.some((s) => s.accountId === a.id);
+                      return (
+                        <option key={a.id} value={a.id}>
+                          {a.name}{a.domain ? ` · ${a.domain}` : ''}{hasSchedule ? ' · already scheduled' : ''}
+                        </option>
+                      );
+                    })}
+                </select>
+                <Button
+                  size="sm"
+                  disabled={!newScheduleAccountId}
+                  onClick={() => {
+                    if (!newScheduleAccountId) return;
+                    setIsSchedulesOpen(false);
+                    setVoiceCallAccountId(newScheduleAccountId);
+                    setNewScheduleAccountId('');
+                  }}
+                  className="h-9 px-3 gap-1 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white font-semibold shadow-[0_1px_3px_rgba(245,130,32,0.35)] border-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Open the scheduler for this account"
+                >
+                  <Phone className="w-3.5 h-3.5" /> Open
+                </Button>
+              </div>
+              <p className="text-[10.5px] text-zinc-500 dark:text-zinc-400 leading-snug">
+                Picks a contact from that account's personas / stakeholder map in the next step.
+              </p>
+            </div>
+          )}
+
+          {pendingSchedules.length === 0 ? (
+            <p className="py-4 text-center text-sm text-slate-500 dark:text-slate-400">
+              No AI calls are queued yet.
+            </p>
+          ) : (
+            <div className="space-y-2 max-h-[420px] overflow-y-auto">
+              {pendingSchedules
+                .slice()
+                .sort((a, b) => new Date(a.scheduledFor).getTime() - new Date(b.scheduledFor).getTime())
+                .map(s => (
+                  <div
+                    key={s.id}
+                    className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-3 flex items-start justify-between gap-3"
+                  >
+                    <div className="min-w-0 space-y-0.5">
+                      <div className="text-[13px] font-semibold text-slate-900 dark:text-slate-100 truncate">
+                        {s.accountName}
+                      </div>
+                      <div className="text-[11.5px] text-slate-600 dark:text-slate-300 flex items-center gap-1">
+                        <CalendarClock className="w-3 h-3 text-orange-500" /> {s.wallClockLabel}
+                      </div>
+                      <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
+                        {s.script.replace('_', ' ')} · {s.contactName === 'there' ? 'no contact name' : s.contactName}
+                      </div>
+                      <div className="mt-1">
+                        {s.mode === 'phone' && s.phoneNumber ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-mono text-emerald-700 dark:text-emerald-300 bg-emerald-500/10 border border-emerald-500/30 px-1.5 py-0.5 rounded">
+                            <Phone className="w-2.5 h-2.5" /> Vapi dial · {s.phoneNumber}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-mono text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-1.5 py-0.5 rounded">
+                            <CalendarClock className="w-2.5 h-2.5" /> Browser mic
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex flex-col gap-1 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsSchedulesOpen(false);
+                          setVoiceCallAccountId(s.accountId);
+                        }}
+                        className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-900/50 rounded-md px-2 py-1 cursor-pointer inline-flex items-center gap-1"
+                        title="Open the account's call modal now"
+                      >
+                        <Phone className="w-3 h-3" /> Open
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => cancelScheduledCall(s.id)}
+                        className="text-[11px] font-semibold text-rose-600 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 dark:hover:bg-rose-950/60 border border-rose-200 dark:border-rose-900/50 rounded-md px-2 py-1 cursor-pointer inline-flex items-center gap-1"
+                      >
+                        <Trash2 className="w-3 h-3" /> Cancel
+                      </button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* AI Voice Call modal */}
+      <AnimatePresence>
+        {voiceCallAccountId && (() => {
+          const acc = evaluatedAccounts.find(a => a.id === voiceCallAccountId);
+          if (!acc) return null;
+          return (
+            <VoiceCallModal
+              account={acc}
+              sellerContext={analysis}
+              onClose={() => {
+                setVoiceCallAccountId(null);
+                setAutoStartSchedule(null);
+              }}
+              onCallCompleted={(accountId, call: VoiceCallState) => {
+                if (onUpdateAccount) {
+                  onUpdateAccount({ ...acc, voiceCall: call });
+                }
+              }}
+              onSchedule={scheduleCall}
+              existingSchedule={existingScheduleForVoiceCall}
+              onCancelSchedule={cancelScheduledCall}
+              autoStart={!!autoStartSchedule && autoStartSchedule.accountId === voiceCallAccountId}
+              initialScript={autoStartSchedule?.script}
+              initialContactName={autoStartSchedule?.contactName}
+              pipelineAccounts={evaluatedAccounts}
+            />
+          );
+        })()}
       </AnimatePresence>
 
       <Dialog open={isCrmOpen} onOpenChange={setIsCrmOpen}>
@@ -2622,36 +4385,238 @@ export function Dashboard({
                 </div>
               </div>
 
-              <div className="flex gap-2 pt-2">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  disabled={isCrmLoading}
-                  onClick={() => {
-                    setIsCrmLoading(true);
-                    setTimeout(() => {
-                      setIsCrmLoading(false);
-                      toast.success('CRM Database has been fully synchronized with current GTM Waves.');
-                    }, 1200);
-                  }}
-                  className="flex-1 text-xs gap-1.5 h-9"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isCrmLoading ? 'animate-spin' : ''}`} /> Trigger Daily Sync
-                </Button>
-                <Button 
-                  variant="ghost" 
-                  size="sm" 
-                  onClick={() => {
-                    setCrmConnected('none');
-                    setCrmStep(1);
-                    setIsCrmOpen(false);
-                    toast.info('CRM Integration disconnected.');
-                  }}
-                  className="text-xs text-red-500 dark:text-red-400 hover:text-red-655 hover:bg-red-50 h-9"
-                >
-                  Disconnect API
-                </Button>
-              </div>
+              {crmSyncActive && crmSyncProgress.length > 0 && (
+                (() => {
+                  const done = crmSyncProgress.filter(p => p.status === 'success' || p.status === 'failed').length;
+                  const total = crmSyncProgress.length;
+                  const current = crmSyncProgress.find(p => p.status === 'syncing');
+                  const pct = Math.round((done / total) * 100);
+                  return (
+                    <div className="border border-slate-200 dark:border-slate-700 rounded-xl p-3 space-y-2.5 bg-white dark:bg-slate-900 text-left">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <div className="relative flex h-2 w-2">
+                            {isCrmLoading && (
+                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-400 opacity-75" />
+                            )}
+                            <span className={`relative inline-flex h-2 w-2 rounded-full ${isCrmLoading ? 'bg-indigo-500' : 'bg-emerald-500'}`} />
+                          </div>
+                          <span className="text-[12px] font-semibold text-slate-800 dark:text-slate-100">
+                            {isCrmLoading ? `Syncing ${done + 1}/${total}` : `Sync complete (${done}/${total})`}
+                          </span>
+                        </div>
+                        {!isCrmLoading && (
+                          <button
+                            onClick={() => setCrmSyncActive(false)}
+                            className="text-[11px] text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 underline"
+                          >
+                            Dismiss
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Progress bar */}
+                      <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-indigo-400 to-indigo-600 transition-all duration-300"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+
+                      {/* Currently syncing account (large label) */}
+                      {current && (
+                        <div className="text-[11.5px] text-slate-600 dark:text-slate-400 italic truncate">
+                          → {current.account}
+                        </div>
+                      )}
+
+                      {/* Compact per-account result list — failed rows are clickable to expand diagnostics */}
+                      <div className="max-h-80 overflow-y-auto space-y-1 scrollbar-thin -mx-0.5 px-0.5">
+                        {crmSyncProgress.map((p, i) => {
+                          const isExpanded = crmSyncExpandedIdx === i;
+                          const canExpand = p.status === 'failed' && !!p.payloadSent;
+                          return (
+                            <div key={i} className="space-y-1">
+                              <button
+                                type="button"
+                                disabled={!canExpand}
+                                onClick={() => canExpand && setCrmSyncExpandedIdx(isExpanded ? null : i)}
+                                className={`w-full flex items-center justify-between gap-2 py-1 px-2 rounded-md text-[11.5px] transition-all text-left ${
+                                  p.status === 'syncing' ? 'bg-indigo-50 dark:bg-indigo-950/30 text-indigo-800 dark:text-indigo-200' :
+                                  p.status === 'success' ? 'text-emerald-700 dark:text-emerald-300' :
+                                  p.status === 'failed' ? 'bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-300 hover:bg-rose-100/70 dark:hover:bg-rose-950/40 cursor-pointer' :
+                                  'text-slate-400 dark:text-slate-500'
+                                } ${!canExpand ? 'cursor-default' : ''}`}
+                              >
+                                <span className="truncate flex-1 flex items-center">
+                                  <span className="font-mono text-[10px] opacity-70 mr-1.5">{String(i + 1).padStart(2, '0')}</span>
+                                  <span className="truncate">{p.account}</span>
+                                </span>
+                                <span className="shrink-0 flex items-center gap-1">
+                                  {p.status === 'pending' && <Clock className="w-3 h-3" />}
+                                  {p.status === 'syncing' && <RefreshCw className="w-3 h-3 animate-spin" />}
+                                  {p.status === 'success' && <>
+                                    <CheckCircle2 className="w-3 h-3" />
+                                    {p.recordId && <span className="font-mono text-[10px] opacity-70">#{p.recordId}</span>}
+                                  </>}
+                                  {p.status === 'failed' && (
+                                    <>
+                                      {p.httpStatus && (
+                                        <span className="font-mono text-[10px] opacity-70">HTTP {p.httpStatus}</span>
+                                      )}
+                                      <span className="text-[10px] font-semibold">fail</span>
+                                      {canExpand && (
+                                        <ChevronRight className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                                      )}
+                                    </>
+                                  )}
+                                </span>
+                              </button>
+
+                              {/* Expanded diagnostics */}
+                              {isExpanded && p.status === 'failed' && (
+                                <div className="mx-2 mb-2 p-2.5 rounded-lg border border-rose-200 dark:border-rose-800/60 bg-white dark:bg-slate-950 space-y-2 text-[11px] text-left">
+                                  {p.message && (
+                                    <div>
+                                      <div className="font-bold text-slate-500 dark:text-slate-400 mb-0.5 uppercase tracking-wide text-[9px]">Error</div>
+                                      <div className="text-slate-700 dark:text-slate-300 leading-relaxed">{p.message}</div>
+                                    </div>
+                                  )}
+                                  {p.payloadSent && (
+                                    <div>
+                                      <div className="font-bold text-slate-500 dark:text-slate-400 mb-0.5 uppercase tracking-wide text-[9px]">Payload we POSTed</div>
+                                      <pre className="font-mono text-[10.5px] bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed">
+{JSON.stringify(p.payloadSent, null, 2)}
+                                      </pre>
+                                    </div>
+                                  )}
+                                  {p.responsePreview && (
+                                    <div>
+                                      <div className="font-bold text-slate-500 dark:text-slate-400 mb-0.5 uppercase tracking-wide text-[9px]">Server response preview</div>
+                                      <pre className="font-mono text-[10.5px] bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-2 overflow-x-auto whitespace-pre-wrap break-all leading-relaxed max-h-32">
+{p.responsePreview}
+                                      </pre>
+                                    </div>
+                                  )}
+                                  {p.payloadSent && p.endpoint && (
+                                    <div className="pt-1 flex gap-2">
+                                      <button
+                                        onClick={async () => {
+                                          const bodyJson = JSON.stringify(p.payloadSent);
+                                          const curl = `curl -X POST '${p.endpoint}' \\\n  -H 'Authorization: <YOUR_JWT>' \\\n  -H 'Content-Type: application/json' \\\n  -d '${bodyJson.replace(/'/g, "'\\''")}'`;
+                                          try {
+                                            await navigator.clipboard.writeText(curl);
+                                            toast.success('Copied curl to clipboard. Paste `<YOUR_JWT>` and run to replay.');
+                                          } catch {
+                                            toast.error('Could not copy to clipboard');
+                                          }
+                                        }}
+                                        className="text-[10px] font-semibold px-2 py-1 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
+                                      >
+                                        Copy as curl
+                                      </button>
+                                      <button
+                                        onClick={async () => {
+                                          try {
+                                            await navigator.clipboard.writeText(JSON.stringify(p.payloadSent, null, 2));
+                                            toast.success('Payload copied to clipboard');
+                                          } catch { toast.error('Could not copy'); }
+                                        }}
+                                        className="text-[10px] font-semibold px-2 py-1 rounded border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
+                                      >
+                                        Copy payload
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()
+              )}
+
+              {/* Only surface "Last sync" when the run actually pushed something.
+                  A run that pushed 0 (because everything was already synced)
+                  should not look like a success — see empty-state below. */}
+              {crmLastSync && !crmSyncActive && crmLastSync.pushed > 0 && (
+                <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/40 rounded-lg p-2.5 text-left text-[12px] text-emerald-800 dark:text-emerald-200 space-y-0.5">
+                  <div className="font-semibold">
+                    Last sync: {crmLastSync.pushed} pushed{crmLastSync.failed > 0 ? `, ${crmLastSync.failed} failed` : ''}
+                  </div>
+                  <div className="text-[11px] text-emerald-700 dark:text-emerald-300/70">
+                    {new Date(crmLastSync.at).toLocaleString()}
+                  </div>
+                </div>
+              )}
+
+              {(() => {
+                const eligible = accounts.filter(a => !a.isDisqualified);
+                const newCount = eligible.filter(a => !a.crmSyncedAt).length;
+                const skippedCount = eligible.length - newCount;
+                const nothingNewButHasMatches = eligible.length > 0 && newCount === 0;
+
+                return (
+                  <>
+                    {nothingNewButHasMatches ? (
+                      // Full empty-state block replaces both the summary line
+                      // and the Push button when there's nothing new to sync.
+                      <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/40 p-3 text-left space-y-1">
+                        <div className="flex items-center gap-1.5 text-[12px] font-semibold text-slate-700 dark:text-slate-200">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                          No new records to sync.
+                        </div>
+                        <div className="text-[11.5px] text-slate-500 dark:text-slate-400 leading-snug">
+                          All matched accounts already exist in the CRM.
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-[11.5px] text-slate-500 dark:text-slate-400 text-left leading-snug pt-1">
+                        {newCount > 0 ? (
+                          <>
+                            <strong className="text-slate-700 dark:text-slate-200">{newCount}</strong> new to push
+                            {skippedCount > 0 && (
+                              <> · <strong className="text-slate-700 dark:text-slate-200">{skippedCount}</strong> already synced (will be skipped)</>
+                            )}
+                          </>
+                        ) : (
+                          <>No qualified accounts to sync.</>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex gap-2 pt-1">
+                      {/* Push button is only shown when there is genuinely new work
+                          to do. When everything is already in the CRM, the empty-
+                          state block above stands alone. */}
+                      {newCount > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={isCrmLoading}
+                          onClick={handleTriggerCrmSync}
+                          className="flex-1 text-xs gap-1.5 h-9"
+                        >
+                          <RefreshCw className={`w-3.5 h-3.5 ${isCrmLoading ? 'animate-spin' : ''}`} />
+                          {isCrmLoading
+                            ? 'Syncing…'
+                            : `Push ${newCount} new account${newCount === 1 ? '' : 's'}`}
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleDisconnectCrm}
+                        className={`text-xs text-red-500 dark:text-red-400 hover:text-red-655 hover:bg-red-50 h-9 ${newCount === 0 ? 'flex-1' : ''}`}
+                      >
+                        Disconnect
+                      </Button>
+                    </div>
+                  </>
+                );
+              })()}
             </div>
           ) : crmStep === 1 ? (
             /* Select CRM Step 1 */
@@ -2732,33 +4697,52 @@ export function Dashboard({
                   <span className="text-xs font-medium text-slate-500 dark:text-slate-300">Integrating secure systems</span>
                 </div>
 
-                {selectedCrmType === 'salesforce' && (
+                {(selectedCrmType === 'salesforce' || selectedCrmType === 'prospectaccel') && (
                   <div className="space-y-1">
-                    <label className="text-[13px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wide">Salesforce Instance URL</label>
-                    <input 
-                      type="text" 
-                      value={crmUrl} 
-                      onChange={(e) => setCrmUrl(e.target.value)} 
-                      placeholder="https://yourcompany.my.salesforce.com" 
+                    <label className="text-[13px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wide">
+                      {selectedCrmType === 'salesforce' ? 'Salesforce Instance URL' : 'CRM Receive-Data Endpoint'}
+                    </label>
+                    <input
+                      type="text"
+                      value={crmUrl}
+                      onChange={(e) => setCrmUrl(e.target.value)}
+                      placeholder={selectedCrmType === 'salesforce'
+                        ? 'https://yourcompany.my.salesforce.com'
+                        : 'https://your-crm.example.com/api/receive-data/'}
                       className="w-full h-9 px-3 text-xs rounded-lg border border-slate-200 dark:border-slate-700 outline-none focus:ring-2 focus:ring-indigo-500/20"
                     />
                   </div>
                 )}
 
                 <div className="space-y-1">
-                  <label className="text-[13px] font-bold text-slate-655 uppercase tracking-wide">API Personal Token / secrets</label>
-                  <input 
-                    type="password" 
-                    value={crmApiKey} 
-                    onChange={(e) => setCrmApiKey(e.target.value)} 
-                    placeholder={selectedCrmType === 'hubspot' ? 'pat-na1-xxxx-xxxx-xxxx-xxxx' : selectedCrmType === 'prospectaccel' ? 'pa-live-xxxx-xxxx-xxxx' : 'Enter access token...'} 
+                  <label className="text-[13px] font-bold text-slate-655 uppercase tracking-wide">
+                    {selectedCrmType === 'prospectaccel' ? 'JWT Signing Secret (HS256)' : 'API Personal Token / secret'}
+                  </label>
+                  <input
+                    type="password"
+                    value={crmApiKey}
+                    onChange={(e) => setCrmApiKey(e.target.value)}
+                    placeholder={
+                      selectedCrmType === 'hubspot' ? 'pat-na1-xxxx-xxxx-xxxx-xxxx' :
+                      selectedCrmType === 'prospectaccel' ? 'Shared HS256 secret from your CRM' :
+                      'Enter access token...'
+                    }
                     className="w-full h-9 px-3 text-xs rounded-lg border border-slate-205 outline-none focus:ring-2 focus:ring-indigo-500/20"
                   />
+                  {selectedCrmType === 'prospectaccel' && (
+                    <p className="text-[11px] text-slate-400 dark:text-slate-500 leading-relaxed pt-1">
+                      This is the shared secret your <code className="font-mono">receive-data</code> view uses to verify signed JWTs. Never commit it to source control.
+                    </p>
+                  )}
                 </div>
 
                 <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 rounded-lg p-3 text-[12px] text-slate-500 dark:text-slate-300 leading-normal flex items-start gap-2">
                   <CloudLightning className="w-4 h-4 text-amber-500 dark:text-amber-400 shrink-0 mt-0.5" />
-                  <span>Your credentials are encrypted inside standard secure client-side storage sessions and sent over TLS.</span>
+                  <span>
+                    {selectedCrmType === 'prospectaccel'
+                      ? 'The secret is stored server-side only. The browser holds a random session ID — never the raw secret.'
+                      : 'Your credentials are encrypted inside standard secure client-side storage sessions and sent over TLS.'}
+                  </span>
                 </div>
               </div>
 
@@ -2816,13 +4800,30 @@ export function Dashboard({
                 </div>
               </div>
 
+              {/* Industry Category — auto-derived from the current analysis.
+                  Sourced from analysis.targetIndustries[0] so the label always
+                  matches the exact industry the pipeline identified. */}
+              {(() => {
+                const detectedIndustry = (analysis?.targetIndustries || []).find(s => (s || '').trim());
+                if (!detectedIndustry) return null;
+                return (
+                  <div className="space-y-1.5">
+                    <span className="text-[10px] font-mono uppercase tracking-wider text-slate-500 dark:text-slate-400">Industry Category</span>
+                    <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 text-indigo-700 dark:text-indigo-300 text-xs font-semibold">
+                      <Sparkles className="w-3 h-3" />
+                      {detectedIndustry}
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div className="space-y-2">
                 <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block">Report / Outreach Name</label>
                 <input
                   type="text"
                   value={reportNameInput}
                   onChange={(e) => setReportNameInput(e.target.value)}
-                  placeholder="e.g. Outreach - APAC Market Expansion"
+                  placeholder={getDefaultReportName(analysis) || 'e.g. Outreach - APAC Market Expansion'}
                   className="w-full h-11 px-3 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-sans font-semibold text-slate-800 dark:text-slate-200"
                 />
               </div>
@@ -2848,6 +4849,66 @@ export function Dashboard({
             </motion.div>
           </>
         )}
+      </AnimatePresence>
+
+      {/* ========================================================= */}
+      {/* 🗑 CONFIRM DELETE ACCOUNT                                */}
+      {/* ========================================================= */}
+      <AnimatePresence>
+        {pendingDeleteAccountId && (() => {
+          const pendingAccount = accounts.find(a => a.id === pendingDeleteAccountId);
+          const displayName = pendingAccount?.name || pendingAccount?.domain || 'this account';
+          return (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setPendingDeleteAccountId(null)}
+                className="fixed inset-0 bg-slate-900/60 backdrop-blur-[2px] z-50 transition-opacity"
+              />
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl p-6 z-50 space-y-5 text-left font-sans"
+              >
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300">
+                    <Trash2 className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 leading-tight">Remove account?</h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-300">This account will be dropped from the current report.</p>
+                  </div>
+                </div>
+
+                <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-3 py-2.5 text-sm text-slate-800 dark:text-slate-200 font-semibold truncate">
+                  {displayName}
+                </div>
+
+                <div className="flex gap-2.5 pt-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPendingDeleteAccountId(null)}
+                    className="flex-1 text-slate-500 dark:text-slate-300 hover:text-slate-800 hover:bg-slate-50 h-10 text-xs font-bold cursor-pointer"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={handleConfirmDeleteAccount}
+                    className="flex-1 bg-rose-600 hover:bg-rose-700 text-white h-10 text-xs font-bold cursor-pointer"
+                  >
+                    Delete Account
+                  </Button>
+                </div>
+              </motion.div>
+            </>
+          );
+        })()}
       </AnimatePresence>
 
       {/* ========================================================= */}
@@ -3371,7 +5432,7 @@ function PipelineColumn({
   onDelete?: (id: string, event: React.MouseEvent) => void
 }) {
   return (
-    <div className="bg-slate-100 dark:bg-slate-800/70 p-4 rounded-2xl flex flex-col h-[calc(100vh-250px)] min-h-[480px] border border-slate-200 dark:border-slate-700/50 shadow-inner">
+    <div className="bg-slate-100 dark:bg-slate-800/70 p-4 rounded-2xl flex flex-col h-auto sm:h-[calc(100vh-250px)] max-h-[70vh] sm:max-h-none min-h-[360px] sm:min-h-[480px] border border-slate-200 dark:border-slate-700/50 shadow-inner">
       <div className="mb-4">
         <div className="flex items-center justify-between mb-1">
           <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm flex items-center gap-2">
@@ -3383,11 +5444,12 @@ function PipelineColumn({
       </div>
 
       <ScrollArea className="flex-1 -mx-2 px-2">
-        <div className="space-y-4 pb-4">
+        <div className="space-y-3 pb-4">
           {accounts.map(account => (
-            <AccountCard 
-              key={account.id} 
-              account={account} 
+            <AccountCard
+              key={account.id}
+              account={account}
+              compact
               targetRoles={targetRoles}
               onStatusChange={onUpdateStatus ? (newStatus) => onUpdateStatus({ ...account, status: newStatus }) : undefined}
               onDelete={onDelete}

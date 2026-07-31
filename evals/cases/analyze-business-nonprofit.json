@@ -1,0 +1,15 @@
+{
+  "name": "analyze-business-nonprofit",
+  "endpoint": "/api/analyze-business",
+  "description": "Non-commercial/non-profit domain should still yield a valid ICP shape without crashing on missing revenue signals.",
+  "input": {
+    "url": "https://redcross.org"
+  },
+  "expectations": [
+    { "type": "hasField", "path": "businessName" },
+    { "type": "matchField", "path": "businessName", "regex": "red.*cross|american" },
+    { "type": "arrayLengthAtLeast", "path": "services", "min": 2 },
+    { "type": "arrayLengthAtLeast", "path": "targetIndustries", "min": 1 },
+    { "type": "hasField", "path": "icp.title" }
+  ]
+}

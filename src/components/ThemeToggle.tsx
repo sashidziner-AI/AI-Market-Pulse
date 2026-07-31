@@ -1,52 +1,49 @@
 import { useEffect, useState } from 'react';
 import { Sun, Moon } from 'lucide-react';
 
-type Theme = 'light' | 'dark';
+// Read the current theme directly from the DOM class — no duplicate state.
+function isDarkNow() {
+  return document.documentElement.classList.contains('dark');
+}
 
-function getInitialTheme(): Theme {
+export function applyTheme(theme: 'light' | 'dark') {
+  if (theme === 'dark') document.documentElement.classList.add('dark');
+  else document.documentElement.classList.remove('dark');
+  try { localStorage.setItem('gtm_theme', theme); } catch {}
+}
+
+// Initialize on first load: stored pref → dark default.
+// (Per-screen overrides in App.tsx may still flip this — Saved Reports forces
+// light regardless of stored preference. The stored pref applies elsewhere.)
+(function initTheme() {
   try {
-    const stored = localStorage.getItem('gtm_theme') as Theme | null;
-    if (stored === 'light' || stored === 'dark') return stored;
-    if (window.matchMedia?.('(prefers-color-scheme: dark)').matches) return 'dark';
+    const stored = localStorage.getItem('gtm_theme');
+    if (stored === 'light' || stored === 'dark') { applyTheme(stored); return; }
   } catch {}
-  return 'light';
-}
-
-function applyTheme(theme: Theme) {
-  const root = document.documentElement;
-  if (theme === 'dark') root.classList.add('dark');
-  else root.classList.remove('dark');
-}
-
-export function useTheme() {
-  const [theme, setTheme] = useState<Theme>(getInitialTheme);
-
-  useEffect(() => {
-    applyTheme(theme);
-    try {
-      localStorage.setItem('gtm_theme', theme);
-    } catch {}
-  }, [theme]);
-
-  return {
-    theme,
-    toggle: () => setTheme(t => (t === 'dark' ? 'light' : 'dark')),
-  };
-}
+  applyTheme('dark');
+})();
 
 export function ThemeToggle({ className = '' }: { className?: string }) {
-  const { theme, toggle } = useTheme();
-  const isDark = theme === 'dark';
+  // Mirror the DOM class so the icon stays correct regardless of who changed the theme.
+  const [dark, setDark] = useState(isDarkNow);
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => setDark(isDarkNow()));
+    observer.observe(document.documentElement, { attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+
+  const toggle = () => applyTheme(dark ? 'light' : 'dark');
 
   return (
     <button
       type="button"
       onClick={toggle}
-      title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      title={dark ? 'Switch to light mode' : 'Switch to dark mode'}
       aria-label="Toggle dark mode"
       className={`h-8 w-8 inline-flex items-center justify-center rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-colors cursor-pointer ${className}`}
     >
-      {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+      {dark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
     </button>
   );
 }
