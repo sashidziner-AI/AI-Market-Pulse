@@ -2075,7 +2075,7 @@ export function AccountDetail({
               disabled={isCrmLoading || !onSyncToCrm}
               className="w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-sm shadow-indigo-200 disabled:opacity-70 disabled:cursor-not-allowed"
             >
-              {isCrmLoading ? 'Pushing…' : `Push this account to ${crmProviderName}`}
+              {isCrmLoading ? 'Adding…' : `Add this account to ${crmProviderName} CRM`}
             </Button>
             {onUpdateAccount && (
               <button

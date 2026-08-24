@@ -1579,10 +1579,10 @@ export function Dashboard({
 
           <nav className="space-y-1">
             <SidebarItem icon={<LayoutDashboard />} label="Analysis" active={activeTab === 'recommendations'} onClick={() => setActiveTab('recommendations')} />
+            <SidebarItem icon={<UserCheck />} label="Lead Lifecycle & Enrichment" active={activeTab === 'leads'} onClick={() => setActiveTab('leads')} />
             <SidebarItem icon={<Users />} label="Target Segments" active={activeTab === 'clusters'} onClick={() => setActiveTab('clusters')} />
             <SidebarItem icon={<Network />} label="Partner Pathways" active={activeTab === 'partner-pathways'} onClick={() => setActiveTab('partner-pathways')} />
             <SidebarItem icon={<ListTodo />} label="GTM Pipeline" active={activeTab === 'pipeline'} onClick={() => setActiveTab('pipeline')} />
-            <SidebarItem icon={<UserCheck />} label="Leads" active={activeTab === 'leads'} onClick={() => setActiveTab('leads')} />
           </nav>
 
           {crmConnected !== 'none' && (
@@ -4629,7 +4629,17 @@ export function Dashboard({
               </DialogHeader>
               
               <div className="grid grid-cols-1 gap-2.5 px-1 py-2">
-                <button 
+                <button
+                  onClick={() => setSelectedCrmType('prospectaccel')}
+                  className={`p-3 rounded-xl border text-left transition-all flex items-start gap-3 ${selectedCrmType === 'prospectaccel' ? 'border-indigo-500 bg-indigo-50/20 dark:bg-indigo-950/40 shadow-xs' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50'}`}
+                >
+                  <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center font-bold text-indigo-605 shrink-0 text-xs select-none">PA</div>
+                  <div>
+                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200">Prospect Accel Integration</div>
+                    <div className="text-[13px] text-slate-500 dark:text-slate-300 mt-0.5 leading-normal">Synchronize high-converting targeted matches and real-time triggers seamlessly.</div>
+                  </div>
+                </button>
+                <button
                   onClick={() => setSelectedCrmType('hubspot')}
                   className={`p-3 rounded-xl border text-left transition-all flex items-start gap-3 ${selectedCrmType === 'hubspot' ? 'border-orange-500 bg-orange-50/20 dark:bg-orange-950/40 shadow-xs' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50'}`}
                 >
@@ -4639,7 +4649,7 @@ export function Dashboard({
                     <div className="text-[13px] text-slate-500 dark:text-slate-300 mt-0.5 leading-normal">Sync companies, contact records, and custom intent signals in real time.</div>
                   </div>
                 </button>
-                <button 
+                <button
                   onClick={() => setSelectedCrmType('salesforce')}
                   className={`p-3 rounded-xl border text-left transition-all flex items-start gap-3 ${selectedCrmType === 'salesforce' ? 'border-sky-505 bg-sky-50/20 dark:bg-sky-950/40 shadow-xs' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50'}`}
                 >
@@ -4647,26 +4657,6 @@ export function Dashboard({
                   <div>
                     <div className="text-xs font-bold text-slate-800 dark:text-slate-200">Salesforce Integration</div>
                     <div className="text-[13px] text-slate-500 dark:text-slate-300 mt-0.5 leading-normal">Map overall ICP fit score and prioritized buyers to active prospect lists.</div>
-                  </div>
-                </button>
-                <button 
-                  onClick={() => setSelectedCrmType('pipedrive')}
-                  className={`p-3 rounded-xl border text-left transition-all flex items-start gap-3 ${selectedCrmType === 'pipedrive' ? 'border-emerald-500 bg-emerald-50/20 dark:bg-emerald-950/40 shadow-xs' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50'}`}
-                >
-                  <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center font-bold text-emerald-600 dark:text-emerald-300 shrink-0 text-xs select-none">PD</div>
-                  <div>
-                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200">Pipedrive Integration</div>
-                    <div className="text-[13px] text-slate-500 dark:text-slate-300 mt-0.5 leading-normal">Convert discovered profiles into active leads directly inside visual deals.</div>
-                  </div>
-                </button>
-                <button 
-                  onClick={() => setSelectedCrmType('prospectaccel')}
-                  className={`p-3 rounded-xl border text-left transition-all flex items-start gap-3 ${selectedCrmType === 'prospectaccel' ? 'border-indigo-500 bg-indigo-50/20 dark:bg-indigo-950/40 shadow-xs' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50'}`}
-                >
-                  <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center font-bold text-indigo-605 shrink-0 text-xs select-none">PA</div>
-                  <div>
-                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200">Prospect Accel Integration</div>
-                    <div className="text-[13px] text-slate-500 dark:text-slate-300 mt-0.5 leading-normal">Synchronize high-converting targeted matches and real-time triggers seamlessly.</div>
                   </div>
                 </button>
               </div>

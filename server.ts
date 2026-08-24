@@ -57,6 +57,7 @@ for (const route of [
   "/api/enrichment/sweep",
   "/api/analyze-social",
   "/api/jarvis/chat",
+  "/api/jarvis/stream",
   "/api/jarvis/tts",
   "/api/learn-email-pattern",
   "/api/guess-email",
@@ -5844,10 +5845,41 @@ const respondToolSchema = {
 } as const;
 
 type JarvisResult = { reply: string; action?: string; args?: Record<string, unknown> };
+type JarvisTurn = { role: "user" | "jarvis"; text: string };
 
-async function jarvisReplyAnthropic(message: string, context?: string): Promise<JarvisResult> {
+// Turns the client's history into a strictly-alternating user/assistant array.
+// Anthropic rejects consecutive same-role messages, and requires the first
+// message to be `user`. Also enforces a sanity cap on turn count and per-turn
+// text length so a malicious client can't blow up token spend.
+const MAX_HISTORY_TURNS = 10;
+const MAX_TURN_CHARS = 2000;
+function normalizeHistory(history: unknown): Array<{ role: "user" | "assistant"; content: string }> {
+  if (!Array.isArray(history)) return [];
+  const out: Array<{ role: "user" | "assistant"; content: string }> = [];
+  for (const raw of history.slice(-MAX_HISTORY_TURNS)) {
+    if (!raw || typeof raw !== "object") continue;
+    const t = raw as JarvisTurn;
+    const role: "user" | "assistant" = t.role === "user" ? "user" : "assistant";
+    const text = typeof t.text === "string" ? t.text.slice(0, MAX_TURN_CHARS).trim() : "";
+    if (!text) continue;
+    // Merge consecutive same-role turns into the last one (Anthropic requirement).
+    if (out.length > 0 && out[out.length - 1].role === role) {
+      out[out.length - 1].content += "\n" + text;
+      continue;
+    }
+    out.push({ role, content: text });
+  }
+  // Anthropic requires messages to start with a user turn — drop a leading
+  // assistant (e.g. a stale greeting the client sent before any user input).
+  while (out.length > 0 && out[0].role !== "user") out.shift();
+  return out;
+}
+
+async function jarvisReplyAnthropic(message: string, context?: string, history?: unknown): Promise<JarvisResult> {
   const ai = getAnthropic();
   const userContent = context ? `Current app context:\n${context}\n\nUser said: ${message}` : message;
+  const priorMessages = normalizeHistory(history);
+  const messages = [...priorMessages, { role: "user" as const, content: userContent }];
   const resp = await ai.messages.create({
     model: MODEL_HAIKU_4_5,
     max_tokens: 700,
@@ -5860,7 +5892,7 @@ async function jarvisReplyAnthropic(message: string, context?: string): Promise<
       },
     ],
     tool_choice: { type: "tool", name: "respond" },
-    messages: [{ role: "user", content: userContent }],
+    messages,
   });
   const block = resp.content.find((b: any) => b.type === "tool_use") as any;
   const payload = block?.input as JarvisResult | undefined;
@@ -5869,14 +5901,16 @@ async function jarvisReplyAnthropic(message: string, context?: string): Promise<
   return { reply: payload.reply.trim(), action, args: payload.args };
 }
 
-async function jarvisReplyOpenAI(message: string, context?: string): Promise<JarvisResult> {
+async function jarvisReplyOpenAI(message: string, context?: string, history?: unknown): Promise<JarvisResult> {
   const ai = getOpenAI();
   const userContent = context ? `Current app context:\n${context}\n\nUser said: ${message}` : message;
+  const priorMessages = normalizeHistory(history);
   const resp = await ai.chat.completions.create({
     model: "gpt-4o-mini",
     max_tokens: 700,
     messages: [
       { role: "system", content: JARVIS_SYSTEM },
+      ...priorMessages,
       { role: "user", content: userContent },
     ],
     response_format: {
@@ -5902,6 +5936,7 @@ async function jarvisReplyOpenAI(message: string, context?: string): Promise<Jar
 app.post("/api/jarvis/chat", async (req, res) => {
   const message = typeof req.body?.message === "string" ? req.body.message.slice(0, 4000).trim() : "";
   const context = typeof req.body?.context === "string" ? req.body.context.slice(0, 8000) : undefined;
+  const history = req.body?.history;
   if (!message) return res.status(400).json({ error: "message is required" });
 
   try {
@@ -5909,14 +5944,14 @@ app.post("/api/jarvis/chat", async (req, res) => {
     let result: JarvisResult;
     if (provider === "anthropic") {
       try {
-        result = await jarvisReplyAnthropic(message, context);
+        result = await jarvisReplyAnthropic(message, context, history);
       } catch (anthErr: any) {
         console.log(`[jarvis/chat] anthropic failed, trying openai: ${sanitizeString(anthErr?.message ?? "unknown")}`);
         if (!process.env.OPENAI_API_KEY) throw anthErr;
-        result = await jarvisReplyOpenAI(message, context);
+        result = await jarvisReplyOpenAI(message, context, history);
       }
     } else {
-      result = await jarvisReplyOpenAI(message, context);
+      result = await jarvisReplyOpenAI(message, context, history);
     }
     return res.json(result);
   } catch (e: any) {
@@ -5925,6 +5960,199 @@ app.post("/api/jarvis/chat", async (req, res) => {
       reply: "I am having trouble reaching my brain right now. Please try again in a moment.",
       isFallback: true,
     });
+  }
+});
+
+// Streaming variant: emits sentences as the LLM produces them so the client
+// can start TTS on sentence 1 while the LLM is still composing the rest.
+// Cuts perceived time-to-first-audio roughly in half.
+//
+// SSE events:
+//   sentence  { text }                 — one complete sentence, safe to TTS
+//   final     { reply, action?, args? } — full assembled reply + action
+//   done      {}                        — stream complete
+//   error     { message }               — non-recoverable failure
+
+// Builds a stateful sentence dispatcher. Feed it the growing reply string and
+// it emits any newly-complete sentences via `send`. The `final` flag flushes
+// any trailing text (with or without punctuation).
+function makeSentenceEmitter(send: (event: string, data: any) => void) {
+  let dispatchedLen = 0;
+  return (replyText: string, final: boolean) => {
+    const remaining = replyText.slice(dispatchedLen);
+    if (!remaining && !final) return;
+
+    const sentenceRe = /[.!?]\s+/g;
+    let lastBoundary = 0;
+    let match: RegExpExecArray | null;
+    while ((match = sentenceRe.exec(remaining)) !== null) {
+      const boundary = match.index + match[0].length;
+      const sentence = remaining.slice(lastBoundary, boundary).trim();
+      if (sentence.length > 0) send("sentence", { text: sentence });
+      lastBoundary = boundary;
+    }
+    if (lastBoundary > 0) dispatchedLen += lastBoundary;
+
+    if (final) {
+      const trailing = replyText.slice(dispatchedLen).trim();
+      if (trailing) {
+        send("sentence", { text: trailing });
+        dispatchedLen = replyText.length;
+      }
+    }
+  };
+}
+
+async function jarvisStreamAnthropic(message: string, context: string | undefined, res: any, history?: unknown) {
+  const ai = getAnthropic();
+  const userContent = context ? `Current app context:\n${context}\n\nUser said: ${message}` : message;
+  const priorMessages = normalizeHistory(history);
+  const messages = [...priorMessages, { role: "user" as const, content: userContent }];
+  const send = (event: string, data: any) => {
+    if (!res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+  const flushFromReply = makeSentenceEmitter(send);
+
+  const stream = ai.messages.stream({
+    model: MODEL_HAIKU_4_5,
+    max_tokens: 700,
+    system: JARVIS_SYSTEM,
+    tools: [
+      {
+        name: "respond",
+        description: "Reply to the user and optionally execute one browser action.",
+        input_schema: respondToolSchema as any,
+      },
+    ],
+    tool_choice: { type: "tool", name: "respond" },
+    messages,
+  });
+
+  // Raw event handler — accumulates partial_json deltas so we get true
+  // incremental access to the tool input as it's being generated.
+  let accumulated = "";
+  stream.on("streamEvent", (event: any) => {
+    if (event?.type === "content_block_delta" && event?.delta?.type === "input_json_delta") {
+      accumulated += event.delta.partial_json || "";
+      const m = accumulated.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)/);
+      if (!m) return;
+      let decoded: string;
+      try { decoded = JSON.parse('"' + m[1] + '"'); } catch { return; }
+      flushFromReply(decoded, false);
+    }
+  });
+
+  const final = await stream.finalMessage();
+  const block = (final.content as any[]).find((b: any) => b.type === "tool_use") as any;
+  const payload = block?.input as JarvisResult | undefined;
+
+  if (payload?.reply) {
+    flushFromReply(payload.reply, true);
+    const action = payload.action && payload.action !== "none" ? payload.action : undefined;
+    send("final", { reply: payload.reply.trim(), action, args: payload.args });
+  } else {
+    send("sentence", { text: "Sorry, I did not catch that." });
+    send("final", { reply: "Sorry, I did not catch that." });
+  }
+  send("done", {});
+  res.end();
+}
+
+async function jarvisStreamOpenAI(message: string, context: string | undefined, res: any, history?: unknown) {
+  const ai = getOpenAI();
+  const userContent = context ? `Current app context:\n${context}\n\nUser said: ${message}` : message;
+  const priorMessages = normalizeHistory(history);
+  const send = (event: string, data: any) => {
+    if (!res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+  const flushFromReply = makeSentenceEmitter(send);
+
+  const stream = await ai.chat.completions.create({
+    model: MODEL_GPT_4O_MINI,
+    max_tokens: 700,
+    stream: true,
+    messages: [
+      { role: "system", content: JARVIS_SYSTEM },
+      ...priorMessages,
+      { role: "user", content: userContent },
+    ],
+    response_format: {
+      type: "json_schema",
+      json_schema: {
+        name: "jarvis_respond",
+        strict: false,
+        schema: respondToolSchema as any,
+      },
+    },
+  });
+
+  let accumulated = "";
+  for await (const chunk of stream) {
+    const delta = chunk.choices[0]?.delta?.content;
+    if (!delta) continue;
+    accumulated += delta;
+    const m = accumulated.match(/"reply"\s*:\s*"((?:[^"\\]|\\.)*)/);
+    if (!m) continue;
+    let decoded: string;
+    try { decoded = JSON.parse('"' + m[1] + '"'); } catch { continue; }
+    flushFromReply(decoded, false);
+  }
+
+  // Parse the fully-assembled JSON to extract action + args.
+  let parsed: JarvisResult | null = null;
+  try { parsed = JSON.parse(accumulated) as JarvisResult; } catch {}
+
+  if (parsed?.reply) {
+    flushFromReply(parsed.reply, true);
+    const action = parsed.action && parsed.action !== "none" ? parsed.action : undefined;
+    send("final", { reply: parsed.reply.trim(), action, args: parsed.args });
+  } else {
+    // Model produced non-JSON output — surface as a single sentence.
+    const fallback = accumulated.trim() || "Sorry, I did not catch that.";
+    send("sentence", { text: fallback });
+    send("final", { reply: fallback });
+  }
+  send("done", {});
+  res.end();
+}
+
+app.post("/api/jarvis/stream", async (req, res) => {
+  const message = typeof req.body?.message === "string" ? req.body.message.slice(0, 4000).trim() : "";
+  const context = typeof req.body?.context === "string" ? req.body.context.slice(0, 8000) : undefined;
+  const history = req.body?.history;
+  if (!message) return res.status(400).json({ error: "message is required" });
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache, no-transform");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no");
+  res.flushHeaders?.();
+
+  const sendOnce = (event: string, data: any) => {
+    if (!res.writableEnded) {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    }
+  };
+
+  try {
+    const provider = pickProvider();
+    if (provider === "anthropic") {
+      try {
+        await jarvisStreamAnthropic(message, context, res, history);
+      } catch (anthErr: any) {
+        console.log(`[jarvis/stream] anthropic failed, trying openai: ${sanitizeString(anthErr?.message ?? "unknown")}`);
+        if (!process.env.OPENAI_API_KEY) throw anthErr;
+        await jarvisStreamOpenAI(message, context, res, history);
+      }
+    } else {
+      await jarvisStreamOpenAI(message, context, res, history);
+    }
+  } catch (e: any) {
+    console.log(`[jarvis/stream] ${sanitizeString(e?.message ?? "unknown")}`);
+    sendOnce("sentence", { text: "I am having trouble reaching my brain right now. Please try again in a moment." });
+    sendOnce("final", { reply: "I am having trouble reaching my brain right now. Please try again in a moment.", isFallback: true });
+    sendOnce("done", {});
+    if (!res.writableEnded) res.end();
   }
 });
 
