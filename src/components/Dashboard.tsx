@@ -4162,6 +4162,7 @@ export function Dashboard({
             onSyncToCrm={handleSyncSingleAccount}
             onRefreshCrmStatus={handleRefreshCrmStatus}
             onUpdateCrmRecord={handleUpdateCrmRecord}
+            onOpenCrmModal={() => setIsCrmOpen(true)}
             crmConnected={crmConnected !== 'none'}
             crmProviderName={getCrmName(crmConnected)}
             isCrmLoading={isCrmLoading}
@@ -4370,18 +4371,24 @@ export function Dashboard({
               <div className="space-y-1">
                 <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm">Secure Sync Connection Active</h3>
                 <p className="text-[13px] text-slate-500 dark:text-slate-300 leading-normal max-w-xs mx-auto">
-                  Your workspace is dynamically syncing CAD Design intent signals and buyer personas with **{getCrmName(crmConnected).toUpperCase()}**.
+                  Your workspace is dynamically syncing {analysis?.targetIndustries?.[0] ?? 'GTM'} intent signals and buyer personas with **{getCrmName(crmConnected).toUpperCase()}**.
                 </p>
               </div>
 
               <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg text-left border border-slate-100 dark:border-slate-800 space-y-2">
                 <div className="flex justify-between items-center text-[12px] text-slate-500 dark:text-slate-300">
                   <span>Last Automated Sync</span>
-                  <span className="font-semibold text-slate-700 dark:text-slate-300">Just now (100% complete)</span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">
+                    {crmLastSync
+                      ? `${new Date(crmLastSync.at).toLocaleString()} · ${crmLastSync.pushed} pushed${crmLastSync.failed > 0 ? `, ${crmLastSync.failed} failed` : ''}`
+                      : 'No sync yet'}
+                  </span>
                 </div>
                 <div className="flex justify-between items-center text-[12px] text-slate-500 dark:text-slate-300">
                   <span>Synced Accounts</span>
-                  <span className="font-semibold text-slate-700 dark:text-slate-300">{accounts.length} organizations matched</span>
+                  <span className="font-semibold text-slate-700 dark:text-slate-300">
+                    {accounts.filter(a => a.crmSyncedAt).length} of {accounts.length}
+                  </span>
                 </div>
               </div>
 
@@ -4624,7 +4631,7 @@ export function Dashboard({
               <DialogHeader>
                 <DialogTitle className="text-slate-900 dark:text-slate-100 font-semibold text-base">Connect CRM System</DialogTitle>
                 <DialogDescription className="text-slate-500 dark:text-slate-300 text-xs text-left leading-normal">
-                  Synchronize qualified target accounts, key buyer personas, and CAD CAD operational triggers seamlessly with your CRM pipeline.
+                  Synchronize qualified target accounts, key buyer personas, and intent signals seamlessly with your CRM pipeline.
                 </DialogDescription>
               </DialogHeader>
               

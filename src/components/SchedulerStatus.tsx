@@ -50,24 +50,47 @@ const JOB_ICONS: Record<JobId, React.FC<{ className?: string }>> = {
   'persona-discovery': Sparkles,
 };
 
-const JOB_ACCENTS: Record<JobId, { ring: string; bg: string; text: string; dot: string }> = {
+// Per-job palette. `bg`/`text`/`ring`/`dot` style the icon tile and hover
+// state. `card*` fields style the whole card wrapper so each of the three
+// scheduled jobs reads as its own color at a glance.
+const JOB_ACCENTS: Record<
+  JobId,
+  {
+    ring: string;
+    bg: string;
+    text: string;
+    dot: string;
+    cardBg: string;
+    cardBorder: string;
+    stripe: string;
+  }
+> = {
   'lead-health': {
     ring: 'ring-orange-500/20 dark:ring-orange-400/20',
     bg: 'bg-orange-50 dark:bg-orange-950/40',
     text: 'text-orange-600 dark:text-orange-400',
     dot: 'bg-orange-500',
+    cardBg: 'bg-gradient-to-br from-orange-50/70 to-white dark:from-orange-950/30 dark:to-slate-900/60',
+    cardBorder: 'border-orange-200/70 dark:border-orange-800/40',
+    stripe: 'bg-gradient-to-r from-orange-400 to-amber-500',
   },
   'email-pattern-refresh': {
     ring: 'ring-blue-500/20 dark:ring-blue-400/20',
     bg: 'bg-blue-50 dark:bg-blue-950/40',
     text: 'text-blue-600 dark:text-blue-400',
     dot: 'bg-blue-500',
+    cardBg: 'bg-gradient-to-br from-blue-50/70 to-white dark:from-blue-950/30 dark:to-slate-900/60',
+    cardBorder: 'border-blue-200/70 dark:border-blue-800/40',
+    stripe: 'bg-gradient-to-r from-blue-400 to-sky-500',
   },
   'persona-discovery': {
     ring: 'ring-emerald-500/20 dark:ring-emerald-400/20',
     bg: 'bg-emerald-50 dark:bg-emerald-950/40',
     text: 'text-emerald-600 dark:text-emerald-400',
     dot: 'bg-emerald-500',
+    cardBg: 'bg-gradient-to-br from-emerald-50/70 to-white dark:from-emerald-950/30 dark:to-slate-900/60',
+    cardBorder: 'border-emerald-200/70 dark:border-emerald-800/40',
+    stripe: 'bg-gradient-to-r from-emerald-400 to-teal-500',
   },
 };
 
@@ -213,8 +236,11 @@ export function SchedulerStatus({ onLeadsRefreshed }: { onLeadsRefreshed?: () =>
           return (
             <div
               key={job.id}
-              className={`group relative rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 p-3.5 ring-1 ring-transparent hover:ring-2 ${accent.ring} transition-shadow`}
+              className={`group relative overflow-hidden rounded-xl border ${accent.cardBorder} ${accent.cardBg} p-3.5 pt-4 ring-1 ring-transparent hover:ring-2 ${accent.ring} transition-shadow`}
             >
+              {/* Colored top stripe — instantly distinguishes the three job cards */}
+              <div className={`absolute top-0 left-0 right-0 h-1 ${accent.stripe}`} />
+
               {/* Row 1: icon + name + countdown */}
               <div className="flex items-start justify-between gap-3 mb-1.5">
                 <div className="flex items-center gap-2 min-w-0">

@@ -263,6 +263,26 @@ export interface MultiThreadingStrategy {
   coordinationRules: string[];
 }
 
+// Populated from web-search signals (LinkedIn Jobs listings, Crunchbase
+// funding rounds, press releases). Optional because older cached analyses
+// won't have them, and web_search may fail to surface either signal.
+export interface HiringSignal {
+  status: string; // e.g. "Actively hiring - Engineering & Sales (12+ open roles)"
+  detail?: string; // Short qualitative note: "Recent surge in Ops hiring", etc.
+  openRolesCount?: number;
+  focusAreas?: string[]; // e.g. ["Sales", "Engineering", "Customer Success"]
+  citation?: IntelCitation;
+}
+
+export interface FundingSignal {
+  latestRound: string; // e.g. "Series C" | "Seed" | "Bootstrapped" | "IPO"
+  amount?: string; // Human-formatted: "$45M", "€12M", "Undisclosed"
+  date?: string; // ISO-ish date or free text: "2025-06" or "Q2 2025"
+  leadInvestor?: string;
+  detail?: string; // Short qualitative note
+  citation?: IntelCitation;
+}
+
 export interface DetailedAnalysis {
   score: number;
   rationale: string;
@@ -274,6 +294,8 @@ export interface DetailedAnalysis {
   };
   competitors?: CompetingVendor[];
   multiThreadingStrategy?: MultiThreadingStrategy;
+  hiringSignal?: HiringSignal;
+  fundingSignal?: FundingSignal;
   citation?: IntelCitation;
 }
 

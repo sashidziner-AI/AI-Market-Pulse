@@ -468,6 +468,7 @@ interface AccountDetailProps {
   onSyncToCrm?: (account: TargetAccount) => Promise<void> | void;
   onRefreshCrmStatus?: (account: TargetAccount) => void;
   onUpdateCrmRecord?: (account: TargetAccount) => void;
+  onOpenCrmModal?: () => void;
   crmConnected?: boolean;
   crmProviderName?: string;
   isCrmLoading?: boolean;
@@ -480,6 +481,7 @@ export function AccountDetail({
   onSyncToCrm,
   onRefreshCrmStatus,
   onUpdateCrmRecord,
+  onOpenCrmModal,
   crmConnected = false,
   crmProviderName = 'your CRM',
   isCrmLoading = false,
@@ -1996,22 +1998,95 @@ export function AccountDetail({
             </TabsContent>
 
             <TabsContent value="tech" className="space-y-4">
-              <div className="flex items-center gap-2 text-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 p-4 rounded-xl border border-amber-100 dark:border-amber-800/50">
-                <Info className="w-4 h-4 shrink-0" />
-                <p className="text-xs font-medium">Verified using latest public signals (LinkedIn, Crunchbase, BuiltWith).</p>
-              </div>
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                    <div className="text-[12px] font-bold text-slate-400 uppercase tracking-wide mb-1">Hiring Status</div>
-                    <div className="text-sm font-bold text-emerald-600 dark:text-emerald-300">Active - Sales & Ops</div>
-                  </div>
-                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                    <div className="text-[12px] font-bold text-slate-400 uppercase tracking-wide mb-1">Recent Funding</div>
-                    <div className="text-sm font-bold text-slate-900 dark:text-slate-100">Series B ($22M)</div>
-                  </div>
-                </div>
-              </div>
+              {(() => {
+                const hiring = analysis?.hiringSignal;
+                const funding = analysis?.fundingSignal;
+                // Compose the "signals verified via …" chip dynamically from whatever
+                // sources the AI actually cited, so we stop making claims the data
+                // can't back up.
+                const sources = [hiring?.citation?.sourceName, funding?.citation?.sourceName]
+                  .filter(Boolean)
+                  .map((s) => String(s));
+                const signalBanner = sources.length
+                  ? `Signals sourced from ${Array.from(new Set(sources)).slice(0, 3).join(', ')}.`
+                  : 'AI-inferred from public signals (careers pages, press releases, funding databases).';
+
+                return (
+                  <>
+                    <div className="flex items-center gap-2 text-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 p-4 rounded-xl border border-amber-100 dark:border-amber-800/50">
+                      <Info className="w-4 h-4 shrink-0" />
+                      <p className="text-xs font-medium">{signalBanner}</p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Hiring card */}
+                      <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="text-[12px] font-bold text-slate-400 uppercase tracking-wide">Hiring Status</div>
+                          {typeof hiring?.openRolesCount === 'number' && (
+                            <span className="text-[10.5px] font-mono uppercase tracking-[0.13em] px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-700/40">
+                              {hiring.openRolesCount} open
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm font-bold text-emerald-600 dark:text-emerald-300 leading-snug">
+                          {hiring?.status ?? 'Not detected'}
+                        </div>
+                        {hiring?.detail && (
+                          <p className="text-[12.5px] text-slate-600 dark:text-slate-300 leading-snug">{hiring.detail}</p>
+                        )}
+                        {hiring?.focusAreas && hiring.focusAreas.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {hiring.focusAreas.slice(0, 5).map((area, i) => (
+                              <span
+                                key={`${area}-${i}`}
+                                className="text-[10.5px] font-medium px-2 py-0.5 rounded-md bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300"
+                              >
+                                {area}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {hiring?.citation && (
+                          <div className="pt-1.5">
+                            <SourceCitation citation={hiring.citation} />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Funding card */}
+                      <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="text-[12px] font-bold text-slate-400 uppercase tracking-wide">Recent Funding</div>
+                          {funding?.date && (
+                            <span className="text-[10.5px] font-mono uppercase tracking-[0.13em] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-900/60 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                              {funding.date}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm font-bold text-slate-900 dark:text-slate-100 leading-snug">
+                          {funding?.latestRound ?? 'Not detected'}
+                          {funding?.amount && funding.amount !== 'Undisclosed' && (
+                            <span className="ml-1.5 text-orange-600 dark:text-orange-300">({funding.amount})</span>
+                          )}
+                        </div>
+                        {funding?.leadInvestor && (
+                          <div className="text-[12.5px] text-slate-600 dark:text-slate-300">
+                            Led by <span className="font-semibold">{funding.leadInvestor}</span>
+                          </div>
+                        )}
+                        {funding?.detail && (
+                          <p className="text-[12.5px] text-slate-600 dark:text-slate-300 leading-snug">{funding.detail}</p>
+                        )}
+                        {funding?.citation && (
+                          <div className="pt-1.5">
+                            <SourceCitation citation={funding.citation} />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
             </TabsContent>
 
             <TabsContent value="competitive" className="space-y-4 animate-in fade-in duration-200">
@@ -2054,10 +2129,19 @@ export function AccountDetail({
             onUpdateCrmRecord={onUpdateCrmRecord}
           />
         ) : !crmConnected ? (
+          // No CRM connected — instead of a dead-end disabled button, take the
+          // user straight to the Connect CRM modal (owned by Dashboard). If the
+          // caller didn't wire the handler we fall back to the old disabled
+          // behavior so the button never becomes a silent no-op.
           <Button
-            disabled
-            className="w-full h-12 bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-xl cursor-not-allowed"
-            title="Connect a CRM from the top-right menu first"
+            onClick={() => onOpenCrmModal?.()}
+            disabled={!onOpenCrmModal}
+            className={
+              onOpenCrmModal
+                ? 'w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-sm shadow-indigo-200 cursor-pointer'
+                : 'w-full h-12 bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-xl cursor-not-allowed'
+            }
+            title={onOpenCrmModal ? 'Open the Connect CRM dialog' : 'Connect a CRM from the top-right menu first'}
           >
             Connect a CRM to enable push
           </Button>

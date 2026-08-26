@@ -1486,6 +1486,36 @@ function getAnalyzeAccountFallback(domain: string, businessContext: any) {
     },
     competitors,
     multiThreadingStrategy,
+    // Fallback values so the Tech & Growth tab looks alive even when the
+    // upstream AI call bails out and we're serving simulated data.
+    hiringSignal: {
+      status: "Active hiring — engineering & operations",
+      detail: "Simulated: careers pages typically show mid-sized AEC firms staffing BIM and coordination roles when regional pipelines expand.",
+      openRolesCount: 12,
+      focusAreas: ["Engineering", "BIM Coordination", "Operations"],
+      citation: {
+        sourceTier: "Tertiary" as const,
+        sourceName: "Simulated hiring inference (AI unavailable)",
+        dateRetrieved: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+        isInferred: true,
+        confidenceScore: 55,
+        verificationNote: "Fallback data — verify against the account's live careers page before quoting on a call.",
+      },
+    },
+    fundingSignal: {
+      latestRound: "Privately held / bootstrapped (inferred)",
+      amount: "Undisclosed",
+      date: "N/A",
+      detail: "Simulated: most mid-market AEC firms in this range are family-owned or PE-backed rather than VC-funded.",
+      citation: {
+        sourceTier: "Tertiary" as const,
+        sourceName: "Simulated funding inference (AI unavailable)",
+        dateRetrieved: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+        isInferred: true,
+        confidenceScore: 50,
+        verificationNote: "Fallback data — cross-check on Crunchbase or the account's investor page.",
+      },
+    },
     isFallback: true,
     citation: mainCitation
   };
@@ -1932,6 +1962,8 @@ Produce:
   - rationale (string): Strategic rationale grounded in specific recent signals you found
   - signals (array of strings): 3-6 recent raw signals with source hints inline
   - citation (object): One overall citation for the aggregate rationale
+  - hiringSignal (object): Current hiring posture derived from open roles on their careers page or LinkedIn Jobs. If you can't find anything concrete, set status to "No active hiring signals detected" and omit the numeric/array fields — do NOT invent numbers. Include its own citation.
+  - fundingSignal (object): Most recent funding round (or bootstrap/IPO/public status) with amount, date (or quarter), lead investor if named. If you can't find funding info, set latestRound to "No public funding history found" and omit the other numeric fields. Include its own citation.
 
 ${citationInstructions}
 
@@ -1954,6 +1986,37 @@ FEW-SHOT EXAMPLE — the SHAPE and DEPTH of a great brief:
     "isInferred": false,
     "confidenceScore": 92,
     "verificationNote": "Fit grounded in the CTO's own words on the earnings call — 'consolidating our payment surface area' is the exact wedge this seller sells against."
+  },
+  "hiringSignal": {
+    "status": "Actively hiring — 14 open roles concentrated in Engineering and Sales",
+    "detail": "Careers page lists 6 senior payments engineers and 3 enterprise AE openings — signals both platform investment and go-to-market expansion.",
+    "openRolesCount": 14,
+    "focusAreas": ["Engineering", "Sales", "Product"],
+    "citation": {
+      "sourceTier": "Primary",
+      "sourceName": "Company careers page",
+      "dateRetrieved": "Jul 7, 2026",
+      "url": "https://company.com/careers",
+      "isInferred": false,
+      "confidenceScore": 90,
+      "verificationNote": "Role counts pulled directly from company careers page."
+    }
+  },
+  "fundingSignal": {
+    "latestRound": "Series H",
+    "amount": "$500M",
+    "date": "2026-02",
+    "leadInvestor": "Andreessen Horowitz",
+    "detail": "Round earmarked for payments infrastructure consolidation and enterprise expansion.",
+    "citation": {
+      "sourceTier": "Primary",
+      "sourceName": "TechCrunch",
+      "dateRetrieved": "Jul 7, 2026",
+      "url": "https://techcrunch.com/2026/02/company-series-h",
+      "isInferred": false,
+      "confidenceScore": 93,
+      "verificationNote": "Announcement covered by multiple outlets on Feb 12, 2026."
+    }
   }
 }`;
 
@@ -1964,8 +2027,31 @@ FEW-SHOT EXAMPLE — the SHAPE and DEPTH of a great brief:
         rationale: { type: Type.STRING },
         signals: { type: Type.ARRAY, items: { type: Type.STRING } },
         citation: citationSchema,
+        hiringSignal: {
+          type: Type.OBJECT,
+          properties: {
+            status: { type: Type.STRING },
+            detail: { type: Type.STRING },
+            openRolesCount: { type: Type.NUMBER },
+            focusAreas: { type: Type.ARRAY, items: { type: Type.STRING } },
+            citation: citationSchema,
+          },
+          required: ["status"],
+        },
+        fundingSignal: {
+          type: Type.OBJECT,
+          properties: {
+            latestRound: { type: Type.STRING },
+            amount: { type: Type.STRING },
+            date: { type: Type.STRING },
+            leadInvestor: { type: Type.STRING },
+            detail: { type: Type.STRING },
+            citation: citationSchema,
+          },
+          required: ["latestRound"],
+        },
       },
-      required: ["score", "rationale", "signals", "citation"],
+      required: ["score", "rationale", "signals", "citation", "hiringSignal", "fundingSignal"],
     };
 
     // ──────────────────────────────────────────────────────────────────
