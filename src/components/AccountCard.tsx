@@ -27,6 +27,13 @@ interface AccountCardProps {
   // Default (undefined) keeps the horizontal split-rail layout used by the
   // Recommendations grid where columns are 500-700px wide.
   compact?: boolean;
+  // Compare mode: when onToggleCompare is passed, a small checkbox appears in
+  // the card header. compareSelected controls the visual selected state
+  // (ring + tinted background). compareDisabled greys out unchecked cards
+  // once the selection cap is hit.
+  compareSelected?: boolean;
+  compareDisabled?: boolean;
+  onToggleCompare?: (account: TargetAccount) => void;
 }
 
 type PriorityTier = 'immediate' | 'nurture' | 'standard' | 'reresearch' | 'disqualified';
@@ -99,7 +106,7 @@ function getTierTheme(account: TargetAccount, info: ReturnType<typeof getAccount
   };
 }
 
-export function AccountCard({ account, onClick, targetRoles, onStatusChange, onDelete, onVoiceCall, compact }: AccountCardProps) {
+export function AccountCard({ account, onClick, targetRoles, onStatusChange, onDelete, onVoiceCall, compact, compareSelected, compareDisabled, onToggleCompare }: AccountCardProps) {
   const info = getAccountPriorityInfo(account);
   const theme = getTierTheme(account, info);
 
@@ -152,9 +159,34 @@ export function AccountCard({ account, onClick, targetRoles, onStatusChange, onD
   return (
     <motion.div
       whileHover={{ y: -2 }}
-      className={`rounded-2xl bg-white dark:bg-[#2A2A2B] border shadow-xs hover:shadow-md transition-all cursor-pointer group flex flex-row min-h-[240px] overflow-hidden ${theme.border}`}
+      className={`relative rounded-2xl bg-white dark:bg-[#2A2A2B] border shadow-xs hover:shadow-md transition-all cursor-pointer group flex flex-row min-h-[240px] overflow-hidden ${theme.border} ${
+        compareSelected ? 'ring-2 ring-indigo-500 ring-offset-2 ring-offset-stone-50 dark:ring-offset-[#1F1F20]' : ''
+      } ${compareDisabled && !compareSelected ? 'opacity-55' : ''}`}
       onClick={() => onClick(account)}
     >
+      {/* Compare checkbox — top-LEFT corner, sits over the LEFT RAIL. Only rendered when parent wires onToggleCompare. */}
+      {onToggleCompare && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (!compareDisabled || compareSelected) onToggleCompare(account);
+          }}
+          disabled={compareDisabled && !compareSelected}
+          title={compareSelected ? 'Remove from comparison' : compareDisabled ? 'Comparison is full (3 max)' : 'Add to comparison'}
+          className={`absolute top-2 left-2 z-20 w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all shrink-0 ${
+            compareSelected
+              ? 'bg-indigo-600 border-indigo-600 text-white shadow-md'
+              : compareDisabled
+              ? 'bg-white/70 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 cursor-not-allowed'
+              : 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600 hover:border-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/40'
+          }`}
+        >
+          {compareSelected && (
+            <svg className="w-3.5 h-3.5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M16.7 5.3a1 1 0 010 1.4l-8 8a1 1 0 01-1.4 0l-4-4a1 1 0 011.4-1.4L8 12.6l7.3-7.3a1 1 0 011.4 0z" clipRule="evenodd"/></svg>
+          )}
+        </button>
+      )}
+
       {/* LEFT RAIL: Priority tier + big score + pipeline action + outreach window */}
       <div className={`w-40 shrink-0 flex flex-col items-center px-3 py-4 border-r border-slate-100 dark:border-white/[0.05] ${theme.railBg}`}>
         {/* Priority chip */}

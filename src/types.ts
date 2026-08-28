@@ -226,11 +226,24 @@ export interface ObjectionCounterNarrative {
   suggestedMoment: string;
 }
 
+// Objection Library: the 3-5 most common pushbacks THIS persona typically
+// raises during evaluation (budget, timing, incumbent vendor, authority,
+// need, trust). Each entry ships with a ready-to-say rebuttal so the rep
+// isn't improvising mid-call. Distinct from counterNarratives, which reframe
+// the value angle at the messaging layer.
+export interface CommonObjection {
+  objection: string;
+  category: 'budget' | 'timing' | 'incumbent' | 'authority' | 'need' | 'trust' | 'other';
+  response: string;
+  evidence?: string;
+}
+
 export interface BuyerPersona {
   role: string;
   painPoints: string[];
   valueAngle: string;
   counterNarratives?: ObjectionCounterNarrative[];
+  commonObjections?: CommonObjection[];
   citation?: IntelCitation;
 }
 
@@ -283,6 +296,15 @@ export interface FundingSignal {
   citation?: IntelCitation;
 }
 
+export interface EmailTouch {
+  day: number;                    // 1, 3, 7, 14 — sequence position (days from touch #1)
+  type: 'cold' | 'case-study' | 'breakup' | 're-engage';
+  subject: string;
+  body: string;                   // 3–5 short paragraphs, no signature block (rep adds their own)
+  signalUsed: string;             // short label of the buying signal that grounds this touch
+  tone?: 'formal' | 'consultative' | 'direct';
+}
+
 export interface DetailedAnalysis {
   score: number;
   rationale: string;
@@ -291,6 +313,7 @@ export interface DetailedAnalysis {
   outreachStrategy: {
     emailHook: string;
     linkedinMessage: string;
+    emailSequence?: EmailTouch[]; // 4-touch outbound cadence, each grounded in a different signal
   };
   competitors?: CompetingVendor[];
   multiThreadingStrategy?: MultiThreadingStrategy;
@@ -347,6 +370,90 @@ export interface SocialPlatformData {
 export interface SocialActivity {
   platforms: SocialPlatformData[];
   isFallback?: boolean;
+}
+
+// Battle Card — 1-page competitive intel packet a rep pulls up mid-call when
+// they hear a specific competitor named. Distinct from CompetingVendor
+// (which describes the incumbent at ONE account); this is the reusable
+// battle-card for the competitor VENDOR itself.
+export interface BattleCardWeakness {
+  weakness: string;
+  evidence: string;      // customer complaint / review site / product gap — cite when possible
+  howToExploit: string;  // the follow-up question a rep should ask to make it visible
+}
+
+export interface BattleCardDifferentiator {
+  claim: string;         // "We deploy in 2 weeks vs. their 90-day onboarding"
+  proofPoint: string;    // metric / case study / feature grounding
+}
+
+export interface BattleCardObjection {
+  theySay: string;       // the exact phrase from the buyer's mouth
+  weSay: string;         // the rehearsed rebuttal — 2-3 sentences
+  evidence?: string;
+}
+
+export interface BattleCardSwitchingStory {
+  customerName: string;
+  whenSwitched: string;  // "Q3 2025" | "March 2026"
+  reason: string;
+  outcome: string;
+  citation?: IntelCitation;
+}
+
+export interface BattleCard {
+  competitorName: string;
+  competitorTagline: string;   // one-line positioning of the competitor
+  theirStrengths: string[];    // 3-4 items — where they legitimately win (honest baseline)
+  theirWeaknesses: BattleCardWeakness[];   // 4-5 items
+  ourDifferentiators: BattleCardDifferentiator[]; // 4-5 items
+  objectionResponses: BattleCardObjection[];      // 5 rehearsed "when they say X"
+  switchingStories: BattleCardSwitchingStory[];   // 3 recent switchers
+  generatedAt: string; // ISO
+  isFallback?: boolean;
+}
+
+// Signal Change Alerts — a compact snapshot of an account's key fields taken
+// at a point in time. Diffs across snapshots yield SignalChange records that
+// power the header bell + Weekly Digest tab. Stored in localStorage under
+// `gtm_account_snapshots`, capped at SNAPSHOT_MAX_KEEP entries.
+export interface AccountSnapshot {
+  takenAt: string; // ISO
+  accounts: {
+    id: string;
+    name: string;
+    domain: string;
+    fitScore: number;
+    priorityFlag?: TargetAccount['priorityFlag'];
+    timingStage?: TargetAccount['timingStage'];
+    signals: string[]; // shallow copy of TargetAccount.signals for diff detection
+  }[];
+}
+
+export type SignalChangeKind =
+  | 'moved_to_immediate'      // priorityFlag became 'Immediate Action Required'
+  | 'moved_out_of_immediate'  // priorityFlag left 'Immediate Action Required'
+  | 'new_signal'              // a signal string appeared that wasn't in prior snapshot
+  | 'lost_signal'             // a signal string disappeared
+  | 'fit_score_up'            // fitScore rose by ≥ FIT_SCORE_DELTA
+  | 'fit_score_down'          // fitScore fell by ≥ FIT_SCORE_DELTA
+  | 'timing_advanced'         // timingStage progressed (Early → Active → Urgent)
+  | 'new_account';            // account discovered since prior snapshot
+
+export interface SignalChange {
+  id: string;                 // stable synthetic id for read-tracking
+  accountId: string;
+  accountName: string;
+  accountDomain: string;
+  kind: SignalChangeKind;
+  impact: 'high' | 'medium' | 'low';
+  detectedAt: string;         // ISO — when the diff was computed
+  // Human-readable summary the UI renders directly.
+  summary: string;
+  // Field-level details when applicable.
+  from?: string | number;
+  to?: string | number;
+  signal?: string;            // populated for new_signal / lost_signal
 }
 
 export interface SavedReport {

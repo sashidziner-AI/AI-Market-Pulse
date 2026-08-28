@@ -12,6 +12,10 @@ import { BusinessAnalysis, TargetAccount, DetailedAnalysis, SavedReport } from '
 import { Toaster, toast } from 'sonner';
 import { Rocket, Globe, FileText, House, LogOut, User } from 'lucide-react';
 import { ThemeToggle, applyTheme } from './components/ThemeToggle'; // applyTheme still used by Jarvis theme actions
+import { SignalChangesBell } from './components/SignalChangesBell';
+import { SlackSettings } from './components/SlackSettings';
+import { captureSnapshot, shouldCaptureSnapshot, loadChangesWithinDigestWindow } from './utils/snapshots';
+import { notifyNewChanges, getWebhookUrl } from './utils/slack';
 import { JarvisOrb, JarvisAction } from './components/JarvisOrb';
 import { LoginPage } from './components/auth/LoginPage';
 import { RegisterPage } from './components/auth/RegisterPage';
@@ -350,6 +354,29 @@ export default function App() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accounts, activeReportId, analysis]);
+
+  // Signal-change snapshot capture. Once the workspace has accounts and it's
+  // been >24h since the last snapshot, take one. This drives the header bell
+  // + Weekly Digest — the diff between snapshots is what surfaces changes.
+  useEffect(() => {
+    if (accounts.length === 0) return;
+    if (!shouldCaptureSnapshot()) return;
+    const t = setTimeout(() => {
+      const snap = captureSnapshot(accounts);
+      if (snap) {
+        // Fire a storage event so any SignalChangesBell mounted elsewhere
+        // recomputes without needing to remount.
+        window.dispatchEvent(new StorageEvent('storage', { key: 'gtm_account_snapshots' }));
+        // If Slack is connected, push high-impact changes now. Dedup + rate
+        // limiting live in slack.ts — safe to call unconditionally.
+        if (getWebhookUrl()) {
+          const changes = loadChangesWithinDigestWindow(accounts);
+          notifyNewChanges(changes).catch(() => { /* toast happens in the util */ });
+        }
+      }
+    }, 1500); // small delay so bursts of setAccounts settle before we snapshot
+    return () => clearTimeout(t);
+  }, [accounts]);
 
   const handleSaveReport = (name: string, customAnalysis?: BusinessAnalysis, customAccounts?: TargetAccount[]) => {
     const finalAnalysis = customAnalysis || analysis;
@@ -830,6 +857,13 @@ export default function App() {
                   )}
                 </button>
               </div>
+              {accounts.length > 0 && (
+                <SignalChangesBell
+                  accounts={accounts}
+                  onOpenAccount={(id) => window.dispatchEvent(new CustomEvent('gtm:open-account', { detail: { id } }))}
+                />
+              )}
+              <SlackSettings />
               <ThemeToggle />
               <UserMenu
                 user={currentUser}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Mail, Copy, Check, Sparkles, Info } from 'lucide-react';
+import { Mail, Copy, Check, Sparkles, Info, ShieldCheck, ShieldAlert, ShieldX, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
@@ -22,6 +22,23 @@ interface Guess {
   email: string;
   pattern: string;
   confidence: Confidence;
+  reason: string;
+}
+
+// Matches server.ts VerifyResult shape.
+interface VerifyResult {
+  email: string;
+  deliverable: 'valid' | 'risky' | 'invalid';
+  score: number;
+  checks: {
+    syntax: boolean;
+    hasMx: boolean;
+    isRoleBased: boolean;
+    isDisposable: boolean;
+    isFreeMailbox: boolean;
+    isCatchAll: boolean | 'unknown';
+  };
+  mxHost?: string;
   reason: string;
 }
 
@@ -48,13 +65,20 @@ const CONF_STYLES: Record<Confidence, { label: string; badge: string; dot: strin
   },
 };
 
+const VERIFY_STYLES = {
+  valid:   { label: 'Deliverable', badge: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60', Icon: ShieldCheck, iconClass: 'text-emerald-600 dark:text-emerald-400' },
+  risky:   { label: 'Risky',       badge: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/60',       Icon: ShieldAlert, iconClass: 'text-amber-600 dark:text-amber-400' },
+  invalid: { label: 'Invalid',     badge: 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800/60',           Icon: ShieldX,     iconClass: 'text-rose-600 dark:text-rose-400' },
+} as const;
+
 export function EmailPatternWidget({ domain, companyName }: { domain: string; companyName?: string }) {
   const [firstName, setFirstName] = React.useState('');
   const [lastName, setLastName] = React.useState('');
   const [pattern, setPattern] = React.useState<LearnedPattern | null>(null);
   const [guess, setGuess] = React.useState<Guess | null>(null);
-  const [loading, setLoading] = React.useState<'pattern' | 'guess' | null>(null);
+  const [loading, setLoading] = React.useState<'pattern' | 'guess' | 'verify' | null>(null);
   const [copied, setCopied] = React.useState(false);
+  const [verify, setVerify] = React.useState<VerifyResult | null>(null);
 
   const learnPattern = React.useCallback(async () => {
     if (!domain) return;
@@ -83,6 +107,7 @@ export function EmailPatternWidget({ domain, companyName }: { domain: string; co
     if (!firstName.trim() || !lastName.trim() || !domain) return;
     setLoading('guess');
     setCopied(false);
+    setVerify(null);
     try {
       const r = await fetch('/api/guess-email', {
         method: 'POST',
@@ -103,11 +128,50 @@ export function EmailPatternWidget({ domain, companyName }: { domain: string; co
     }
   }, [firstName, lastName, domain, pattern]);
 
+  const verifyEmail = React.useCallback(async () => {
+    if (!guess?.email) return;
+    setLoading('verify');
+    try {
+      const r = await fetch('/api/verify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: guess.email }),
+      });
+      const data = (await r.json()) as VerifyResult;
+      setVerify(data);
+      if (data.deliverable === 'invalid') {
+        toast.error(`Invalid — ${data.reason}`);
+      } else if (data.deliverable === 'risky') {
+        toast.warning(`Risky — ${data.reason}`);
+      } else {
+        toast.success(`Deliverable (score ${data.score}/100)`);
+      }
+    } catch (e: any) {
+      toast.error(`Verify failed: ${e.message}`);
+    } finally {
+      setLoading(null);
+    }
+  }, [guess?.email]);
+
   const copy = React.useCallback(() => {
     if (!guess?.email) return;
+    // Guard-rail: if verification came back invalid, force a confirm before
+    // the rep can copy the address (this is the CRM-quality safety net).
+    if (verify?.deliverable === 'invalid') {
+      const proceed = window.confirm(
+        `Heads up — this address is flagged as INVALID.\n\nReason: ${verify.reason}\n\nCopy anyway?`
+      );
+      if (!proceed) return;
+    }
     navigator.clipboard.writeText(guess.email);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
+  }, [guess?.email, verify]);
+
+  // Any time the guess changes (new name typed, re-guess), the previous
+  // verification result is stale — clear it so the rep can't rely on it.
+  React.useEffect(() => {
+    setVerify(null);
   }, [guess?.email]);
 
   if (!domain) return null;
@@ -189,7 +253,7 @@ export function EmailPatternWidget({ domain, companyName }: { domain: string; co
             <button
               onClick={copy}
               className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
-              title="Copy email"
+              title={verify?.deliverable === 'invalid' ? 'Copy (will warn — flagged invalid)' : 'Copy email'}
             >
               {copied ? <Check className="w-3.5 h-3.5 text-emerald-500" /> : <Copy className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />}
             </button>
@@ -198,6 +262,82 @@ export function EmailPatternWidget({ domain, companyName }: { domain: string; co
             <Info className="w-3 h-3 mt-[1px] shrink-0" />
             <span>{guess.reason}</span>
           </div>
+
+          {/* Deliverability verification — runs MX + role-based + disposable checks. */}
+          {!verify ? (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={verifyEmail}
+              disabled={loading === 'verify'}
+              className="w-full h-7 text-[11px] gap-1.5"
+            >
+              {loading === 'verify' ? (
+                <>
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Checking MX + deliverability…
+                </>
+              ) : (
+                <>
+                  <ShieldCheck className="w-3 h-3" />
+                  Verify deliverability
+                </>
+              )}
+            </Button>
+          ) : (
+            (() => {
+              const style = VERIFY_STYLES[verify.deliverable];
+              const { Icon } = style;
+              const chip = (label: string, on: boolean, tone: 'good' | 'bad' | 'neutral') => (
+                <span
+                  key={label}
+                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono border ${
+                    !on
+                      ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-700 line-through opacity-70'
+                      : tone === 'good'
+                      ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60'
+                      : tone === 'bad'
+                      ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800/60'
+                      : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/60'
+                  }`}
+                >
+                  {label}
+                </span>
+              );
+              return (
+                <div className={`rounded-md border p-2.5 space-y-2 ${style.badge}`}>
+                  <div className="flex items-center gap-2">
+                    <Icon className={`w-4 h-4 shrink-0 ${style.iconClass}`} />
+                    <span className="text-[11px] font-bold uppercase tracking-wider flex-1">
+                      {style.label}
+                    </span>
+                    <span className="text-[10px] font-mono font-semibold">
+                      score {verify.score}/100
+                    </span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed">{verify.reason}</p>
+                  <div className="flex flex-wrap gap-1 pt-1 border-t border-current/10">
+                    {chip('MX', verify.checks.hasMx, 'good')}
+                    {chip('syntax', verify.checks.syntax, 'good')}
+                    {verify.checks.isRoleBased && chip('role-based', true, 'bad')}
+                    {verify.checks.isDisposable && chip('disposable', true, 'bad')}
+                    {verify.checks.isFreeMailbox && chip('free-mail', true, 'neutral')}
+                    {verify.checks.isCatchAll === true && chip('catch-all', true, 'neutral')}
+                    {verify.checks.isCatchAll === 'unknown' && (
+                      <span className="text-[10px] text-slate-400 dark:text-slate-500 italic px-1">
+                        catch-all: not probed
+                      </span>
+                    )}
+                  </div>
+                  {verify.mxHost && (
+                    <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400 truncate">
+                      MX → {verify.mxHost}
+                    </div>
+                  )}
+                </div>
+              );
+            })()
+          )}
         </div>
       )}
     </div>

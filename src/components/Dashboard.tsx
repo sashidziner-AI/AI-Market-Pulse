@@ -24,7 +24,9 @@ import { toast } from 'sonner';
 import { computeWeightsRecalibration, SellerChannelPartner, DEFAULT_CHANNEL_PARTNERS, computePathwayAssessment } from '../utils/calibration';
 import * as crmMirror from '../utils/crmMirror';
 import { LeadsTab } from './LeadsTab';
-import { UserCheck } from 'lucide-react';
+import { WeeklyDigest } from './WeeklyDigest';
+import { CompareAccountsModal } from './CompareAccountsModal';
+import { UserCheck, CalendarDays, GitCompare } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 
@@ -184,6 +186,30 @@ export function Dashboard({
   }, []);
 
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  // Side-by-side compare: Set of accountIds the user has ticked. Capped at 3.
+  // Compare mode is opt-in — cards only show the checkbox when compareModeEnabled
+  // is true, so the default (uncluttered) card layout is preserved for the
+  // common case. `compareOpen` opens the CompareAccountsModal.
+  const COMPARE_MAX = 3;
+  const [compareModeEnabled, setCompareModeEnabled] = useState(false);
+  const [compareSelection, setCompareSelection] = useState<Set<string>>(() => new Set());
+  const [compareOpen, setCompareOpen] = useState(false);
+  const toggleCompare = React.useCallback((accountId: string) => {
+    setCompareSelection((prev) => {
+      const next = new Set(prev);
+      if (next.has(accountId)) next.delete(accountId);
+      else if (next.size < COMPARE_MAX) next.add(accountId);
+      return next;
+    });
+  }, []);
+  // Turning compare mode off also clears the selection so re-enabling it
+  // starts from a clean state instead of stale ticks.
+  const toggleCompareMode = React.useCallback(() => {
+    setCompareModeEnabled((v) => {
+      if (v) setCompareSelection(new Set());
+      return !v;
+    });
+  }, []);
   const [voiceCallAccountId, setVoiceCallAccountId] = useState<string | null>(null);
   // When the AI Call Scheduler poller fires a due call, it stashes the
   // triggering schedule here so the VoiceCallModal mounts with autoStart=true
@@ -377,7 +403,7 @@ export function Dashboard({
     setMapsSearchGeneration(g => g + 1);
   }, [analysisSignature]);
   const [uploadedFile, setUploadedFile] = useState<{ name: string; content?: string } | null>(null);
-  const [activeTab, setActiveTab] = useState<'recommendations' | 'pipeline' | 'clusters' | 'partner-pathways' | 'leads'>('recommendations');
+  const [activeTab, setActiveTab] = useState<'recommendations' | 'pipeline' | 'clusters' | 'partner-pathways' | 'leads' | 'digest'>('recommendations');
 
   // Jarvis voice bridge — voice commands reach us through window CustomEvents.
   // Whitelist-check tab names so a rogue payload can't set an invalid tab.
@@ -1583,6 +1609,7 @@ export function Dashboard({
             <SidebarItem icon={<Users />} label="Target Segments" active={activeTab === 'clusters'} onClick={() => setActiveTab('clusters')} />
             <SidebarItem icon={<Network />} label="Partner Pathways" active={activeTab === 'partner-pathways'} onClick={() => setActiveTab('partner-pathways')} />
             <SidebarItem icon={<ListTodo />} label="GTM Pipeline" active={activeTab === 'pipeline'} onClick={() => setActiveTab('pipeline')} />
+            <SidebarItem icon={<CalendarDays />} label="Weekly Digest" active={activeTab === 'digest'} onClick={() => setActiveTab('digest')} />
           </nav>
 
           {crmConnected !== 'none' && (
@@ -1648,7 +1675,8 @@ export function Dashboard({
                 {activeTab === 'recommendations' ? 'Analysis' :
                  activeTab === 'clusters' ? 'Strategic Account Segments' :
                  activeTab === 'partner-pathways' ? 'Partner Referral & Warm Pathways' :
-                 activeTab === 'leads' ? 'Lead Lifecycle & Enrichment' : 'Pipeline'}
+                 activeTab === 'leads' ? 'Lead Lifecycle & Enrichment' :
+                 activeTab === 'digest' ? 'Weekly Signal Digest' : 'Pipeline'}
               </h2>
               {isDiscovering && accounts.length === 0 ? (
                 <Badge variant="secondary" className="bg-orange-500/15 text-orange-300 border border-orange-500/20 font-mono font-bold text-[12px] px-2 py-0.5 rounded-full flex items-center gap-1.5">
@@ -3100,6 +3128,22 @@ export function Dashboard({
                       <span>Export Data</span>
                     </Button>
 
+                    {/* Compare Mode Toggle — flips the per-card checkbox on/off. */}
+                    <Button
+                      variant={compareModeEnabled ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={toggleCompareMode}
+                      className={`h-8 text-xs font-semibold gap-1.5 px-3 rounded-lg cursor-pointer ${
+                        compareModeEnabled
+                          ? 'bg-indigo-600 hover:bg-indigo-700 text-white border-indigo-600'
+                          : 'border-slate-250 dark:border-slate-700 hover:bg-indigo-50/50 hover:text-indigo-650 hover:border-indigo-200'
+                      }`}
+                      title={compareModeEnabled ? 'Turn off compare mode (also clears selection)' : 'Tick 2-3 accounts to see them side by side'}
+                    >
+                      <GitCompare className={`w-3.5 h-3.5 ${compareModeEnabled ? '' : 'text-indigo-550'}`} />
+                      <span>{compareModeEnabled ? `Compare Account · ${compareSelection.size}` : 'Compare Account'}</span>
+                    </Button>
+
                     {/* Manually Add Tailored Enterprise Account */}
                     <Button
                       variant="default"
@@ -3943,6 +3987,18 @@ export function Dashboard({
               </div>
             ) : activeTab === 'leads' ? (
               <LeadsTab analysisDomains={accounts.map((a) => a.domain).filter(Boolean)} />
+            ) : activeTab === 'digest' ? (
+              <WeeklyDigest
+                accounts={accounts}
+                onOpenAccount={(id) => {
+                  const acc = accounts.find((a) => a.id === id);
+                  if (acc) {
+                    setActiveTab('recommendations');
+                    // Small delay so the tab switch renders before we deep-link.
+                    setTimeout(() => setSelectedAccountId(id), 50);
+                  }
+                }}
+              />
             ) : viewMode === 'grid' ? (
               /* Standard Pulse/Discovery Grid View */
               <motion.div 
@@ -3962,6 +4018,9 @@ export function Dashboard({
                         onAnalyzeAccount(acc.id);
                         setSelectedAccountId(acc.id);
                       }}
+                      compareSelected={compareModeEnabled && compareSelection.has(account.id)}
+                      compareDisabled={compareModeEnabled && compareSelection.size >= COMPARE_MAX && !compareSelection.has(account.id)}
+                      onToggleCompare={compareModeEnabled ? (a) => toggleCompare(a.id) : undefined}
                     />
                   ))}
                 </AnimatePresence>
@@ -4166,9 +4225,49 @@ export function Dashboard({
             crmConnected={crmConnected !== 'none'}
             crmProviderName={getCrmName(crmConnected)}
             isCrmLoading={isCrmLoading}
+            sellerContext={{ businessName: analysis.businessName, valueProp: analysis.valueProp }}
           />
         )}
       </AnimatePresence>
+
+      {/* Floating compare bar — visible when ≥1 account is selected. Sits above
+          the JarvisOrb column (z-40) but below modals (z-100). */}
+      {compareSelection.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 animate-in fade-in slide-in-from-bottom-4 duration-200">
+          <div className="flex items-center gap-2.5 rounded-full bg-slate-900 dark:bg-slate-800 text-white shadow-2xl border border-slate-700 dark:border-slate-600 pl-4 pr-2 py-2">
+            <GitCompare className="w-4 h-4 text-indigo-400" />
+            <span className="text-[12.5px] font-semibold">
+              {compareSelection.size} selected
+              <span className="text-[10.5px] text-slate-400 font-mono ml-1.5">/ {COMPARE_MAX} max</span>
+            </span>
+            <button
+              onClick={() => setCompareSelection(new Set())}
+              className="text-[11px] text-slate-400 hover:text-slate-200 transition-colors px-2"
+            >
+              Clear
+            </button>
+            <Button
+              size="sm"
+              disabled={compareSelection.size < 2}
+              onClick={() => setCompareOpen(true)}
+              className="h-8 text-[12px] gap-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-full px-4"
+            >
+              {compareSelection.size < 2 ? 'Pick 1 more' : `Compare ${compareSelection.size}`}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Compare modal */}
+      <CompareAccountsModal
+        open={compareOpen}
+        onClose={() => setCompareOpen(false)}
+        accounts={accounts.filter((a) => compareSelection.has(a.id))}
+        onOpenAccount={(id) => {
+          setCompareOpen(false);
+          setSelectedAccountId(id);
+        }}
+      />
 
       {/* Industry Discovery side panel — runs Google Maps searches using the
           services + target industries extracted from the seller's analyzed
