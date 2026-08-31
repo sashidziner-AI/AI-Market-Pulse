@@ -6,6 +6,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Mic, MicOff, X, Volume2, Loader2, Ear, EarOff } from 'lucide-react';
 import { toast } from 'sonner';
+import { apiUrl } from '../utils/apiBase';
 
 type JarvisState = 'idle' | 'wake-listening' | 'listening' | 'thinking' | 'speaking' | 'error';
 
@@ -129,7 +130,7 @@ export function JarvisOrb({ getContext, onAction }: Props) {
     stateRef.current = 'speaking';
     setState('speaking');
     try {
-      const res = await fetch('/api/jarvis/tts', {
+      const res = await fetch(apiUrl('/api/jarvis/tts'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, voice: 'onyx' }),
@@ -187,7 +188,7 @@ export function JarvisOrb({ getContext, onAction }: Props) {
   const runStreamingReply = useCallback(async (clean: string, controller: AbortController) => {
     const context = getContext?.() ?? '';
     const history = buildHistory();
-    const res = await fetch('/api/jarvis/stream', {
+    const res = await fetch(apiUrl('/api/jarvis/stream'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ message: clean, context, history }),
@@ -202,7 +203,7 @@ export function JarvisOrb({ getContext, onAction }: Props) {
     const activeUrls: string[] = [];
 
     const enqueueSentence = (text: string) => {
-      const ttsPromise = fetch('/api/jarvis/tts', {
+      const ttsPromise = fetch(apiUrl('/api/jarvis/tts'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, voice: 'onyx' }),
@@ -310,7 +311,7 @@ export function JarvisOrb({ getContext, onAction }: Props) {
       try {
         const context = getContext?.() ?? '';
         const history = buildHistory();
-        const res = await fetch('/api/jarvis/chat', {
+        const res = await fetch(apiUrl('/api/jarvis/chat'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message: clean, context, history }),
@@ -643,7 +644,7 @@ export function JarvisOrb({ getContext, onAction }: Props) {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch('/api/jarvis/tts', {
+        const res = await fetch(apiUrl('/api/jarvis/tts'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: WAKE_GREETING, voice: 'onyx' }),

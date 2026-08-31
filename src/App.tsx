@@ -22,6 +22,7 @@ import { RegisterPage } from './components/auth/RegisterPage';
 import { ForgotPasswordPage } from './components/auth/ForgotPasswordPage';
 import { ResetPasswordPage } from './components/auth/ResetPasswordPage';
 import { AuthUser, ensureDemoUser, getCurrentUser, logoutUser } from './utils/auth';
+import { apiUrl } from './utils/apiBase';
 
 // Seed the demo account before React renders so the login screen's autofill
 // chip works on a first-visit browser profile.
@@ -467,7 +468,7 @@ export default function App() {
     setAnalyzedUrl(url);
     setIsDiscovering(true);
     try {
-      const response = await fetch('/api/analyze-business', {
+      const response = await fetch(apiUrl('/api/analyze-business'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),
@@ -501,7 +502,7 @@ export default function App() {
   const discoverAccounts = async (businessData: BusinessAnalysis, accountCount: number = 10) => {
     setIsDiscovering(true);
     try {
-      const response = await fetch('/api/discover-accounts', {
+      const response = await fetch(apiUrl('/api/discover-accounts'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -540,7 +541,7 @@ export default function App() {
         .filter((a: any) => a?.domain && a?.name)
         .map((a: any) => ({ domain: a.domain, name: a.name }));
       if (enrolledAccounts.length > 0) {
-        void fetch('/api/enrichment/sweep', {
+        void fetch(apiUrl('/api/enrichment/sweep'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ accounts: enrolledAccounts.slice(0, 3), cap: 12 }),
@@ -552,7 +553,7 @@ export default function App() {
             }
           })
           .catch(() => {});
-        void fetch('/api/scheduler/enroll', {
+        void fetch(apiUrl('/api/scheduler/enroll'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ accounts: enrolledAccounts }),
@@ -607,7 +608,7 @@ export default function App() {
     try {
       startProgress();
 
-      const response = await fetch('/api/analyze-account?stream=1', {
+      const response = await fetch(apiUrl('/api/analyze-account?stream=1'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

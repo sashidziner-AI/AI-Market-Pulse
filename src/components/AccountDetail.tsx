@@ -23,6 +23,7 @@ import { BattleCardModal } from './BattleCardModal';
 import { AccountTrendChart } from './AccountTrendChart';
 import { RoiTile } from './RoiTile';
 import { BusinessAnalysis } from '../types';
+import { apiUrl } from '../utils/apiBase';
 
 export function SourceCitation({ citation, inlineLabel, isSignal = false }: { citation?: IntelCitation; inlineLabel?: string; isSignal?: boolean }) {
   if (!citation) return null;
@@ -283,7 +284,7 @@ export function StakeholderLinkedinCard({ role, company, domain, compact = false
 
   React.useEffect(() => {
     let cancelled = false;
-    fetch('/api/enrich-stakeholder', {
+    fetch(apiUrl('/api/enrich-stakeholder'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ role, company, domain }),
@@ -700,7 +701,7 @@ export function AccountDetail({
     if (account.socialActivity) return;
     let cancelled = false;
     setSocialLoading(true);
-    fetch('/api/analyze-social', {
+    fetch(apiUrl('/api/analyze-social'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ domain: account.domain, companyName: account.name }),
@@ -1130,7 +1131,7 @@ export function AccountDetail({
             onRefresh={() => {
               setSocialData(null);
               setSocialLoading(true);
-              fetch('/api/analyze-social', {
+              fetch(apiUrl('/api/analyze-social'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ domain: account.domain, companyName: account.name }),

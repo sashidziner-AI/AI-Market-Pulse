@@ -4,8 +4,19 @@ import path from 'path';
 import {defineConfig, loadEnv} from 'vite';
 
 export default defineConfig(({mode}) => {
-  loadEnv(mode, '.', '');
+  const env = loadEnv(mode, '.', '');
+  // Subpath deploy support.
+  //   dev  (mode=development) → base='/' so http://localhost:3000 works.
+  //   prod (mode=production)  → base='/micro-saas/ai-market-pulse/' matches
+  //                              the Nginx location on ai.prospectaccel.com.
+  //   VITE_BASE_PATH=/ npm run build → override to root for other deploys.
+  const PROD_BASE = '/micro-saas/ai-market-pulse/';
+  const base =
+    env.VITE_BASE_PATH ||
+    process.env.VITE_BASE_PATH ||
+    (mode === 'production' ? PROD_BASE : '/');
   return {
+    base,
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

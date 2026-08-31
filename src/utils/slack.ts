@@ -1,4 +1,5 @@
 import { SignalChange } from '../types';
+import { apiUrl } from './apiBase';
 
 // localStorage keys.
 const WEBHOOK_KEY = 'gtm_slack_webhook';
@@ -87,7 +88,7 @@ interface SendResult { ok: boolean; error?: string }
 // Low-level send — hits the server proxy. Returns { ok, error }.
 async function postToSlack(webhookUrl: string, text: string, blocks?: unknown[]): Promise<SendResult> {
   try {
-    const r = await fetch('/api/slack/notify', {
+    const r = await fetch(apiUrl('/api/slack/notify'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ webhookUrl, text, blocks }),

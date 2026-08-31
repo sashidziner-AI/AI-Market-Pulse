@@ -22,6 +22,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { computeWeightsRecalibration, SellerChannelPartner, DEFAULT_CHANNEL_PARTNERS, computePathwayAssessment } from '../utils/calibration';
+import { apiUrl } from '../utils/apiBase';
 import * as crmMirror from '../utils/crmMirror';
 import { LeadsTab } from './LeadsTab';
 import { WeeklyDigest } from './WeeklyDigest';
@@ -320,7 +321,7 @@ export function Dashboard({
       if (fire.mode === 'phone' && fire.phoneNumber) {
         (async () => {
           try {
-            const res = await fetch('/api/voice-call/start', {
+            const res = await fetch(apiUrl('/api/voice-call/start'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -790,7 +791,7 @@ export function Dashboard({
     if (accounts.length === 0) return;
     setIsClustering(true);
     try {
-      const response = await fetch('/api/cluster-accounts', {
+      const response = await fetch(apiUrl('/api/cluster-accounts'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ accounts, businessContext: analysis })
@@ -925,7 +926,7 @@ export function Dashboard({
       }
       setIsCrmLoading(true);
       try {
-        const res = await fetch('/api/crm/connect', {
+        const res = await fetch(apiUrl('/api/crm/connect'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -987,7 +988,7 @@ export function Dashboard({
     const succeeded: { account: TargetAccount; recordId: string | number | undefined }[] = [];
     const failed: { account: TargetAccount; message: string }[] = [];
 
-    const res = await fetch('/api/crm/sync?stream=1', {
+    const res = await fetch(apiUrl('/api/crm/sync?stream=1'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ sessionId: crmSessionId, accounts: accountsToTry }),
@@ -1302,7 +1303,7 @@ export function Dashboard({
   const handleDisconnectCrm = async () => {
     if (crmSessionId) {
       try {
-        await fetch('/api/crm/disconnect', {
+        await fetch(apiUrl('/api/crm/disconnect'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ sessionId: crmSessionId }),

@@ -15,6 +15,7 @@ import {
   TIMEZONE_OPTIONS, detectBrowserTimezone, defaultScheduleFields,
   formatWallClock, zonedTimeToUtcMs,
 } from '../utils/schedule';
+import { apiUrl } from '../utils/apiBase';
 
 interface VoiceCallModalProps {
   account: TargetAccount;
@@ -230,7 +231,7 @@ export function VoiceCallModal({
   }, [selectedContact?.phone]);
   useEffect(() => {
     let cancelled = false;
-    fetch('/api/voice-call/config')
+    fetch(apiUrl('/api/voice-call/config'))
       .then(r => r.ok ? r.json() : null)
       .then(cfg => {
         if (cancelled || !cfg) return;
@@ -329,7 +330,7 @@ export function VoiceCallModal({
     }
     setPhase('connecting');
     try {
-      const res = await fetch('/api/voice-call/start', {
+      const res = await fetch(apiUrl('/api/voice-call/start'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -365,7 +366,7 @@ export function VoiceCallModal({
     if (terminal.has(phoneCall.status)) return;
     const int = setInterval(async () => {
       try {
-        const r = await fetch(`/api/voice-call/${phoneCall.callId}?token=${encodeURIComponent(phoneCall.accessToken)}`);
+        const r = await fetch(apiUrl(`/api/voice-call/${phoneCall.callId}?token=${encodeURIComponent(phoneCall.accessToken)}`));
         if (!r.ok) return;
         const j = await r.json();
         setPhoneCall(prev => prev ? { ...prev, status: j.status || prev.status, errorMessage: j.errorMessage } : prev);
@@ -460,7 +461,7 @@ export function VoiceCallModal({
 
     try {
       // 1. Ask server to mint a Realtime ephemeral session.
-      const sessionRes = await fetch('/api/voice-call/session', {
+      const sessionRes = await fetch(apiUrl('/api/voice-call/session'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

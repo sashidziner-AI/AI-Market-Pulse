@@ -2,6 +2,7 @@ import React from 'react';
 import { Clock, RefreshCw, Zap, Play, CheckCircle2, AlertCircle, Users, Mail, Activity, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { apiUrl } from '../utils/apiBase';
 
 type JobId = 'lead-health' | 'email-pattern-refresh' | 'persona-discovery';
 
@@ -153,7 +154,7 @@ export function SchedulerStatus({ onLeadsRefreshed }: { onLeadsRefreshed?: () =>
 
   const fetchStatus = React.useCallback(async () => {
     try {
-      const res = await fetch('/api/scheduler/status');
+      const res = await fetch(apiUrl('/api/scheduler/status'));
       if (!res.ok) return;
       const data = (await res.json()) as StatusPayload;
       setPayload(data);
@@ -175,7 +176,7 @@ export function SchedulerStatus({ onLeadsRefreshed }: { onLeadsRefreshed?: () =>
   async function runNow(id: JobId, label: string) {
     setRunningManual(id);
     try {
-      const res = await fetch(`/api/scheduler/run/${id}`, { method: 'POST' });
+      const res = await fetch(apiUrl(`/api/scheduler/run/${id}`), { method: 'POST' });
       const data = (await res.json()) as JobResult;
       toast.success(`${label}: ${data.note}`);
       await fetchStatus();

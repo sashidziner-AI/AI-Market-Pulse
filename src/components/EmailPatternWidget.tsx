@@ -2,6 +2,7 @@ import React from 'react';
 import { Mail, Copy, Check, Sparkles, Info, ShieldCheck, ShieldAlert, ShieldX, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
+import { apiUrl } from '../utils/apiBase';
 
 type Confidence = 'verified' | 'probable' | 'guess' | 'unknown';
 
@@ -84,7 +85,7 @@ export function EmailPatternWidget({ domain, companyName }: { domain: string; co
     if (!domain) return;
     setLoading('pattern');
     try {
-      const r = await fetch('/api/learn-email-pattern', {
+      const r = await fetch(apiUrl('/api/learn-email-pattern'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ domain, companyName }),
@@ -109,7 +110,7 @@ export function EmailPatternWidget({ domain, companyName }: { domain: string; co
     setCopied(false);
     setVerify(null);
     try {
-      const r = await fetch('/api/guess-email', {
+      const r = await fetch(apiUrl('/api/guess-email'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -132,7 +133,7 @@ export function EmailPatternWidget({ domain, companyName }: { domain: string; co
     if (!guess?.email) return;
     setLoading('verify');
     try {
-      const r = await fetch('/api/verify-email', {
+      const r = await fetch(apiUrl('/api/verify-email'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: guess.email }),

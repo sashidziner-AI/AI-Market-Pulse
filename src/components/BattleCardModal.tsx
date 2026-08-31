@@ -2,6 +2,7 @@ import React from 'react';
 import { X, Swords, Download, RefreshCw, AlertTriangle, TrendingUp, Sparkles, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { BattleCard as BattleCardType, BusinessAnalysis } from '../types';
+import { apiUrl } from '../utils/apiBase';
 import { BattleCardPrintable } from './BattleCard';
 import { Button } from '@/components/ui/button';
 
@@ -31,7 +32,7 @@ export function BattleCardModal({ open, onClose, competitorName, competitorCateg
     setLoading(true);
     setError(null);
     try {
-      const r = await fetch('/api/battle-card', {
+      const r = await fetch(apiUrl('/api/battle-card'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ competitorName, competitorCategory, accountDomain, sellerContext }),
