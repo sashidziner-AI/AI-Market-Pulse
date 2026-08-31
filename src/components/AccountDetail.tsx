@@ -1993,7 +1993,7 @@ export function AccountDetail({
             {/* Estimated Deal Size — surfaces before the priority tile because
                 deal size is the answer to "should I chase this?" — priority is
                 the answer to "when." */}
-            <RoiTile account={account} />
+            <RoiTile account={account} sellerContext={sellerContext} />
 
             {/* Outreach Priority & Timing Analytics */}
             <section className="space-y-3.5 bg-slate-50/50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-md h-full">

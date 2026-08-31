@@ -50,12 +50,27 @@ function inferEmployeeCount(account: TargetAccount): number {
   return 50;
 }
 
+// AI-picked benchmark for this specific account. Populated by
+// /api/estimate-deal and layered underneath the user's manual overrides.
+// Precedence at compute time: user override → ai suggestion → industry benchmark.
+export interface RoiAiEstimate {
+  perEmployeeAcv: number;
+  adoptionPct: number;         // 0.0-1.0
+  matchedIndustry: IndustryKey;
+  reasoning: string;           // 1-2 sentences the tile shows as tooltip
+  generatedAt: string;         // ISO for staleness display
+  isFallback?: boolean;        // AI unavailable — fell back to industry benchmark
+}
+
 export interface RoiOverrides {
   perEmployeeAcv?: number;
   adoptionPct?: number;     // 0.0-1.0
   contractYears?: number;
   employeeCount?: number;
   industry?: IndustryKey;   // override the auto-matched industry
+  // AI-picked defaults for perEmployeeAcv + adoptionPct. Does not participate
+  // in "hasOverrides" (user hasn't customised anything, only AI has).
+  ai?: RoiAiEstimate;
 }
 
 export interface RoiEstimate {
@@ -69,6 +84,12 @@ export interface RoiEstimate {
   perEmployeeAcv: number;
   adoptionPct: number;
   contractYears: number;
+  // Provenance of perEmployeeAcv + adoptionPct so the UI can badge accordingly.
+  // 'user'      — either value was manually overridden
+  // 'ai'        — AI-picked (RoiOverrides.ai) is providing at least one value
+  // 'benchmark' — falling back to the static INDUSTRY_BENCHMARKS table
+  source: 'user' | 'ai' | 'benchmark';
+  aiReasoning?: string;      // present when source === 'ai'
   // Human-readable one-liners the UI can render as tooltips / footnote.
   notes: string[];
 }
@@ -82,17 +103,26 @@ function matchIndustry(industry?: string): IndustryBenchmark {
 }
 
 export function computeRoi(account: TargetAccount, overrides?: RoiOverrides): RoiEstimate {
-  // Start with industry match (either overridden or auto).
-  const bench = overrides?.industry
-    ? (INDUSTRY_BENCHMARKS.find((b) => b.key === overrides.industry) ?? INDUSTRY_BENCHMARKS[INDUSTRY_BENCHMARKS.length - 1])
+  // Start with industry match. Precedence: user industry override > AI-suggested
+  // industry > auto-match from account.industry string.
+  const industryKey = overrides?.industry ?? overrides?.ai?.matchedIndustry;
+  const bench = industryKey
+    ? (INDUSTRY_BENCHMARKS.find((b) => b.key === industryKey) ?? INDUSTRY_BENCHMARKS[INDUSTRY_BENCHMARKS.length - 1])
     : matchIndustry(account.industry);
 
   const employeeCount = overrides?.employeeCount ?? account.employeeCount ?? inferEmployeeCount(account);
   const isInferredEmployeeCount = !overrides?.employeeCount && account.employeeCount == null;
 
-  const perEmployeeAcv = overrides?.perEmployeeAcv ?? bench.perEmployeeAcv;
-  const adoptionPct = overrides?.adoptionPct ?? bench.adoptionPct;
+  // 3-tier precedence: user manual override → AI-picked estimate → static benchmark.
+  const perEmployeeAcv = overrides?.perEmployeeAcv ?? overrides?.ai?.perEmployeeAcv ?? bench.perEmployeeAcv;
+  const adoptionPct = overrides?.adoptionPct ?? overrides?.ai?.adoptionPct ?? bench.adoptionPct;
   const contractYears = overrides?.contractYears ?? DEFAULT_CONTRACT_YEARS;
+
+  // Decide provenance for the UI badge. Any user field wins; else if AI supplied
+  // either input, mark 'ai'; else 'benchmark'.
+  const userTouchedRates = overrides?.perEmployeeAcv != null || overrides?.adoptionPct != null;
+  const aiSupplied = overrides?.ai?.perEmployeeAcv != null || overrides?.ai?.adoptionPct != null;
+  const source: RoiEstimate['source'] = userTouchedRates ? 'user' : aiSupplied ? 'ai' : 'benchmark';
 
   const annualAcvMid = employeeCount * perEmployeeAcv * adoptionPct;
   const mid = annualAcvMid * contractYears;
@@ -104,7 +134,10 @@ export function computeRoi(account: TargetAccount, overrides?: RoiOverrides): Ro
     notes.push(`Employee count inferred from priority index — override for a tighter estimate.`);
   }
   if (!overrides?.industry) {
-    notes.push(`Industry auto-matched to ${bench.key}${account.industry ? ` from "${account.industry}"` : ' (no industry set)'}.`);
+    notes.push(`Industry ${overrides?.ai ? 'AI-picked' : 'auto-matched'} as ${bench.key}${account.industry ? ` from "${account.industry}"` : ' (no industry set)'}.`);
+  }
+  if (source === 'ai' && overrides?.ai?.reasoning) {
+    notes.push(`AI reasoning: ${overrides.ai.reasoning}`);
   }
   notes.push(`Formula: ${employeeCount.toLocaleString()} employees × $${perEmployeeAcv.toLocaleString()}/emp × ${Math.round(adoptionPct * 100)}% adoption${contractYears > 1 ? ` × ${contractYears}y` : ''}.`);
 
@@ -119,8 +152,53 @@ export function computeRoi(account: TargetAccount, overrides?: RoiOverrides): Ro
     perEmployeeAcv,
     adoptionPct,
     contractYears,
+    source,
+    aiReasoning: source === 'ai' ? overrides?.ai?.reasoning : undefined,
     notes,
   };
+}
+
+// Fetch an AI-tuned per-account estimate. Cached in RoiOverrides.ai so a
+// second render of the same account (or a tab-switch) doesn't refire the call.
+export interface FetchAiEstimateArgs {
+  account: TargetAccount;
+  sellerContext?: { businessName?: string; valueProp?: string };
+  signal?: AbortSignal;
+}
+
+export async function fetchAiEstimate({ account, sellerContext, signal }: FetchAiEstimateArgs): Promise<RoiAiEstimate | null> {
+  try {
+    const { apiUrl } = await import('./apiBase');
+    const res = await fetch(apiUrl('/api/estimate-deal'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        accountName: account.name,
+        accountDomain: account.domain,
+        industry: account.industry,
+        employeeCount: account.employeeCount,
+        priorityIndex: account.priorityIndex,
+        // Best-effort signal harvest — server tolerates missing fields.
+        techStack: (account as any).technicalStack ?? (account as any).techStack ?? [],
+        growthSignals: (account as any).growthSignals ?? [],
+        sellerContext,
+      }),
+      signal,
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data || typeof data.perEmployeeAcv !== 'number' || typeof data.adoptionPct !== 'number') return null;
+    return {
+      perEmployeeAcv: data.perEmployeeAcv,
+      adoptionPct: data.adoptionPct,
+      matchedIndustry: data.matchedIndustry,
+      reasoning: data.reasoning ?? '',
+      generatedAt: data.generatedAt ?? new Date().toISOString(),
+      isFallback: !!data.isFallback,
+    };
+  } catch {
+    return null;
+  }
 }
 
 // Format $1,234,567 as "$1.2M" / "$450K" / "$8.5K" — compact for tile display.

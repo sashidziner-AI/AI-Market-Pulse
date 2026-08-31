@@ -936,6 +936,14 @@ export default function App() {
             setAnalyzedUrl(null);
             toast.info("Returned to seller website input screen");
           }}
+          headerRightSlot={(
+            <UserMenu
+              user={currentUser}
+              open={userMenuOpen}
+              onToggle={() => setUserMenuOpen((v) => !v)}
+              onLogout={handleLogout}
+            />
+          )}
         />
       )}
         </>
@@ -946,7 +954,11 @@ export default function App() {
           host their own headers). Keeps sign-out one click away from every
           screen. Positioned inside the JarvisOrb column so it never overlaps
           the orb itself. */}
-      {(showLanding || analysis) && (
+      {/* Only render the floating menu on the marketing landing page.
+          When Dashboard is up, App passes the same UserMenu into Dashboard's
+          own header via headerRightSlot so it sits with the theme toggle
+          instead of floating over the new bell/slack icons. */}
+      {showLanding && !analysis && (
         <div className="fixed top-4 right-4 z-[60]">
           <UserMenu
             user={currentUser}

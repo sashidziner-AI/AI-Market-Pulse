@@ -29,6 +29,8 @@ import { WeeklyDigest } from './WeeklyDigest';
 import { CompareAccountsModal } from './CompareAccountsModal';
 import { UserCheck, CalendarDays, GitCompare } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
+import { SignalChangesBell } from './SignalChangesBell';
+import { SlackSettings } from './SlackSettings';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 
 // Classic 3-face 3D bar shape for recharts
@@ -146,6 +148,10 @@ interface DashboardProps {
   onUpdateReportMeta?: (id: string, name: string) => void;
   onShowSavedReports?: () => void;
   onBack?: () => void;
+  // Slot for the user-avatar menu App owns. Rendered in the top-right of the
+  // Dashboard header alongside the theme toggle, so it doesn't float over the
+  // Signal Changes bell + Slack Settings icons.
+  headerRightSlot?: React.ReactNode;
 }
 
 // Default name for a new saved report. Uses the EXACT primary target industry
@@ -175,7 +181,8 @@ export function Dashboard({
   onUpdateReport,
   onUpdateReportMeta,
   onShowSavedReports,
-  onBack
+  onBack,
+  headerRightSlot,
 }: DashboardProps) {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -1767,20 +1774,14 @@ export function Dashboard({
             </div>
 
             <div className="flex items-center gap-3">
-               <Button variant="ghost" size="icon" className="text-zinc-400 relative hover:text-zinc-100 hover:bg-white/[0.06] h-8 w-8 rounded-lg">
-                 <Bell className="w-4 h-4" />
-                 <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 bg-red-500 rounded-full border border-[#2A2A2B]" />
-               </Button>
+               <SignalChangesBell
+                 accounts={accounts}
+                 onOpenAccount={(id) => setSelectedAccountId(id)}
+                 variant="onDark"
+               />
+               <SlackSettings variant="onDark" />
+               {headerRightSlot}
                <div className="h-6 w-[1px] bg-white/[0.08] mx-1" />
-               <Button
-                 variant="outline"
-                 size="sm"
-                 className={`h-8 gap-1.5 text-xs transition-all cursor-pointer ${crmConnected !== 'none' ? 'text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 hover:bg-emerald-500/15 font-bold' : 'text-zinc-300 bg-transparent border-white/[0.08] hover:bg-white/[0.06] hover:text-zinc-100'}`}
-                 onClick={() => setIsCrmOpen(true)}
-               >
-                 <Database className={`w-3.5 h-3.5 ${crmConnected !== 'none' ? 'text-emerald-400 animate-pulse' : 'text-indigo-400'}`} />
-                 <span>{crmConnected !== 'none' ? `${crmConnected.charAt(0).toUpperCase() + crmConnected.slice(1)} Active` : 'Connect CRM'}</span>
-               </Button>
                <ThemeToggle />
             </div>
           </div>
@@ -1832,13 +1833,13 @@ export function Dashboard({
             <div className="flex items-center gap-2 flex-nowrap overflow-x-auto scrollbar-none">
               {onSaveReport && (
                 <Button
-                  variant="default"
+                  variant="outline"
                   size="sm"
                   onClick={triggerSaveReportInitiation}
-                  className="h-8 text-[13px] font-bold gap-1 bg-indigo-600 hover:bg-indigo-500 text-white px-3 rounded-lg border-0 cursor-pointer transition-all shadow-[0_1px_2px_rgba(245,130,32,0.35)] shrink-0"
+                  className="h-8 text-[13px] font-semibold gap-1 bg-transparent border-white/[0.12] text-zinc-200 hover:bg-white/[0.06] hover:text-white hover:border-white/[0.2] px-3 rounded-lg cursor-pointer transition-all shrink-0"
                   title="Save current analysis and target list view"
                 >
-                  <FolderOpen className="w-3.5 h-3.5" />
+                  <FolderOpen className="w-3.5 h-3.5 text-zinc-400" />
                   <span>{activeReportId ? 'Save As' : 'Save Scope'}</span>
                 </Button>
               )}
@@ -1937,6 +1938,23 @@ export function Dashboard({
               >
                 <FileUp className="w-3.5 h-3.5 text-zinc-400" />
                 <span>{uploadedFile ? `Imported: ${uploadedFile.name.substring(0, 12)}${uploadedFile.name.length > 12 ? '...' : ''}` : 'Import CSV'}</span>
+              </Button>
+
+              <Button
+                variant="outline"
+                size="sm"
+                className={`relative h-8 gap-1.5 text-[13px] font-semibold shrink-0 cursor-pointer transition-all ${
+                  crmConnected !== 'none'
+                    ? 'text-indigo-200 bg-indigo-500/15 border-indigo-500/40 hover:bg-indigo-500/25 font-bold'
+                    : 'text-white bg-indigo-600 border-indigo-500 hover:bg-indigo-500 shadow-[0_1px_2px_rgba(79,70,229,0.35)]'
+                }`}
+                onClick={() => setIsCrmOpen(true)}
+              >
+                <Database className={`w-3.5 h-3.5 ${crmConnected !== 'none' ? 'text-indigo-300' : 'text-white'}`} />
+                <span>{crmConnected !== 'none' ? `${crmConnected.charAt(0).toUpperCase() + crmConnected.slice(1)} Active` : 'Connect CRM'}</span>
+                {crmConnected !== 'none' && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse ml-0.5" title="Live sync" />
+                )}
               </Button>
 
               {uploadedFile && (
@@ -4868,31 +4886,51 @@ export function Dashboard({
               <div className="grid grid-cols-1 gap-2.5 px-1 py-2">
                 <button
                   onClick={() => setSelectedCrmType('prospectaccel')}
-                  className={`p-3 rounded-xl border text-left transition-all flex items-start gap-3 ${selectedCrmType === 'prospectaccel' ? 'border-indigo-500 bg-indigo-50/20 dark:bg-indigo-950/40 shadow-xs' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50'}`}
+                  className={`p-3 rounded-xl border text-left transition-all flex items-center gap-3 cursor-pointer ${selectedCrmType === 'prospectaccel' ? 'border-indigo-500 bg-indigo-50/20 dark:bg-indigo-950/40 shadow-xs' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40'}`}
                 >
-                  <div className="w-8 h-8 rounded-lg bg-indigo-100 dark:bg-indigo-900/40 flex items-center justify-center font-bold text-indigo-605 shrink-0 text-xs select-none">PA</div>
-                  <div>
-                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200">Prospect Accel Integration</div>
+                  <div className="w-12 h-12 rounded-lg bg-white dark:bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden border border-slate-200 dark:border-slate-300">
+                    <img
+                      src={`${import.meta.env.BASE_URL}prospect-accel-logo.jpg`}
+                      alt="Prospect Accel"
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200">Prospect Accel</div>
                     <div className="text-[13px] text-slate-500 dark:text-slate-300 mt-0.5 leading-normal">Synchronize high-converting targeted matches and real-time triggers seamlessly.</div>
                   </div>
                 </button>
                 <button
+                  type="button"
                   onClick={() => setSelectedCrmType('hubspot')}
-                  className={`p-3 rounded-xl border text-left transition-all flex items-start gap-3 ${selectedCrmType === 'hubspot' ? 'border-orange-500 bg-orange-50/20 dark:bg-orange-950/40 shadow-xs' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50'}`}
+                  className={`p-3 rounded-xl border text-left transition-all flex items-center gap-3 cursor-pointer ${selectedCrmType === 'hubspot' ? 'border-orange-500 bg-orange-50/20 dark:bg-orange-950/40 shadow-xs' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40'}`}
                 >
-                  <div className="w-8 h-8 rounded-lg bg-orange-100 dark:bg-orange-900/40 flex items-center justify-center font-bold text-orange-600 dark:text-orange-300 shrink-0 text-xs select-none">HS</div>
-                  <div>
-                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200">HubSpot Integration</div>
+                  <div className="w-12 h-12 rounded-lg bg-white dark:bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden border border-slate-200 dark:border-slate-300">
+                    <img
+                      src={`${import.meta.env.BASE_URL}hubspot-logo.jpg`}
+                      alt="HubSpot"
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200">HubSpot</div>
                     <div className="text-[13px] text-slate-500 dark:text-slate-300 mt-0.5 leading-normal">Sync companies, contact records, and custom intent signals in real time.</div>
                   </div>
                 </button>
                 <button
+                  type="button"
                   onClick={() => setSelectedCrmType('salesforce')}
-                  className={`p-3 rounded-xl border text-left transition-all flex items-start gap-3 ${selectedCrmType === 'salesforce' ? 'border-sky-505 bg-sky-50/20 dark:bg-sky-950/40 shadow-xs' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50'}`}
+                  className={`p-3 rounded-xl border text-left transition-all flex items-center gap-3 cursor-pointer ${selectedCrmType === 'salesforce' ? 'border-sky-500 bg-sky-50/20 dark:bg-sky-950/40 shadow-xs' : 'border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800/40'}`}
                 >
-                  <div className="w-8 h-8 rounded-lg bg-sky-102 flex items-center justify-center font-bold text-sky-600 dark:text-sky-300 shrink-0 text-xs select-none">SF</div>
-                  <div>
-                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200">Salesforce Integration</div>
+                  <div className="w-12 h-12 rounded-lg bg-white dark:bg-slate-100 flex items-center justify-center shrink-0 overflow-hidden border border-slate-200 dark:border-slate-300">
+                    <img
+                      src={`${import.meta.env.BASE_URL}salesforce-logo.jpg`}
+                      alt="Salesforce"
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-bold text-slate-800 dark:text-slate-200">Salesforce</div>
                     <div className="text-[13px] text-slate-500 dark:text-slate-300 mt-0.5 leading-normal">Map overall ICP fit score and prioritized buyers to active prospect lists.</div>
                   </div>
                 </button>
