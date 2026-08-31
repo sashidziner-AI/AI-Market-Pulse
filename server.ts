@@ -61,6 +61,7 @@ for (const route of [
   "/api/jarvis/tts",
   "/api/learn-email-pattern",
   "/api/guess-email",
+  "/api/discover-partners",
 ]) {
   app.use(route, aiLimiter);
 }
@@ -5855,6 +5856,142 @@ Ground everything you can in real search results. If a specific customer/date/me
     const fallback = getBattleCardFallback(competitorName, sellerName);
     battleCardCache.set(cacheKey, fallback);
     return res.json({ ...fallback, generatedAt: new Date().toISOString(), isFallback: true });
+  }
+});
+
+// ─── Partner Pathways discovery ─────────────────────────────────────────────
+// Turns a BusinessAnalysis into a tailored SellerChannelPartner[] so the
+// Dashboard's Active Partners Grid stops shipping AEC-only seed data to
+// SaaS/fintech/healthcare/etc. users. Uses web_search so partner names are
+// real orgs, not hallucinated. Cached per business name + industry for the
+// server lifetime — same pattern as other AI endpoints.
+interface SellerChannelPartnerPayload {
+  id: string;
+  name: string;
+  type: "channel" | "integration" | "referral" | "investor";
+  keywords: string[];
+  warmContact?: string;
+  description: string;
+  strength?: "High" | "Medium" | "Low";
+}
+
+const partnersCache = new Map<string, SellerChannelPartnerPayload[]>();
+
+function getPartnersFallback(industry?: string): SellerChannelPartnerPayload[] {
+  const raw = (industry ?? "").toLowerCase();
+  const isAEC = /(aec|construct|architect|engineer|building|bim|infrastructur)/i.test(raw);
+  if (isAEC) {
+    return [
+      { id: "scp-1", name: "Autodesk Enterprise Construction Alliance", type: "integration", keywords: ["autodesk", "revit", "bim", "aec", "cad"], warmContact: "Sarah Jenkins (VP Global Alliances)", description: "Premier Autodesk partnership group providing seamless BIM automation and design workflows.", strength: "High" },
+      { id: "scp-2", name: "Accenture Built Environment Practice", type: "channel", keywords: ["jacobs", "aecom", "stantec", "turner", "contractor"], warmContact: "Michael Chang (Sr. Managing Director)", description: "Global system integrator advising premier engineering conglomerates on tech stacks.", strength: "Medium" },
+      { id: "scp-3", name: "BIM-Tech Global Referral Consortium", type: "referral", keywords: ["drafting", "qa", "revit layout", "bim coordination"], warmContact: "David Vance (Executive Committee Chair)", description: "Consortium of drafting vendors and industry contractors pooling referral leads.", strength: "Medium" },
+      { id: "scp-4", name: "Summit Venture Capital Portfolio", type: "investor", keywords: ["funding", "raised", "capital", "series", "seed"], warmContact: "Emily Thorne (Managing Venture Partner)", description: "Investment syndication backing high-growth construction-tech platforms.", strength: "High" },
+      { id: "scp-5", name: "Federal Systems Integrators Group", type: "channel", keywords: ["federal", "gsa", "public sector", "gov"], warmContact: "Robert Miles (Federal Alliance Director)", description: "Prime federal integrators covering GSA schedules and public-sector procurement.", strength: "Medium" },
+    ];
+  }
+  return [
+    { id: "scp-1", name: "AWS Partner Network — Independent Software Vendors", type: "channel", keywords: ["aws", "amazon web services", "cloud", "startup", "scale-up"], warmContact: "APN Solutions Architect (via partner portal)", description: "AWS's co-sell motion for ISVs; unlocks marketplace listings and joint account plans with AWS field.", strength: "High" },
+    { id: "scp-2", name: "HubSpot App Marketplace Alliance", type: "integration", keywords: ["hubspot", "crm", "marketing automation", "sales enablement"], warmContact: "HubSpot Partner Team (partners@hubspot.com)", description: "Integration-tier partnership; certified apps get placement + co-marketing at INBOUND.", strength: "Medium" },
+    { id: "scp-3", name: "Deloitte Digital Emerging Growth Practice", type: "channel", keywords: ["deloitte", "consulting", "implementation", "enterprise", "transformation"], warmContact: "Alliance Manager, Deloitte Digital", description: "Big-4 systems integrator; opens doors into their client roster in exchange for implementation revenue share.", strength: "Medium" },
+    { id: "scp-4", name: "a16z Portfolio Cross-Sell Network", type: "referral", keywords: ["a16z", "andreessen horowitz", "portfolio", "founders", "series a"], warmContact: "a16z Partner Success (via portfolio Slack)", description: "Referral pathway into a16z's ~300 active portfolio companies via warm-intro Slack channels.", strength: "Medium" },
+    { id: "scp-5", name: "Salesforce AppExchange ISV Program", type: "integration", keywords: ["salesforce", "appexchange", "sfdc", "crm"], warmContact: "AppExchange ISV Success Manager", description: "Listing + AppExchange co-sell; unlocks Salesforce AE account maps in exchange for revenue share.", strength: "High" },
+  ];
+}
+
+app.post("/api/discover-partners", async (req, res) => {
+  const { businessContext } = req.body ?? {};
+  if (!businessContext || typeof businessContext !== "object") {
+    return res.status(400).json({ error: "businessContext is required" });
+  }
+
+  const businessName: string = businessContext.businessName ?? "the seller";
+  const industry: string | undefined = businessContext.industry ?? businessContext.icp?.industry;
+  const valueProp: string | undefined = businessContext.valueProp;
+  const icpSummary: string | undefined = typeof businessContext.icp === "object"
+    ? [businessContext.icp.industry, businessContext.icp.companySize, businessContext.icp.geography].filter(Boolean).join(" · ")
+    : undefined;
+
+  const cacheKey = `${businessName.toLowerCase()}::${(industry ?? "").toLowerCase()}`;
+  const cached = partnersCache.get(cacheKey);
+  if (cached) {
+    return res.json({ partners: cached, generatedAt: new Date().toISOString(), cached: true });
+  }
+
+  const prompt = `You have access to web_search. Generate 5-7 REAL, tailored channel-partner / integration / referral / investor pathways for a company selling ${valueProp ? `"${valueProp}"` : "their product"} to ${icpSummary || "their ICP"}.
+
+Seller: ${businessName}
+Industry: ${industry || "(not specified — infer from context)"}
+${icpSummary ? `ICP: ${icpSummary}` : ""}
+
+GROUNDING PLAN (spend ~2-3 searches so the partners are REAL, findable orgs — not made-up names):
+  1. "${industry || "SaaS"} partner ecosystem" or "${industry || "SaaS"} channel alliances" — find real partner programs / consortiums
+  2. "${industry || "SaaS"} systems integrators" or "${industry || "SaaS"} implementation partners" — find real SIs
+  3. "${industry || "SaaS"} investors" or "top ${industry || "SaaS"} VCs" — find real VC portfolios for warm intros
+
+Produce a JSON object with a "partners" array of 5-7 items. Each item MUST have:
+- id: kebab-case slug like "aws-partner-network" (unique)
+- name: the REAL organization name (e.g. "AWS Partner Network", "HubSpot App Marketplace", "Sequoia Capital Portfolio") — never invented
+- type: one of "channel" | "integration" | "referral" | "investor" — cover a MIX (not all one type)
+- keywords: 4-8 lowercase strings the matching engine can grep against account signals (e.g. ["aws", "cloud", "startup", "scale-up"])
+- warmContact: a plausible role + name if the org has a public partner-team contact, else a generic role title like "Alliance Manager" — never invent a specific real person
+- description: one sentence explaining what selling motion this pathway unlocks — concrete, no marketing platitudes
+- strength: "High" | "Medium" | "Low" — how reachable this pathway is for a company at this seller's stage
+
+Mix types intentionally: aim for ~2 channel, ~2 integration, ~1-2 referral, ~1 investor.
+Never invent a fake org name to fill a slot — if you can't find enough real ones in a category, produce fewer items.`;
+
+  const schema = {
+    type: Type.OBJECT,
+    properties: {
+      partners: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            id: { type: Type.STRING },
+            name: { type: Type.STRING },
+            type: { type: Type.STRING, enum: ["channel", "integration", "referral", "investor"] },
+            keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
+            warmContact: { type: Type.STRING },
+            description: { type: Type.STRING },
+            strength: { type: Type.STRING, enum: ["High", "Medium", "Low"] },
+          },
+          required: ["id", "name", "type", "keywords", "description"],
+        },
+      },
+    },
+    required: ["partners"],
+  };
+
+  try {
+    const ai = await generateStructuredData(prompt, schema, {
+      endpoint: "/api/discover-partners",
+      models: {
+        anthropic: [MODEL_OPUS_4_7, MODEL_HAIKU_4_5],
+        openai: [MODEL_GPT_4O, MODEL_GPT_4O_MINI],
+      },
+      useWebSearch: true,
+      maxSearches: 3,
+      maxTokens: 4096,
+    });
+    const raw = ((ai as any).partners ?? []) as SellerChannelPartnerPayload[];
+    // Normalise ids to be unique and non-empty. AI sometimes returns duplicates.
+    const seen = new Set<string>();
+    const partners = raw
+      .filter((p) => p && p.name && p.type)
+      .map((p, idx) => {
+        let id = (p.id || p.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")).slice(0, 60);
+        if (!id || seen.has(id)) id = `scp-ai-${idx}`;
+        seen.add(id);
+        return { ...p, id, keywords: Array.isArray(p.keywords) ? p.keywords.slice(0, 8) : [] };
+      });
+    if (partners.length === 0) throw new Error("empty partners array");
+    partnersCache.set(cacheKey, partners);
+    return res.json({ partners, generatedAt: new Date().toISOString() });
+  } catch (err: any) {
+    const fallback = getPartnersFallback(industry);
+    partnersCache.set(cacheKey, fallback);
+    return res.json({ partners: fallback, generatedAt: new Date().toISOString(), isFallback: true });
   }
 });
 

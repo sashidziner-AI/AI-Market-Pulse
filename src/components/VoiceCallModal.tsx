@@ -3,7 +3,7 @@ import { motion } from 'motion/react';
 import {
   Phone, PhoneOff, X, Loader2, Mic, MicOff, ShieldCheck,
   MessageSquare, Volume2, CalendarClock, Trash2, Users, UserPlus,
-  Smartphone, Radio
+  Smartphone, Radio, Sparkles
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
@@ -88,39 +88,29 @@ export function VoiceCallModal({
     return list;
   }, []);
 
-  // Contact directory pulled from every pipeline account's analysis + CRM
-  // record. Personas & stakeholder-map nodes only carry a `role` label (the
-  // AI doesn't fabricate names/phones during analyze-account), so we surface
-  // that as the "name" the AI will greet with. A phone number is only shown
-  // when the account has been synced to a CRM record that carries one.
+  // Contact directory pulled from the currently-selected account's analysis
+  // + CRM record. Personas & stakeholder-map nodes only carry a `role` label
+  // (the AI doesn't fabricate names/phones during analyze-account), so we
+  // surface that as the "name" the AI will greet with. A phone number is
+  // only shown when the account has been synced to a CRM record that carries
+  // one.
   //
-  // We aggregate across the whole pipeline (grouped by account) so a call
-  // opened for an un-analyzed account can still surface contacts from its
-  // neighbors. `account` itself is always ordered first so its contacts
-  // appear at the top of the dropdown.
+  // Scoped to `account` only — the dropdown must never leak personas /
+  // stakeholders / CRM contacts from other pipeline accounts into a call
+  // aimed at this one company.
   type ContactOption = {
     id: string;
     name: string;             // what the AI will use to address the contact
     subtitle: string;         // where this option was sourced from
     phone?: string;           // rare — only when CRM has a mobile
-    accountId: string;        // origin account (used for optgroup label)
+    accountId: string;        // origin account (always the focused one)
     accountName: string;
-    isOwnAccount: boolean;    // belongs to the currently-selected account
+    isOwnAccount: boolean;    // always true — kept for downstream render code
     source: 'crm' | 'persona' | 'stakeholder' | 'account';
   };
   const contactOptions = useMemo<ContactOption[]>(() => {
     const opts: ContactOption[] = [];
-
-    // Build the ordered walk list: focused account first, then the rest of
-    // the pipeline (deduped by id).
-    const seen = new Set<string>([account.id]);
     const walk: TargetAccount[] = [account];
-    for (const a of pipelineAccounts || []) {
-      if (a && !seen.has(a.id)) {
-        seen.add(a.id);
-        walk.push(a);
-      }
-    }
 
     for (const a of walk) {
       const isOwn = a.id === account.id;
@@ -194,7 +184,7 @@ export function VoiceCallModal({
       }
     }
     return opts;
-  }, [account, pipelineAccounts]);
+  }, [account]);
 
   // Which directory entry (if any) the user picked. `null` = "custom name"
   // path: the text input below drives contactName directly, matching the
@@ -922,9 +912,14 @@ export function VoiceCallModal({
                       </div>
                     )}
                     {contactOptions.every(c => c.source === 'account') && contactOptions.length > 0 && (
-                      <p className="text-[10.5px] text-zinc-400 dark:text-zinc-500 leading-snug">
-                        Run analyze-account on any pipeline account to unlock personas & stakeholder map contacts in this dropdown.
-                      </p>
+                      <div className="flex items-start gap-2 p-2.5 rounded-lg border border-orange-300/70 dark:border-orange-800/60 bg-orange-50 dark:bg-orange-950/30 shadow-xs">
+                        <div className="shrink-0 w-6 h-6 rounded-md bg-orange-500/15 text-orange-700 dark:text-orange-300 flex items-center justify-center">
+                          <Sparkles className="w-3.5 h-3.5" />
+                        </div>
+                        <p className="text-[12px] text-orange-900 dark:text-orange-100 leading-snug">
+                          <span className="font-semibold">Unlock more contacts.</span> Run <span className="font-mono px-1 py-0.5 rounded bg-orange-500/15 text-orange-800 dark:text-orange-200 text-[11px]">analyze-account</span> on this account to surface buyer personas &amp; the stakeholder map in this dropdown.
+                        </p>
+                      </div>
                     )}
                   </div>
                 </div>
