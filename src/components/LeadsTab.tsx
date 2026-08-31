@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { SchedulerStatus } from './SchedulerStatus';
+import { apiUrl } from '../utils/apiBase';
 
 /**
  * Leads tab. Backed by /api/leads (JSON file store in Phase A). Refresh flows
@@ -177,7 +178,7 @@ export function LeadsTab({ analysisDomains }: { analysisDomains?: string[] } = {
   const fetchLeads = React.useCallback(async () => {
     setLoading(true);
     try {
-      const r = await fetch('/api/leads?limit=200');
+      const r = await fetch(apiUrl('/api/leads?limit=200'));
       const data = (await r.json()) as { leads: ApiLeadRow[]; total: number };
       setLeads((data.leads ?? []).map(mapApiLead));
     } catch (e: any) {
@@ -193,7 +194,7 @@ export function LeadsTab({ analysisDomains }: { analysisDomains?: string[] } = {
 
   const refreshLead = React.useCallback(async (id: string) => {
     try {
-      const r = await fetch(`/api/leads/${id}/refresh`, { method: 'POST' });
+      const r = await fetch(apiUrl(`/api/leads/${id}/refresh`), { method: 'POST' });
       const data = await r.json() as {
         source?: 'proxycurl' | 'stub';
         reachable?: boolean;

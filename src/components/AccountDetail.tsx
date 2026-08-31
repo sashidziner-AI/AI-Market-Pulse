@@ -1,12 +1,12 @@
 import React from 'react';
-import { TargetAccount, DetailedAnalysis, MultiThreadingStrategy, StakeholderNode, IntelCitation, SocialActivity, SocialPlatformData } from '../types';
+import { TargetAccount, DetailedAnalysis, MultiThreadingStrategy, StakeholderNode, IntelCitation, SocialActivity, SocialPlatformData, EmailTouch } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   X, ShieldCheck, Mail, Linkedin, Users,
   Lightbulb, AlertCircle, Copy, Check,
   ArrowUpRight, ArrowLeft, Info, Clock, TrendingUp, AlertTriangle,
   Network, GitBranch, ShieldAlert, Sparkles, Sliders, SlidersHorizontal, Target,
-  ExternalLink, Globe, Activity, RefreshCw, User, Briefcase, TrendingDown, ChevronRight, Download
+  ExternalLink, Globe, Activity, RefreshCw, User, Briefcase, TrendingDown, ChevronRight, Download, Swords
 } from 'lucide-react';
 import { FaLinkedin, FaYoutube, FaXTwitter, FaInstagram, FaFacebook } from 'react-icons/fa6';
 import { SocialSignalsCard } from './SocialSignalsCard';
@@ -18,6 +18,12 @@ import { getAccountPriorityInfo, getOrInitializeSignals, AccountSignal } from '.
 import { toast } from 'sonner';
 import * as crmMirror from '../utils/crmMirror';
 import { EmailPatternWidget } from './EmailPatternWidget';
+import { MeetingBrief } from './MeetingBrief';
+import { BattleCardModal } from './BattleCardModal';
+import { AccountTrendChart } from './AccountTrendChart';
+import { RoiTile } from './RoiTile';
+import { BusinessAnalysis } from '../types';
+import { apiUrl } from '../utils/apiBase';
 
 export function SourceCitation({ citation, inlineLabel, isSignal = false }: { citation?: IntelCitation; inlineLabel?: string; isSignal?: boolean }) {
   if (!citation) return null;
@@ -278,7 +284,7 @@ export function StakeholderLinkedinCard({ role, company, domain, compact = false
 
   React.useEffect(() => {
     let cancelled = false;
-    fetch('/api/enrich-stakeholder', {
+    fetch(apiUrl('/api/enrich-stakeholder'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ role, company, domain }),
@@ -468,9 +474,14 @@ interface AccountDetailProps {
   onSyncToCrm?: (account: TargetAccount) => Promise<void> | void;
   onRefreshCrmStatus?: (account: TargetAccount) => void;
   onUpdateCrmRecord?: (account: TargetAccount) => void;
+  onOpenCrmModal?: () => void;
   crmConnected?: boolean;
   crmProviderName?: string;
   isCrmLoading?: boolean;
+  // Optional — used by the Battle Card generator to name the seller in the
+  // generated card ("Acme vs. Competitor"). Omitted → generator falls back
+  // to "our team" in the tagline and objection rebuttals.
+  sellerContext?: Pick<BusinessAnalysis, 'businessName' | 'valueProp'> | null;
 }
 
 export function AccountDetail({
@@ -480,15 +491,22 @@ export function AccountDetail({
   onSyncToCrm,
   onRefreshCrmStatus,
   onUpdateCrmRecord,
+  onOpenCrmModal,
   crmConnected = false,
   crmProviderName = 'your CRM',
   isCrmLoading = false,
+  sellerContext = null,
 }: AccountDetailProps) {
+  const [battleCardTarget, setBattleCardTarget] = React.useState<{ name: string; category?: string } | null>(null);
   const [copied, setCopied] = React.useState<string | null>(null);
 
   // Ref on the scrollable content wrapper so we can rasterize it to PDF.
   const reportContentRef = React.useRef<HTMLDivElement | null>(null);
   const [isExportingPdf, setIsExportingPdf] = React.useState(false);
+
+  // Ref on the off-screen 2-page MeetingBrief for the "Download Brief" flow.
+  const briefRef = React.useRef<HTMLDivElement | null>(null);
+  const [isExportingBrief, setIsExportingBrief] = React.useState(false);
 
   // Interactive account property editors state variables
   const [isEditing, setIsEditing] = React.useState(false);
@@ -608,6 +626,67 @@ export function AccountDetail({
     }
   };
 
+  // Rasterize the off-screen MeetingBrief into a 2-page A4 PORTRAIT PDF.
+  // Reuses the same html2canvas-pro + jspdf pipeline as handleDownloadPdf,
+  // but sourced from a compact print-optimized DOM rather than the live UI.
+  const handleDownloadBrief = async () => {
+    const node = briefRef.current;
+    if (!node) {
+      toast.error('Brief not ready. Run AI analysis first.');
+      return;
+    }
+    setIsExportingBrief(true);
+    try {
+      const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
+        import('jspdf'),
+        import('html2canvas-pro'),
+      ]);
+      const canvas = await html2canvas(node, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        width: 794,           // A4 portrait width at 96dpi (matches MeetingBrief container width)
+        windowWidth: 794,
+      });
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const canvasPageHeight = Math.floor((canvas.width * pageHeight) / pageWidth);
+      // Brief is exactly 2 pages by design (MeetingBrief pins each section to
+      // one A4 portrait height). Cap the loop at 2 to defend against any
+      // rounding overshoot that would otherwise produce a nearly-blank 3rd page.
+      const MAX_PAGES = 2;
+      let renderedHeight = 0;
+      let pageIndex = 0;
+      while (renderedHeight < canvas.height && pageIndex < MAX_PAGES) {
+        const sliceHeight = Math.min(canvasPageHeight, canvas.height - renderedHeight);
+        const pageCanvas = document.createElement('canvas');
+        pageCanvas.width = canvas.width;
+        pageCanvas.height = sliceHeight;
+        const ctx = pageCanvas.getContext('2d');
+        if (!ctx) throw new Error('Canvas 2d context unavailable');
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, pageCanvas.width, pageCanvas.height);
+        ctx.drawImage(canvas, 0, renderedHeight, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
+        if (pageIndex > 0) pdf.addPage();
+        const imgHeightOnPage = (sliceHeight * pageWidth) / canvas.width;
+        pdf.addImage(pageCanvas.toDataURL('image/png'), 'PNG', 0, 0, pageWidth, imgHeightOnPage, undefined, 'FAST');
+        renderedHeight += sliceHeight;
+        pageIndex += 1;
+      }
+      const safeName = (account.name || 'account')
+        .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60) || 'account';
+      const stamp = new Date().toISOString().slice(0, 10);
+      pdf.save(`${safeName}-meeting-brief-${stamp}.pdf`);
+      toast.success('Meeting brief downloaded.');
+    } catch (err: any) {
+      toast.error(`Brief export failed: ${err.message || 'unknown error'}`);
+    } finally {
+      setIsExportingBrief(false);
+    }
+  };
+
   // Social signals state — lazy-fetched on mount once per account
   const [socialLoading, setSocialLoading] = React.useState(false);
   const [socialData, setSocialData] = React.useState<SocialActivity | null>(account.socialActivity ?? null);
@@ -622,7 +701,7 @@ export function AccountDetail({
     if (account.socialActivity) return;
     let cancelled = false;
     setSocialLoading(true);
-    fetch('/api/analyze-social', {
+    fetch(apiUrl('/api/analyze-social'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ domain: account.domain, companyName: account.name }),
@@ -855,24 +934,53 @@ export function AccountDetail({
                 </Button>
               </div>
             ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleDownloadPdf}
-                disabled={isExportingPdf}
-                title="Download this account report as a PDF"
-                className="h-8 text-xs font-bold gap-1.5 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:text-indigo-600 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
-              >
-                <Download className={`w-3.5 h-3.5 ${isExportingPdf ? 'animate-pulse' : ''}`} />
-                <span>{isExportingPdf ? 'Preparing PDF…' : 'Download PDF'}</span>
-              </Button>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDownloadBrief}
+                  disabled={isExportingBrief || !analysis}
+                  title={analysis ? "Download a 2-page meeting brief PDF for the discovery call" : "Run AI analysis first to generate a brief"}
+                  className="h-8 text-xs font-bold gap-1.5 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800/60 bg-indigo-50/40 dark:bg-indigo-950/30 hover:bg-indigo-50 dark:hover:bg-indigo-950/50 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  <Briefcase className={`w-3.5 h-3.5 ${isExportingBrief ? 'animate-pulse' : ''}`} />
+                  <span>{isExportingBrief ? 'Preparing…' : 'Download Brief'}</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDownloadPdf}
+                  disabled={isExportingPdf}
+                  title="Download the full account report as a PDF"
+                  className="h-8 text-xs font-bold gap-1.5 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:text-indigo-600 hover:bg-slate-50 dark:hover:bg-slate-800 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  <Download className={`w-3.5 h-3.5 ${isExportingPdf ? 'animate-pulse' : ''}`} />
+                  <span>{isExportingPdf ? 'Preparing PDF…' : 'Download PDF'}</span>
+                </Button>
+              </div>
             )
           )}
         </div>
       </div>
 
+      {/* Off-screen printable brief — mounted permanently, rasterized on demand
+          by handleDownloadBrief. Hidden via inline styles inside the component. */}
+      {analysis && <MeetingBrief ref={briefRef} account={account} />}
+
+      {/* Battle Card modal — opens when a Competitors-tab card's Battle Card button fires. */}
+      {battleCardTarget && (
+        <BattleCardModal
+          open={!!battleCardTarget}
+          onClose={() => setBattleCardTarget(null)}
+          competitorName={battleCardTarget.name}
+          competitorCategory={battleCardTarget.category}
+          accountDomain={account.domain}
+          sellerContext={sellerContext}
+        />
+      )}
+
       <div>
-        <div className="p-6 space-y-8">
+        <div className="p-6 space-y-6">
           {/* Live streaming progress — visible while /api/analyze-account is running */}
           {account.analysisProgress && !analysis && (
             <motion.section
@@ -930,6 +1038,12 @@ export function AccountDetail({
               )}
             </motion.section>
           )}
+
+          {/* Two-column layout: main content column (left) + sticky action sidebar (right).
+              On mobile the aside stacks below main content. On lg+ the aside stays visible
+              while the main column scrolls. */}
+          <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6 items-start">
+            <div className="space-y-6 min-w-0">
 
           {/* Executive Summary */}
           <section className="space-y-4">
@@ -1010,88 +1124,6 @@ export function AccountDetail({
             )}
           </section>
 
-          {/* Industry Calibration Controls board */}
-          <section className="space-y-4 bg-indigo-50/20 dark:bg-indigo-950/40 p-5 rounded-2xl border border-indigo-100 dark:border-indigo-800/50 shadow-md text-left">
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                  <Sliders className="w-5 h-5 text-indigo-600 dark:text-indigo-300" />
-                  Industry-Specific Buying Intent Calibration
-                </h3>
-                {account.forcedSectorModel ? (
-                  <Badge variant="outline" className="text-[12px] uppercase font-bold tracking-normal text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/60">
-                    🛠️ Overridden
-                  </Badge>
-                ) : (
-                  <Badge variant="outline" className="text-[12px] uppercase font-bold tracking-normal text-emerald-800 dark:text-emerald-200 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60">
-                    ✓ Auto-Detected
-                  </Badge>
-                )}
-              </div>
-              <p className="text-[13px] text-slate-500 dark:text-slate-300 font-semibold leading-relaxed">
-                Calibration prevents blending target accounts across different sectors into a single universal average. Different industries interpret identical events (such as engineering hiring or Venture Series rounds) through unique sector norms.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1">
-              {(['SaaS', 'Manufacturing', 'Fintech', 'Biotech', 'AEC', 'General'] as const).map((model) => {
-                const isActive = info.appliedSectorModel === model;
-                const isAutoSelected = !account.forcedSectorModel && info.appliedSectorModel === model;
-                
-                let btnLabel = model === 'SaaS' ? 'SaaS / Tech' :
-                               model === 'Manufacturing' ? 'Mfg / Industrial' :
-                               model === 'Biotech' ? 'Biotech / Med' :
-                               model === 'AEC' ? 'AEC / Eng' : model;
-                
-                return (
-                  <button
-                    key={model}
-                    onClick={() => {
-                      if (onUpdateAccount) {
-                        onUpdateAccount({
-                          ...account,
-                          forcedSectorModel: model
-                        });
-                        toast.success(`Calibrated to ${btnLabel} norms!`, {
-                          description: `Buying priority index score and signal weights re-calculated using ${model}-specific GTM multipliers.`
-                        });
-                      }
-                    }}
-                    className={`px-3 py-2 text-xs font-bold rounded-xl border text-center transition-all ${
-                      isActive 
-                        ? 'bg-indigo-600 text-white border-indigo-700 shadow-sm'
-                        : 'bg-white dark:bg-slate-900 text-slate-650 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
-                    }`}
-                  >
-                    <div>{btnLabel}</div>
-                    {isAutoSelected && (
-                      <div className="text-[10px] opacity-85 font-semibold mt-0.5 tracking-tight uppercase">Auto-Set</div>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-
-            {account.forcedSectorModel && (
-              <div className="flex justify-end pt-1">
-                <button
-                  onClick={() => {
-                    if (onUpdateAccount) {
-                      onUpdateAccount({
-                        ...account,
-                        forcedSectorModel: undefined
-                      });
-                      toast.success("Reset calibration model to auto-detected industry norms!");
-                    }
-                  }}
-                  className="text-[12px] text-indigo-600 dark:text-indigo-300 hover:text-indigo-750 transition-colors font-bold underline"
-                >
-                  Reset to Auto-Detected Norms
-                </button>
-              </div>
-            )}
-          </section>
-
           {/* Social Signals — 10-platform vertical list + Buying Intent summary */}
           <SocialSignalsCard
             socialData={socialData}
@@ -1099,7 +1131,7 @@ export function AccountDetail({
             onRefresh={() => {
               setSocialData(null);
               setSocialLoading(true);
-              fetch('/api/analyze-social', {
+              fetch(apiUrl('/api/analyze-social'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ domain: account.domain, companyName: account.name }),
@@ -1136,255 +1168,6 @@ export function AccountDetail({
               </div>
             </div>
           )}
-
-          {/* Two-column row: Adaptive Feedback (left) + Prioritization (right).
-              Stacks on smaller screens (< lg), side-by-side from lg upward. */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-
-          {/* Outreach Loop & Adaptive Feedback Outcomes Console */}
-          <section className="space-y-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-md text-left h-full">
-            <div className="flex items-center justify-between">
-              <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                <Target className="w-5 h-5 text-indigo-600 dark:text-indigo-300" />
-                Adaptive Feedback & Outreach Outcomes
-              </h3>
-              {account.outreachOutcome ? (
-                <Badge variant="outline" className={`text-[12px] uppercase font-semibold tracking-normal ${
-                  ['Positive Reply', 'Meeting Booked', 'Deal Won'].includes(account.outreachOutcome)
-                    ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-250 dark:border-emerald-800/60'
-                    : 'text-slate-650 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700/80'
-                }`}>
-                  ✓ Feedback Recorded
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="text-[12px] uppercase font-bold text-slate-400 bg-white dark:bg-slate-900 border-slate-205">
-                  Awaiting Pipeline Outcome
-                </Badge>
-              )}
-            </div>
-            
-            <p className="text-[13px] text-slate-500 dark:text-slate-300 font-normal leading-relaxed">
-              Record real-world outbound responses. This feedback loop dynamically adapts future scoring weights for related signal profiles and applies cautionary markers to risky account segments.
-            </p>
-
-            <div className="space-y-3.5 pt-1">
-              <div>
-                <label className="text-[12px] font-bold uppercase text-slate-450 tracking-normal block mb-1.5 font-mono">Outbound Pipeline Stage</label>
-                <div className="flex flex-wrap gap-1.5">
-                  {(['new', 'viewed', 'contacted'] as const).map((stage) => {
-                    const isActive = account.status === stage;
-                    return (
-                      <button
-                        key={stage}
-                        onClick={() => {
-                          if (onUpdateAccount) {
-                            onUpdateAccount({
-                              ...account,
-                              status: stage,
-                              // If reverting status to new/viewed, reset outcome
-                              outreachOutcome: stage !== 'contacted' ? undefined : account.outreachOutcome
-                            });
-                            toast.success(`Pipeline stage set to ${stage.toUpperCase()}!`);
-                          }
-                        }}
-                        className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all capitalize select-none cursor-pointer ${
-                          isActive
-                            ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
-                            : 'bg-slate-50 dark:bg-slate-800/50 text-slate-650 dark:text-slate-400 border-slate-250 dark:border-slate-700 hover:bg-slate-100'
-                        }`}
-                      >
-                        {stage}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Show Outreach Outcomes if contacted */}
-              {account.status === 'contacted' && (
-                <div className="space-y-2.5 pt-1.5 border-t border-slate-100 dark:border-slate-800">
-                  <label className="text-[12px] font-bold uppercase text-slate-450 tracking-normal block font-mono">Commercial Outreach Outcome</label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {([
-                      { value: 'No Response', label: '📭 No Response' },
-                      { value: 'Positive Reply', label: '💬 Positive Reply' },
-                      { value: 'Meeting Booked', label: '📅 Meeting Booked' },
-                      { value: 'Deal Lost', label: '❌ Deal Lost' },
-                      { value: 'Deal Won', label: '🏆 Deal Won' }
-                    ] as const).map((outcome) => {
-                      const isActive = account.outreachOutcome === outcome.value;
-                      const isPositive = ['Positive Reply', 'Meeting Booked', 'Deal Won'].includes(outcome.value);
-                      
-                      return (
-                        <button
-                          key={outcome.value}
-                          onClick={() => {
-                            if (onUpdateAccount) {
-                              onUpdateAccount({
-                                ...account,
-                                outreachOutcome: outcome.value
-                              });
-                              toast.success(`Outcome "${outcome.value}" recorded!`, {
-                                description: isPositive 
-                                  ? "Weights recalibrated! Lookups matching similar signals now receive higher prioritization scores."
-                                  : "Adverse outcome logged. Future segments of this profile will be flagged with cautionary notes."
-                              });
-                            }
-                          }}
-                          className={`px-2.5 py-2.5 rounded-xl border text-[13px] font-bold text-left transition-all flex flex-col justify-between cursor-pointer ${
-                            isActive
-                              ? isPositive 
-                                ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-1 ring-emerald-250'
-                                : 'bg-slate-800 text-white border-slate-900 shadow-xs ring-1 ring-slate-800'
-                              : 'bg-white dark:bg-slate-900 text-slate-755 border-slate-205 hover:bg-slate-50'
-                          }`}
-                        >
-                          <span className="truncate">{outcome.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {account.outreachOutcome && (
-                    <div className="flex justify-end pt-1">
-                      <button
-                        onClick={() => {
-                          if (onUpdateAccount) {
-                            onUpdateAccount({
-                              ...account,
-                              outreachOutcome: undefined
-                            });
-                            toast.success("Outcome cleared safely. Machine learning multipliers readjusted.");
-                          }
-                        }}
-                        className="text-[12px] text-slate-450 hover:text-slate-650 transition-colors font-bold underline cursor-pointer"
-                      >
-                        Reset Registered Outcome
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-            
-            {/* Intel summary of dynamic calibration boosts / warnings */}
-            {account.outreachOutcome && (
-              <div className="p-3.5 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-800/50 text-left space-y-1 text-[13px] leading-relaxed">
-                <span className="font-semibold uppercase text-[11px] text-indigo-750 tracking-normal block mb-1 font-mono">Adaptive AI Recalibration Applied:</span>
-                {['Positive Reply', 'Meeting Booked', 'Deal Won'].includes(account.outreachOutcome) ? (
-                  <p className="text-emerald-700 dark:text-emerald-300 font-medium">
-                    ✓ <strong>Positive Signal Scaling:</strong> Conversion feedback reinforces and dynamically boosts the weights of all underlying triggering signals by up to 30%, increasing prioritize priority for similar future pipeline entries.
-                  </p>
-                ) : (
-                  <p className="text-rose-750 font-medium">
-                    ⚠️ <strong>Profile Caution calibration:</strong> Historical negative feedback flags related profiles in sector ({info.appliedSectorModel}) and warns you before starting new sequence attempts to save GTM labor cost.
-                  </p>
-                )}
-              </div>
-            )}
-          </section>
-
-          {/* Outreach Priority & Timing Analytics */}
-          <section className="space-y-3.5 bg-slate-50/50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-md h-full">
-            <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-300 uppercase tracking-wide flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
-              Prioritization & Outreach Timing Intel
-            </h3>
-            
-            {(() => {
-              const info = getAccountPriorityInfo(account);
-              const priorityBg = info.priorityFlag === 'Immediate Action Required' ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/60' :
-                                 info.priorityFlag === 'Warm Track' ? 'bg-teal-50/50 dark:bg-teal-950/40 border-teal-150 dark:border-teal-800/50' : 
-                                 'bg-slate-50 dark:bg-slate-800/50 border-slate-150 dark:border-slate-700';
-                                 
-              const flagTextClass = info.priorityFlag === 'Immediate Action Required' ? 'text-rose-700 dark:text-rose-300' :
-                                   info.priorityFlag === 'Warm Track' ? 'text-teal-700 dark:text-teal-300' : 'text-slate-650 dark:text-slate-400';
-
-              return (
-                <div className="space-y-3">
-                  <div className={`p-3 rounded-lg border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 ${priorityBg}`}>
-                    <div>
-                      <span className="text-[12px] uppercase font-bold text-slate-400 tracking-normal">Outreach Target Status</span>
-                      <div className={`text-xs font-bold uppercase mt-0.5 tracking-wide ${flagTextClass}`}>
-                        {info.priorityFlag === 'Immediate Action Required' ? '🚨 Immediate Action Required' : 
-                         info.priorityFlag === 'Warm Track' ? '⏳ Warm Track - Build Demand' : 
-                         '🎯 Standard Follow-up Opportunity'}
-                      </div>
-                    </div>
-                    <div className="sm:text-right">
-                      <span className="text-[12px] uppercase font-bold text-slate-400 tracking-normal">Outreach Window</span>
-                      <div className="text-xs font-bold text-slate-700 dark:text-slate-300 mt-0.5 flex items-center gap-1 sm:justify-end">
-                        <Clock className="w-3.5 h-3.5 text-indigo-505" />
-                        {info.outreachWindow}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Stat strip — same visual language as AccountCard so the
-                      metrics feel consistent across list and detail views. */}
-                  <div className="grid grid-cols-3 gap-2">
-                    <div className={`rounded-lg px-2.5 py-2 bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.07] border-l-[3px] ${
-                      account.isDisqualified ? 'border-l-red-400'
-                      : info.fitScore >= 80 ? 'border-l-emerald-400'
-                      : info.fitScore >= 60 ? 'border-l-amber-400'
-                      : 'border-l-slate-300 dark:border-l-zinc-600'
-                    }`}>
-                      <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500">ICP Fit Score</div>
-                      <div className={`text-[15px] font-semibold font-mono leading-tight mt-0.5 ${
-                        account.isDisqualified ? 'text-red-600 dark:text-red-300'
-                        : info.fitScore >= 80 ? 'text-emerald-600 dark:text-emerald-300'
-                        : info.fitScore >= 60 ? 'text-amber-600 dark:text-amber-300'
-                        : 'text-slate-500 dark:text-zinc-400'
-                      }`}>{info.fitScore}%</div>
-                    </div>
-                    <div className={`rounded-lg px-2.5 py-2 bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.07] border-l-[3px] ${
-                      account.isDisqualified ? 'border-l-red-400'
-                      : info.timingScore >= 80 ? 'border-l-rose-400'
-                      : info.timingScore >= 60 ? 'border-l-amber-400'
-                      : 'border-l-purple-400'
-                    }`}>
-                      <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500">Timing Score</div>
-                      <div className={`text-[15px] font-semibold font-mono leading-tight mt-0.5 ${
-                        account.isDisqualified ? 'text-red-600 dark:text-red-300'
-                        : info.timingScore >= 80 ? 'text-rose-600 dark:text-rose-300'
-                        : info.timingScore >= 60 ? 'text-amber-600 dark:text-amber-300'
-                        : 'text-purple-600 dark:text-purple-300'
-                      }`}>{info.timingScore}%</div>
-                    </div>
-                    <div className={`rounded-lg px-2.5 py-2 bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.07] border-l-[3px] ${
-                      account.isDisqualified ? 'border-l-red-400'
-                      : info.priorityIndex >= 80 ? 'border-l-rose-400'
-                      : info.priorityIndex >= 60 ? 'border-l-amber-400'
-                      : 'border-l-indigo-400'
-                    }`} title="(Fit + Timing) / 2">
-                      <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500">Priority Index</div>
-                      <div className={`text-[15px] font-semibold font-mono leading-tight mt-0.5 ${
-                        account.isDisqualified ? 'text-red-600 dark:text-red-300'
-                        : info.priorityIndex >= 80 ? 'text-rose-600 dark:text-rose-300'
-                        : info.priorityIndex >= 60 ? 'text-amber-600 dark:text-amber-300'
-                        : 'text-indigo-600 dark:text-indigo-300'
-                      }`}>{info.priorityIndex}</div>
-                    </div>
-                  </div>
-
-                  <div className="text-[13px] leading-relaxed text-slate-500 dark:text-slate-300 border-t border-slate-200 dark:border-slate-700/50 pt-2 flex items-start gap-1.5 bg-slate-50/20 dark:bg-slate-800/50 p-2 rounded">
-                    <AlertTriangle className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 shrink-0 mt-0.5" />
-                    <span>
-                      Priority score of <strong>{info.priorityIndex}/100</strong> indicates an <strong>{info.timingStage}</strong> stage. 
-                      {info.priorityFlag === 'Immediate Action Required' 
-                        ? " This high intensity signals immediate operational gaps. Trigger direct personalized cold sequence immediately."
-                        : info.priorityFlag === 'Warm Track'
-                        ? " High fit combined with low immediate signal intensity advises soft nurture touchpoints to map technical champions."
-                        : " Keep steady outbound engagement focused on competitive incumbents."}
-                    </span>
-                  </div>
-                </div>
-              );
-            })()}
-          </section>
-
-          </div>
-          {/* /Two-column row */}
 
           {/* Buying Signals with Live Freshness Tuning */}
           <section className="space-y-4 bg-slate-50/60 dark:bg-slate-800/50 p-5 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-md">
@@ -1683,43 +1466,53 @@ export function AccountDetail({
             </div>
           </section>
 
-          {/* Email Pattern widget hidden by user request — restore by unwrapping this block. */}
-          {false && account.domain && (
+          {account.domain && (
             <div className="mb-6">
               <EmailPatternWidget domain={account.domain} companyName={account.name} />
             </div>
           )}
 
           <Tabs defaultValue="outreach" className="w-full">
-            <TabsList className="grid w-full grid-cols-5 mb-6">
+            <TabsList className="grid w-full grid-cols-6 mb-6">
               <TabsTrigger value="outreach">Outreach</TabsTrigger>
               <TabsTrigger value="personas">Personas</TabsTrigger>
               <TabsTrigger value="threading">Stakeholder Map</TabsTrigger>
               <TabsTrigger value="tech">Tech & Growth</TabsTrigger>
               <TabsTrigger value="competitive">Competitors</TabsTrigger>
+              <TabsTrigger value="trend">Trend History</TabsTrigger>
             </TabsList>
 
             <TabsContent value="outreach" className="space-y-6">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                    <Mail className="w-4 h-4" />
-                    Personalized Email Angle
-                  </h4>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={() => handleCopy(analysis?.outreachStrategy?.emailHook || '', 'email')}
-                    className="h-8 text-xs gap-2"
-                  >
-                    {copied === 'email' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-                    Copy Hook
-                  </Button>
+              {/* 4-touch email sequence — new format. Falls back to the single
+                  hook card when the analysis was generated before this feature. */}
+              {analysis?.outreachStrategy?.emailSequence && analysis.outreachStrategy.emailSequence.length > 0 ? (
+                <EmailSequenceTimeline
+                  sequence={analysis.outreachStrategy.emailSequence}
+                  copied={copied}
+                  onCopy={handleCopy}
+                />
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                      <Mail className="w-4 h-4" />
+                      Personalized Email Angle
+                    </h4>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleCopy(analysis?.outreachStrategy?.emailHook || '', 'email')}
+                      className="h-8 text-xs gap-2"
+                    >
+                      {copied === 'email' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                      Copy Hook
+                    </Button>
+                  </div>
+                  <div className="p-4 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-800/50 text-slate-800 dark:text-slate-200 text-sm italic">
+                    "{analysis?.outreachStrategy?.emailHook || 'No email angle generated yet. Click "Research with AI" to generate insights.'}"
+                  </div>
                 </div>
-                <div className="p-4 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-800/50 text-slate-800 dark:text-slate-200 text-sm italic">
-                  "{analysis?.outreachStrategy?.emailHook || 'No email angle generated yet. Click \"Research with AI\" to generate insights.'}"
-                </div>
-              </div>
+              )}
 
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
@@ -1727,9 +1520,9 @@ export function AccountDetail({
                     <Linkedin className="w-4 h-4" />
                     LinkedIn Hook
                   </h4>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
+                  <Button
+                    variant="ghost"
+                    size="sm"
                     onClick={() => handleCopy(analysis?.outreachStrategy?.linkedinMessage || '', 'linkedin')}
                     className="h-8 text-xs gap-2"
                   >
@@ -1841,6 +1634,75 @@ export function AccountDetail({
                            </div>
                          )}
                        </div>
+
+                       {/* Objection Library — top 3-5 rebuttals this persona typically raises during a live call */}
+                       {persona.commonObjections && persona.commonObjections.length > 0 && (
+                         <div className="pt-3.5 border-t border-slate-200 dark:border-slate-700/65">
+                           <div className="text-[13px] text-slate-400 font-bold uppercase tracking-normal mb-2.5 flex items-center gap-1.5">
+                             <ShieldAlert className="w-4 h-4 text-rose-500 dark:text-rose-400" />
+                             <span>Objection Library</span>
+                             <span className="ml-1 text-[11px] font-mono font-semibold text-slate-400 normal-case tracking-normal">
+                               · {persona.commonObjections.length} rebuttal{persona.commonObjections.length === 1 ? '' : 's'} ready
+                             </span>
+                           </div>
+                           <p className="text-[11px] text-slate-400 mb-2.5 italic leading-relaxed">
+                             Live-call cheat sheet — pull these up mid-conversation when {persona.role.split(' ')[0]} pushes back.
+                           </p>
+                           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                             {persona.commonObjections.map((obj, oIdx) => {
+                               const catStyles: Record<string, { chip: string; ring: string; label: string }> = {
+                                 budget:    { chip: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60', ring: 'border-emerald-100 dark:border-emerald-800/50', label: 'BUDGET' },
+                                 timing:    { chip: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/60', ring: 'border-amber-100 dark:border-amber-800/50', label: 'TIMING' },
+                                 incumbent: { chip: 'bg-violet-50 dark:bg-violet-950/40 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-800/60', ring: 'border-violet-100 dark:border-violet-800/50', label: 'INCUMBENT' },
+                                 authority: { chip: 'bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-800/60', ring: 'border-sky-100 dark:border-sky-800/50', label: 'AUTHORITY' },
+                                 need:      { chip: 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800/60', ring: 'border-rose-100 dark:border-rose-800/50', label: 'NEED' },
+                                 trust:     { chip: 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800/60', ring: 'border-indigo-100 dark:border-indigo-800/50', label: 'TRUST' },
+                                 other:     { chip: 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700', ring: 'border-slate-150 dark:border-slate-700', label: 'OTHER' },
+                               };
+                               const style = catStyles[obj.category] || catStyles.other;
+                               const copyId = `obj-${idx}-${oIdx}`;
+                               const copyBundle = `Objection: ${obj.objection}\n\nResponse: ${obj.response}${obj.evidence ? `\n\nEvidence: ${obj.evidence}` : ''}`;
+                               return (
+                                 <div key={oIdx} className={`p-3.5 rounded-xl bg-white dark:bg-slate-900 border ${style.ring} shadow-2xs space-y-2.5 text-left`}>
+                                   <div className="flex items-start justify-between gap-2">
+                                     <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded border font-mono ${style.chip}`}>
+                                       {style.label}
+                                     </span>
+                                     <button
+                                       onClick={() => handleCopy(copyBundle, copyId)}
+                                       className="text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
+                                       title="Copy objection + response"
+                                     >
+                                       {copied === copyId ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                                     </button>
+                                   </div>
+                                   <div className="text-[13px] italic text-slate-800 dark:text-slate-200 leading-snug border-l-2 border-slate-300 dark:border-slate-600 pl-2.5 font-sans">
+                                     "{obj.objection}"
+                                   </div>
+                                   <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800">
+                                     <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 mb-1 font-mono">
+                                       ↳ Say This
+                                     </div>
+                                     <p className="text-[13px] text-slate-700 dark:text-slate-300 leading-relaxed font-sans">
+                                       {obj.response}
+                                     </p>
+                                   </div>
+                                   {obj.evidence && (
+                                     <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800">
+                                       <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1 font-mono">
+                                         Evidence
+                                       </div>
+                                       <p className="text-[12px] text-slate-500 dark:text-slate-400 leading-relaxed font-sans">
+                                         {obj.evidence}
+                                       </p>
+                                     </div>
+                                   )}
+                                 </div>
+                               );
+                             })}
+                           </div>
+                         </div>
+                       )}
                      </div>
                    );
                  })
@@ -1996,22 +1858,95 @@ export function AccountDetail({
             </TabsContent>
 
             <TabsContent value="tech" className="space-y-4">
-              <div className="flex items-center gap-2 text-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 p-4 rounded-xl border border-amber-100 dark:border-amber-800/50">
-                <Info className="w-4 h-4 shrink-0" />
-                <p className="text-xs font-medium">Verified using latest public signals (LinkedIn, Crunchbase, BuiltWith).</p>
-              </div>
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                    <div className="text-[12px] font-bold text-slate-400 uppercase tracking-wide mb-1">Hiring Status</div>
-                    <div className="text-sm font-bold text-emerald-600 dark:text-emerald-300">Active - Sales & Ops</div>
-                  </div>
-                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800">
-                    <div className="text-[12px] font-bold text-slate-400 uppercase tracking-wide mb-1">Recent Funding</div>
-                    <div className="text-sm font-bold text-slate-900 dark:text-slate-100">Series B ($22M)</div>
-                  </div>
-                </div>
-              </div>
+              {(() => {
+                const hiring = analysis?.hiringSignal;
+                const funding = analysis?.fundingSignal;
+                // Compose the "signals verified via …" chip dynamically from whatever
+                // sources the AI actually cited, so we stop making claims the data
+                // can't back up.
+                const sources = [hiring?.citation?.sourceName, funding?.citation?.sourceName]
+                  .filter(Boolean)
+                  .map((s) => String(s));
+                const signalBanner = sources.length
+                  ? `Signals sourced from ${Array.from(new Set(sources)).slice(0, 3).join(', ')}.`
+                  : 'AI-inferred from public signals (careers pages, press releases, funding databases).';
+
+                return (
+                  <>
+                    <div className="flex items-center gap-2 text-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/40 p-4 rounded-xl border border-amber-100 dark:border-amber-800/50">
+                      <Info className="w-4 h-4 shrink-0" />
+                      <p className="text-xs font-medium">{signalBanner}</p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Hiring card */}
+                      <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="text-[12px] font-bold text-slate-400 uppercase tracking-wide">Hiring Status</div>
+                          {typeof hiring?.openRolesCount === 'number' && (
+                            <span className="text-[10.5px] font-mono uppercase tracking-[0.13em] px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-700/40">
+                              {hiring.openRolesCount} open
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm font-bold text-emerald-600 dark:text-emerald-300 leading-snug">
+                          {hiring?.status ?? 'Not detected'}
+                        </div>
+                        {hiring?.detail && (
+                          <p className="text-[12.5px] text-slate-600 dark:text-slate-300 leading-snug">{hiring.detail}</p>
+                        )}
+                        {hiring?.focusAreas && hiring.focusAreas.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {hiring.focusAreas.slice(0, 5).map((area, i) => (
+                              <span
+                                key={`${area}-${i}`}
+                                className="text-[10.5px] font-medium px-2 py-0.5 rounded-md bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300"
+                              >
+                                {area}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        {hiring?.citation && (
+                          <div className="pt-1.5">
+                            <SourceCitation citation={hiring.citation} />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Funding card */}
+                      <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-100 dark:border-slate-800 space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="text-[12px] font-bold text-slate-400 uppercase tracking-wide">Recent Funding</div>
+                          {funding?.date && (
+                            <span className="text-[10.5px] font-mono uppercase tracking-[0.13em] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-900/60 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                              {funding.date}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm font-bold text-slate-900 dark:text-slate-100 leading-snug">
+                          {funding?.latestRound ?? 'Not detected'}
+                          {funding?.amount && funding.amount !== 'Undisclosed' && (
+                            <span className="ml-1.5 text-orange-600 dark:text-orange-300">({funding.amount})</span>
+                          )}
+                        </div>
+                        {funding?.leadInvestor && (
+                          <div className="text-[12.5px] text-slate-600 dark:text-slate-300">
+                            Led by <span className="font-semibold">{funding.leadInvestor}</span>
+                          </div>
+                        )}
+                        {funding?.detail && (
+                          <p className="text-[12.5px] text-slate-600 dark:text-slate-300 leading-snug">{funding.detail}</p>
+                        )}
+                        {funding?.citation && (
+                          <div className="pt-1.5">
+                            <SourceCitation citation={funding.citation} />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
             </TabsContent>
 
             <TabsContent value="competitive" className="space-y-4 animate-in fade-in duration-200">
@@ -2030,18 +1965,352 @@ export function AccountDetail({
                     </p>
                   </div>
                   {getDefaultCompetitors(account).map((comp, idx) => (
-                    <CompetitorCard key={idx} comp={comp} />
+                    <CompetitorCard key={idx} comp={comp} onBattleCard={() => setBattleCardTarget({ name: comp.name, category: comp.category })} />
                   ))}
                 </div>
               ) : (
                 <div className="space-y-4">
                   {analysis.competitors.map((comp, idx) => (
-                    <CompetitorCard key={idx} comp={comp} />
+                    <CompetitorCard key={idx} comp={comp} onBattleCard={() => setBattleCardTarget({ name: comp.name, category: comp.category })} />
                   ))}
                 </div>
               )}
             </TabsContent>
+
+            <TabsContent value="trend" className="space-y-4 animate-in fade-in duration-200">
+              <div className="flex items-center gap-2 text-indigo-750 bg-indigo-50/75 dark:bg-indigo-950/40 p-3.5 rounded-xl border border-indigo-100/70 dark:border-indigo-800/50 shadow-2xs">
+                <TrendingUp className="w-4 h-4 text-indigo-500 dark:text-indigo-400 shrink-0" />
+                <p className="text-[13px] font-medium leading-normal text-indigo-900 dark:text-indigo-200">
+                  Snapshots are captured once every 24h. Compares fit score, signal volume, and priority-flag transitions across the last 12 weeks so a &quot;trending up for 3 months&quot; account is visible at a glance.
+                </p>
+              </div>
+              <AccountTrendChart account={account} />
+            </TabsContent>
           </Tabs>
+        </div>
+        {/* SIDEBAR_ACTION_PANEL — sticky right column with priority, calibration, and outcomes */}
+        <aside className="space-y-3 lg:sticky lg:top-6 lg:self-start">
+            {/* Estimated Deal Size — surfaces before the priority tile because
+                deal size is the answer to "should I chase this?" — priority is
+                the answer to "when." */}
+            <RoiTile account={account} />
+
+            {/* Outreach Priority & Timing Analytics */}
+            <section className="space-y-3.5 bg-slate-50/50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700/60 shadow-md h-full">
+              <h3 className="text-xs font-semibold text-slate-500 dark:text-slate-300 uppercase tracking-wide flex items-center gap-1.5">
+                <Clock className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" />
+                Prioritization & Outreach Timing Intel
+              </h3>
+              
+              {(() => {
+                const info = getAccountPriorityInfo(account);
+                const priorityBg = info.priorityFlag === 'Immediate Action Required' ? 'bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/60' :
+                                   info.priorityFlag === 'Warm Track' ? 'bg-teal-50/50 dark:bg-teal-950/40 border-teal-150 dark:border-teal-800/50' : 
+                                   'bg-slate-50 dark:bg-slate-800/50 border-slate-150 dark:border-slate-700';
+                                   
+                const flagTextClass = info.priorityFlag === 'Immediate Action Required' ? 'text-rose-700 dark:text-rose-300' :
+                                     info.priorityFlag === 'Warm Track' ? 'text-teal-700 dark:text-teal-300' : 'text-slate-650 dark:text-slate-400';
+  
+                return (
+                  <div className="space-y-3">
+                    <div className={`p-3 rounded-lg border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 ${priorityBg}`}>
+                      <div>
+                        <span className="text-[12px] uppercase font-bold text-slate-400 tracking-normal">Outreach Target Status</span>
+                        <div className={`text-xs font-bold uppercase mt-0.5 tracking-wide ${flagTextClass}`}>
+                          {info.priorityFlag === 'Immediate Action Required' ? '🚨 Immediate Action Required' : 
+                           info.priorityFlag === 'Warm Track' ? '⏳ Warm Track - Build Demand' : 
+                           '🎯 Standard Follow-up Opportunity'}
+                        </div>
+                      </div>
+                      <div className="sm:text-right">
+                        <span className="text-[12px] uppercase font-bold text-slate-400 tracking-normal">Outreach Window</span>
+                        <div className="text-xs font-bold text-slate-700 dark:text-slate-300 mt-0.5 flex items-center gap-1 sm:justify-end">
+                          <Clock className="w-3.5 h-3.5 text-indigo-505" />
+                          {info.outreachWindow}
+                        </div>
+                      </div>
+                    </div>
+  
+                    {/* Stat strip — same visual language as AccountCard so the
+                        metrics feel consistent across list and detail views. */}
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className={`rounded-lg px-2.5 py-2 bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.07] border-l-[3px] ${
+                        account.isDisqualified ? 'border-l-red-400'
+                        : info.fitScore >= 80 ? 'border-l-emerald-400'
+                        : info.fitScore >= 60 ? 'border-l-amber-400'
+                        : 'border-l-slate-300 dark:border-l-zinc-600'
+                      }`}>
+                        <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500">ICP Fit Score</div>
+                        <div className={`text-[15px] font-semibold font-mono leading-tight mt-0.5 ${
+                          account.isDisqualified ? 'text-red-600 dark:text-red-300'
+                          : info.fitScore >= 80 ? 'text-emerald-600 dark:text-emerald-300'
+                          : info.fitScore >= 60 ? 'text-amber-600 dark:text-amber-300'
+                          : 'text-slate-500 dark:text-zinc-400'
+                        }`}>{info.fitScore}%</div>
+                      </div>
+                      <div className={`rounded-lg px-2.5 py-2 bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.07] border-l-[3px] ${
+                        account.isDisqualified ? 'border-l-red-400'
+                        : info.timingScore >= 80 ? 'border-l-rose-400'
+                        : info.timingScore >= 60 ? 'border-l-amber-400'
+                        : 'border-l-purple-400'
+                      }`}>
+                        <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500">Timing Score</div>
+                        <div className={`text-[15px] font-semibold font-mono leading-tight mt-0.5 ${
+                          account.isDisqualified ? 'text-red-600 dark:text-red-300'
+                          : info.timingScore >= 80 ? 'text-rose-600 dark:text-rose-300'
+                          : info.timingScore >= 60 ? 'text-amber-600 dark:text-amber-300'
+                          : 'text-purple-600 dark:text-purple-300'
+                        }`}>{info.timingScore}%</div>
+                      </div>
+                      <div className={`rounded-lg px-2.5 py-2 bg-slate-50 dark:bg-white/[0.03] border border-slate-200 dark:border-white/[0.07] border-l-[3px] ${
+                        account.isDisqualified ? 'border-l-red-400'
+                        : info.priorityIndex >= 80 ? 'border-l-rose-400'
+                        : info.priorityIndex >= 60 ? 'border-l-amber-400'
+                        : 'border-l-indigo-400'
+                      }`} title="(Fit + Timing) / 2">
+                        <div className="text-[9px] font-mono uppercase tracking-wider text-slate-400 dark:text-zinc-500">Priority Index</div>
+                        <div className={`text-[15px] font-semibold font-mono leading-tight mt-0.5 ${
+                          account.isDisqualified ? 'text-red-600 dark:text-red-300'
+                          : info.priorityIndex >= 80 ? 'text-rose-600 dark:text-rose-300'
+                          : info.priorityIndex >= 60 ? 'text-amber-600 dark:text-amber-300'
+                          : 'text-indigo-600 dark:text-indigo-300'
+                        }`}>{info.priorityIndex}</div>
+                      </div>
+                    </div>
+  
+                    <div className="text-[13px] leading-relaxed text-slate-500 dark:text-slate-300 border-t border-slate-200 dark:border-slate-700/50 pt-2 flex items-start gap-1.5 bg-slate-50/20 dark:bg-slate-800/50 p-2 rounded">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 shrink-0 mt-0.5" />
+                      <span>
+                        Priority score of <strong>{info.priorityIndex}/100</strong> indicates an <strong>{info.timingStage}</strong> stage. 
+                        {info.priorityFlag === 'Immediate Action Required' 
+                          ? " This high intensity signals immediate operational gaps. Trigger direct personalized cold sequence immediately."
+                          : info.priorityFlag === 'Warm Track'
+                          ? " High fit combined with low immediate signal intensity advises soft nurture touchpoints to map technical champions."
+                          : " Keep steady outbound engagement focused on competitive incumbents."}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </section>
+            {/* Industry Calibration Controls board */}
+            <section className="space-y-3 bg-indigo-50/20 dark:bg-indigo-950/40 p-3.5 rounded-2xl border border-indigo-100 dark:border-indigo-800/50 shadow-sm text-left">
+              <div className="space-y-1">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-[13px] font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                    <Sliders className="w-4 h-4 text-indigo-600 dark:text-indigo-300" />
+                    Sector Calibration
+                  </h3>
+                  {account.forcedSectorModel ? (
+                    <Badge variant="outline" className="text-[10px] uppercase font-bold tracking-normal text-rose-700 dark:text-rose-300 bg-rose-50 dark:bg-rose-950/40 border-rose-200 dark:border-rose-800/60 shrink-0">
+                      🛠️ Override
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px] uppercase font-bold tracking-normal text-emerald-800 dark:text-emerald-200 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60 shrink-0">
+                      ✓ Auto
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-[11.5px] text-slate-500 dark:text-slate-400 leading-snug" title="Calibration prevents blending target accounts across different sectors. Different industries interpret identical events through unique sector norms.">
+                  Weight signals by industry norms.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                {(['SaaS', 'Manufacturing', 'Fintech', 'Biotech', 'AEC', 'General'] as const).map((model) => {
+                  const isActive = info.appliedSectorModel === model;
+                  const isAutoSelected = !account.forcedSectorModel && info.appliedSectorModel === model;
+                  const btnLabel = model === 'SaaS' ? 'SaaS' :
+                                 model === 'Manufacturing' ? 'Mfg' :
+                                 model === 'Biotech' ? 'Biotech' :
+                                 model === 'AEC' ? 'AEC' :
+                                 model === 'Fintech' ? 'Fintech' : 'General';
+                  return (
+                    <button
+                      key={model}
+                      onClick={() => {
+                        if (onUpdateAccount) {
+                          onUpdateAccount({ ...account, forcedSectorModel: model });
+                          toast.success(`Calibrated to ${btnLabel} norms!`, {
+                            description: `Signal weights re-calculated using ${model}-specific GTM multipliers.`
+                          });
+                        }
+                      }}
+                      className={`px-2 py-1.5 text-[11.5px] font-bold rounded-lg border text-center transition-all ${
+                        isActive
+                          ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                          : 'bg-white dark:bg-slate-900 text-slate-650 dark:text-slate-400 border-slate-200 dark:border-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <div>{btnLabel}</div>
+                      {isAutoSelected && (
+                        <div className="text-[8.5px] opacity-85 font-semibold mt-0.5 tracking-tight uppercase">Auto</div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {account.forcedSectorModel && (
+                <div className="flex justify-end pt-0.5">
+                  <button
+                    onClick={() => {
+                      if (onUpdateAccount) {
+                        onUpdateAccount({ ...account, forcedSectorModel: undefined });
+                        toast.success("Reset calibration model to auto-detected industry norms!");
+                      }
+                    }}
+                    className="text-[11px] text-indigo-600 dark:text-indigo-300 hover:text-indigo-750 transition-colors font-bold underline"
+                  >
+                    Reset to Auto
+                  </button>
+                </div>
+              )}
+            </section>
+            {/* Outreach Loop & Adaptive Feedback Outcomes Console */}
+            <section className="space-y-4 bg-white dark:bg-slate-900 p-5 rounded-2xl border border-slate-200 dark:border-slate-700/80 shadow-md text-left h-full">
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                  <Target className="w-5 h-5 text-indigo-600 dark:text-indigo-300" />
+                  Adaptive Feedback & Outreach Outcomes
+                </h3>
+                {account.outreachOutcome ? (
+                  <Badge variant="outline" className={`text-[12px] uppercase font-semibold tracking-normal ${
+                    ['Positive Reply', 'Meeting Booked', 'Deal Won'].includes(account.outreachOutcome)
+                      ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/40 border-emerald-250 dark:border-emerald-800/60'
+                      : 'text-slate-650 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 border-slate-200 dark:border-slate-700/80'
+                  }`}>
+                    ✓ Feedback Recorded
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="text-[12px] uppercase font-bold text-slate-400 bg-white dark:bg-slate-900 border-slate-205">
+                    Awaiting Pipeline Outcome
+                  </Badge>
+                )}
+              </div>
+              
+              <p className="text-[13px] text-slate-500 dark:text-slate-300 font-normal leading-relaxed">
+                Record real-world outbound responses. This feedback loop dynamically adapts future scoring weights for related signal profiles and applies cautionary markers to risky account segments.
+              </p>
+  
+              <div className="space-y-3.5 pt-1">
+                <div>
+                  <label className="text-[12px] font-bold uppercase text-slate-450 tracking-normal block mb-1.5 font-mono">Outbound Pipeline Stage</label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {(['new', 'viewed', 'contacted'] as const).map((stage) => {
+                      const isActive = account.status === stage;
+                      return (
+                        <button
+                          key={stage}
+                          onClick={() => {
+                            if (onUpdateAccount) {
+                              onUpdateAccount({
+                                ...account,
+                                status: stage,
+                                // If reverting status to new/viewed, reset outcome
+                                outreachOutcome: stage !== 'contacted' ? undefined : account.outreachOutcome
+                              });
+                              toast.success(`Pipeline stage set to ${stage.toUpperCase()}!`);
+                            }
+                          }}
+                          className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all capitalize select-none cursor-pointer ${
+                            isActive
+                              ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                              : 'bg-slate-50 dark:bg-slate-800/50 text-slate-650 dark:text-slate-400 border-slate-250 dark:border-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          {stage}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+  
+                {/* Show Outreach Outcomes if contacted */}
+                {account.status === 'contacted' && (
+                  <div className="space-y-2.5 pt-1.5 border-t border-slate-100 dark:border-slate-800">
+                    <label className="text-[12px] font-bold uppercase text-slate-450 tracking-normal block font-mono">Commercial Outreach Outcome</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {([
+                        { value: 'No Response', label: '📭 No Response' },
+                        { value: 'Positive Reply', label: '💬 Positive Reply' },
+                        { value: 'Meeting Booked', label: '📅 Meeting Booked' },
+                        { value: 'Deal Lost', label: '❌ Deal Lost' },
+                        { value: 'Deal Won', label: '🏆 Deal Won' }
+                      ] as const).map((outcome) => {
+                        const isActive = account.outreachOutcome === outcome.value;
+                        const isPositive = ['Positive Reply', 'Meeting Booked', 'Deal Won'].includes(outcome.value);
+                        
+                        return (
+                          <button
+                            key={outcome.value}
+                            onClick={() => {
+                              if (onUpdateAccount) {
+                                onUpdateAccount({
+                                  ...account,
+                                  outreachOutcome: outcome.value
+                                });
+                                toast.success(`Outcome "${outcome.value}" recorded!`, {
+                                  description: isPositive 
+                                    ? "Weights recalibrated! Lookups matching similar signals now receive higher prioritization scores."
+                                    : "Adverse outcome logged. Future segments of this profile will be flagged with cautionary notes."
+                                });
+                              }
+                            }}
+                            className={`px-2.5 py-2.5 rounded-xl border text-[13px] font-bold text-left transition-all flex flex-col justify-between cursor-pointer ${
+                              isActive
+                                ? isPositive 
+                                  ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs ring-1 ring-emerald-250'
+                                  : 'bg-slate-800 text-white border-slate-900 shadow-xs ring-1 ring-slate-800'
+                                : 'bg-white dark:bg-slate-900 text-slate-755 border-slate-205 hover:bg-slate-50'
+                            }`}
+                          >
+                            <span className="truncate">{outcome.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+  
+                    {account.outreachOutcome && (
+                      <div className="flex justify-end pt-1">
+                        <button
+                          onClick={() => {
+                            if (onUpdateAccount) {
+                              onUpdateAccount({
+                                ...account,
+                                outreachOutcome: undefined
+                              });
+                              toast.success("Outcome cleared safely. Machine learning multipliers readjusted.");
+                            }
+                          }}
+                          className="text-[12px] text-slate-450 hover:text-slate-650 transition-colors font-bold underline cursor-pointer"
+                        >
+                          Reset Registered Outcome
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              
+              {/* Intel summary of dynamic calibration boosts / warnings */}
+              {account.outreachOutcome && (
+                <div className="p-3.5 rounded-xl bg-indigo-50/50 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-800/50 text-left space-y-1 text-[13px] leading-relaxed">
+                  <span className="font-semibold uppercase text-[11px] text-indigo-750 tracking-normal block mb-1 font-mono">Adaptive AI Recalibration Applied:</span>
+                  {['Positive Reply', 'Meeting Booked', 'Deal Won'].includes(account.outreachOutcome) ? (
+                    <p className="text-emerald-700 dark:text-emerald-300 font-medium">
+                      ✓ <strong>Positive Signal Scaling:</strong> Conversion feedback reinforces and dynamically boosts the weights of all underlying triggering signals by up to 30%, increasing prioritize priority for similar future pipeline entries.
+                    </p>
+                  ) : (
+                    <p className="text-rose-750 font-medium">
+                      ⚠️ <strong>Profile Caution calibration:</strong> Historical negative feedback flags related profiles in sector ({info.appliedSectorModel}) and warns you before starting new sequence attempts to save GTM labor cost.
+                    </p>
+                  )}
+                </div>
+              )}
+            </section>
+        </aside>
+      </div>
         </div>
       </div>
       
@@ -2054,10 +2323,19 @@ export function AccountDetail({
             onUpdateCrmRecord={onUpdateCrmRecord}
           />
         ) : !crmConnected ? (
+          // No CRM connected — instead of a dead-end disabled button, take the
+          // user straight to the Connect CRM modal (owned by Dashboard). If the
+          // caller didn't wire the handler we fall back to the old disabled
+          // behavior so the button never becomes a silent no-op.
           <Button
-            disabled
-            className="w-full h-12 bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-xl cursor-not-allowed"
-            title="Connect a CRM from the top-right menu first"
+            onClick={() => onOpenCrmModal?.()}
+            disabled={!onOpenCrmModal}
+            className={
+              onOpenCrmModal
+                ? 'w-full h-12 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-sm shadow-indigo-200 cursor-pointer'
+                : 'w-full h-12 bg-slate-200 dark:bg-slate-700 text-slate-500 dark:text-slate-400 rounded-xl cursor-not-allowed'
+            }
+            title={onOpenCrmModal ? 'Open the Connect CRM dialog' : 'Connect a CRM from the top-right menu first'}
           >
             Connect a CRM to enable push
           </Button>
@@ -2112,6 +2390,115 @@ function fmtNum(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return n.toString();
+}
+
+// 4-touch email sequence timeline. Each touch is grounded in a distinct buying
+// signal so the rep can see WHY every send is different, not just when.
+function EmailSequenceTimeline({
+  sequence,
+  copied,
+  onCopy,
+}: {
+  sequence: EmailTouch[];
+  copied: string | null;
+  onCopy: (text: string, key: string) => void;
+}) {
+  // Deterministic per-touch tint so the timeline reads as a progression.
+  const toneMap: Record<string, { rail: string; ring: string; chip: string; label: string }> = {
+    'cold':       { rail: 'bg-indigo-500', ring: 'ring-indigo-200 dark:ring-indigo-800/60', chip: 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800/60', label: 'Cold open' },
+    'case-study': { rail: 'bg-emerald-500', ring: 'ring-emerald-200 dark:ring-emerald-800/60', chip: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800/60', label: 'Proof point' },
+    'breakup':    { rail: 'bg-rose-500', ring: 'ring-rose-200 dark:ring-rose-800/60', chip: 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800/60', label: 'Breakup' },
+    're-engage':  { rail: 'bg-amber-500', ring: 'ring-amber-200 dark:ring-amber-800/60', chip: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800/60', label: 'Re-engage' },
+  };
+  const fallback = { rail: 'bg-slate-500', ring: 'ring-slate-200 dark:ring-slate-800/60', chip: 'bg-slate-50 dark:bg-slate-800/50 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700', label: 'Touch' };
+
+  const composeCopy = (t: EmailTouch) => `Subject: ${t.subject}\n\n${t.body}`;
+  const composeAll = () =>
+    sequence
+      .map((t) => `— Day ${t.day} · ${t.type.toUpperCase()} —\nSubject: ${t.subject}\nSignal: ${t.signalUsed}\n\n${t.body}`)
+      .join('\n\n=====\n\n');
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div>
+          <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+            <Mail className="w-4 h-4 text-indigo-600 dark:text-indigo-300" />
+            {sequence.length}-Touch Email Sequence
+          </h4>
+          <p className="text-[12px] text-slate-500 dark:text-slate-400 mt-0.5">
+            Each touch is grounded in a different buying signal — copy individually or grab the whole cadence.
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => onCopy(composeAll(), 'sequence-all')}
+          className="h-8 text-xs gap-2"
+        >
+          {copied === 'sequence-all' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+          Copy full sequence
+        </Button>
+      </div>
+
+      <ol className="relative space-y-3 pl-6 border-l-2 border-dashed border-slate-200 dark:border-slate-700/60">
+        {sequence.map((touch, idx) => {
+          const style = toneMap[touch.type] ?? fallback;
+          const copyKey = `email-touch-${idx}`;
+          return (
+            <li key={idx} className="relative">
+              {/* Day marker on the rail */}
+              <span
+                className={`absolute -left-[33px] top-1 flex h-6 w-6 items-center justify-center rounded-full text-[10px] font-bold text-white ring-4 ring-white dark:ring-slate-950 ${style.rail}`}
+                title={`Send on day ${touch.day}`}
+              >
+                D{touch.day}
+              </span>
+
+              <div className={`rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3.5 space-y-2 ring-1 ${style.ring}`}>
+                <div className="flex items-start justify-between gap-2 flex-wrap">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${style.chip}`}>
+                        {style.label}
+                      </span>
+                      {touch.tone && (
+                        <span className="text-[10px] font-mono uppercase text-slate-400 dark:text-slate-500">
+                          tone · {touch.tone}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-1.5 text-[13.5px] font-semibold text-slate-900 dark:text-slate-100 leading-snug break-words">
+                      {touch.subject}
+                    </div>
+                  </div>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onCopy(composeCopy(touch), copyKey)}
+                    className="h-7 text-[11px] gap-1.5 shrink-0"
+                  >
+                    {copied === copyKey ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+                    Copy
+                  </Button>
+                </div>
+
+                <div className="text-[13px] leading-relaxed text-slate-700 dark:text-slate-300 whitespace-pre-wrap font-sans">
+                  {touch.body}
+                </div>
+
+                <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 border-t border-dashed border-slate-200 dark:border-slate-700/60 pt-2">
+                  <Sparkles className="w-3 h-3 text-amber-500" />
+                  <span className="font-semibold text-slate-600 dark:text-slate-300">Grounded in:</span>
+                  <span className="italic">{touch.signalUsed}</span>
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
 }
 
 // Reused by the Signal Freshness card's Freshness × Sector = Intent strip.
@@ -2451,7 +2838,7 @@ function SocialPlatformCard({ platform }: { platform: SocialPlatformData; key?: 
   );
 }
 
-function CompetitorCard({ comp }: { comp: any; key?: any }) {
+function CompetitorCard({ comp, onBattleCard }: { comp: any; key?: any; onBattleCard?: () => void }) {
   const getDisplacementColor = (val: string) => {
     switch (val?.toLowerCase()) {
       case 'high': 
@@ -2486,9 +2873,21 @@ function CompetitorCard({ comp }: { comp: any; key?: any }) {
             Inferred Signal: <span className="text-slate-650 dark:text-slate-400 font-normal italic">"{comp.inferredSource}"</span>
           </p>
         </div>
-        <Badge variant="outline" className={`text-[12px] font-semibold px-2 py-0.5 rounded-md ${getDisplacementColor(comp.displacementPotential)} shrink-0`}>
-          Displacement: {comp.displacementPotential}
-        </Badge>
+        <div className="flex flex-col items-end gap-1.5 shrink-0">
+          <Badge variant="outline" className={`text-[12px] font-semibold px-2 py-0.5 rounded-md ${getDisplacementColor(comp.displacementPotential)}`}>
+            Displacement: {comp.displacementPotential}
+          </Badge>
+          {onBattleCard && (
+            <button
+              onClick={onBattleCard}
+              className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-md bg-indigo-600 hover:bg-indigo-500 text-white shadow-xs transition-colors"
+              title={`Generate a 1-page battle card for ${comp.name}`}
+            >
+              <Swords className="w-3 h-3" />
+              Battle Card
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 bg-slate-50/70 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800">

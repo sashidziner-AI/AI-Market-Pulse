@@ -4,6 +4,7 @@ import { BusinessAnalysis } from '../types';
 import { MapPin, X, Phone, Globe, Star, ExternalLink, Loader2, AlertCircle, Compass, Plus, Filter } from 'lucide-react';
 import { toast } from 'sonner';
 import { extractDomain } from '../utils/geography';
+import { apiUrl } from '../utils/apiBase';
 
 interface DiscoveredCompany {
   name: string;
@@ -89,7 +90,7 @@ export function MapsPanel({
     setMissingKey(false);
     setMatches([]);
 
-    fetch('/api/maps/places', {
+    fetch(apiUrl('/api/maps/places'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

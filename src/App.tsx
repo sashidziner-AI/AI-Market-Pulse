@@ -10,11 +10,172 @@ import { SavedReportsLibrary } from './components/SavedReportsLibrary';
 import { LandingPage } from './components/LandingPage';
 import { BusinessAnalysis, TargetAccount, DetailedAnalysis, SavedReport } from './types';
 import { Toaster, toast } from 'sonner';
-import { Rocket, Globe, FileText, House } from 'lucide-react';
+import { Rocket, Globe, FileText, House, LogOut, User } from 'lucide-react';
 import { ThemeToggle, applyTheme } from './components/ThemeToggle'; // applyTheme still used by Jarvis theme actions
+import { SignalChangesBell } from './components/SignalChangesBell';
+import { SlackSettings } from './components/SlackSettings';
+import { captureSnapshot, shouldCaptureSnapshot, loadChangesWithinDigestWindow } from './utils/snapshots';
+import { notifyNewChanges, getWebhookUrl } from './utils/slack';
 import { JarvisOrb, JarvisAction } from './components/JarvisOrb';
+import { LoginPage } from './components/auth/LoginPage';
+import { RegisterPage } from './components/auth/RegisterPage';
+import { ForgotPasswordPage } from './components/auth/ForgotPasswordPage';
+import { ResetPasswordPage } from './components/auth/ResetPasswordPage';
+import { AuthUser, ensureDemoUser, getCurrentUser, logoutUser } from './utils/auth';
+import { apiUrl } from './utils/apiBase';
+
+// Seed the demo account before React renders so the login screen's autofill
+// chip works on a first-visit browser profile.
+ensureDemoUser();
+
+type AuthView = 'login' | 'register' | 'forgot' | 'reset';
+
+// Small user menu shown in headers. Renders as a circular initial-avatar
+// button; expands into a card with the user's name/email and a Sign out row.
+function UserMenu({
+  user,
+  open,
+  onToggle,
+  onLogout,
+  floating = false,
+}: {
+  user: AuthUser;
+  open: boolean;
+  onToggle: () => void;
+  onLogout: () => void;
+  floating?: boolean;
+}) {
+  const initial = user.name.trim().charAt(0).toUpperCase() || user.email.charAt(0).toUpperCase();
+  return (
+    <div className={`relative ${floating ? '' : ''}`} data-user-menu>
+      <button
+        onClick={onToggle}
+        className="w-9 h-9 rounded-full flex items-center justify-center text-white text-[13px] font-semibold shadow-md ring-2 ring-white/20 hover:ring-white/40 transition-all cursor-pointer select-none"
+        style={{ background: `linear-gradient(135deg, ${user.avatarColor}, color-mix(in oklab, ${user.avatarColor} 60%, black))` }}
+        aria-label="Account menu"
+      >
+        {initial}
+      </button>
+      {open && (
+        <div
+          className="absolute right-0 mt-2 w-64 rounded-2xl bg-white dark:bg-[#161618] border border-stone-200/70 dark:border-white/[0.08] shadow-2xl overflow-hidden z-50"
+          data-user-menu
+        >
+          <div className="px-4 py-4 border-b border-stone-200/70 dark:border-white/[0.06]">
+            <div className="flex items-center gap-3">
+              <div
+                className="w-10 h-10 rounded-full flex items-center justify-center text-white text-[15px] font-semibold shrink-0"
+                style={{ background: `linear-gradient(135deg, ${user.avatarColor}, color-mix(in oklab, ${user.avatarColor} 60%, black))` }}
+              >
+                {initial}
+              </div>
+              <div className="min-w-0">
+                <div className="text-[13.5px] font-semibold text-zinc-900 dark:text-zinc-100 truncate">{user.name}</div>
+                <div className="text-[11.5px] text-zinc-500 dark:text-zinc-400 truncate">{user.email}</div>
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={onLogout}
+            className="w-full flex items-center gap-2.5 px-4 py-3 text-[13px] text-zinc-700 dark:text-zinc-200 hover:bg-red-50 dark:hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-300 transition-colors cursor-pointer"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>Sign out</span>
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Parse #/reset-password?token=xxx from the URL hash so a reset link can
+// deep-link straight into the reset screen even before a user is logged in.
+function parseAuthHash(): { view: AuthView; token?: string } | null {
+  const hash = window.location.hash || '';
+  if (hash.startsWith('#/reset-password')) {
+    const q = hash.split('?')[1] ?? '';
+    const params = new URLSearchParams(q);
+    const token = params.get('token') ?? undefined;
+    return { view: 'reset', token };
+  }
+  if (hash.startsWith('#/register')) return { view: 'register' };
+  if (hash.startsWith('#/forgot-password')) return { view: 'forgot' };
+  if (hash.startsWith('#/login')) return { view: 'login' };
+  return null;
+}
 
 export default function App() {
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => getCurrentUser());
+  const initialHash = parseAuthHash();
+  // Auth screens are shown on demand — not by default. They only take over
+  // the app when the user tries to enter the workspace without a session, or
+  // when the URL is a deep-link to a specific auth screen (e.g. a password
+  // reset link a user opens in a fresh tab).
+  const [showAuth, setShowAuth] = useState<boolean>(initialHash !== null);
+  const [authView, setAuthView] = useState<AuthView>(initialHash?.view ?? 'login');
+  const [resetToken, setResetToken] = useState<string | null>(initialHash?.token ?? null);
+  const [userMenuOpen, setUserMenuOpen] = useState(false);
+
+  // Keep the URL hash in sync with the auth view when the auth screens are
+  // visible, and clear it once the user leaves auth so the app URL looks clean.
+  useEffect(() => {
+    if (!showAuth) {
+      if (window.location.hash.startsWith('#/')) {
+        history.replaceState(null, '', window.location.pathname + window.location.search);
+      }
+      return;
+    }
+    const target =
+      authView === 'reset' && resetToken
+        ? `#/reset-password?token=${resetToken}`
+        : `#/${authView === 'forgot' ? 'forgot-password' : authView}`;
+    if (window.location.hash !== target) {
+      history.replaceState(null, '', target);
+    }
+  }, [showAuth, authView, resetToken]);
+
+  // Respond to the browser back/forward buttons — hash changes into an auth
+  // route open the auth panel; hash cleared exits it.
+  useEffect(() => {
+    const onHash = () => {
+      const next = parseAuthHash();
+      if (next) {
+        setShowAuth(true);
+        setAuthView(next.view);
+        if (next.view === 'reset') setResetToken(next.token ?? null);
+      } else if (currentUser) {
+        // Only auto-dismiss the auth panel when there's a session to fall
+        // back to — otherwise the app would show workspace to a logged-out
+        // user via URL manipulation.
+        setShowAuth(false);
+      }
+    };
+    window.addEventListener('hashchange', onHash);
+    return () => window.removeEventListener('hashchange', onHash);
+  }, [currentUser]);
+
+  // When Landing's "Get Started" (or "Saved Reports") fires, check for a
+  // session. Logged in → dismiss landing straight into workspace. Logged out
+  // → prompt for auth first; the caller passes what to do once they're in.
+  const pendingActionRef = useRef<null | (() => void)>(null);
+  const requireAuth = (nextAction: () => void) => {
+    if (currentUser) {
+      nextAction();
+      return;
+    }
+    pendingActionRef.current = nextAction;
+    setAuthView('login');
+    setShowAuth(true);
+  };
+  const handleAuthSuccess = (user: AuthUser) => {
+    setCurrentUser(user);
+    setShowAuth(false);
+    // Resume whatever the user was trying to do before we intercepted them.
+    const resume = pendingActionRef.current;
+    pendingActionRef.current = null;
+    if (resume) resume();
+  };
+
   const [analysis, setAnalysis] = useState<BusinessAnalysis | null>(() => {
     try {
       const saved = localStorage.getItem('gtm_analysis');
@@ -105,9 +266,45 @@ export default function App() {
   // Rule: dark whenever there's no analysis loaded; light once a dashboard
   // is showing.
   useEffect(() => {
-    const isDark = !analysis;
+    // Auth screens are always dark for consistent brand feel.
+    const isDark = !currentUser || !analysis;
     applyTheme(isDark ? 'dark' : 'light');
-  }, [activeLandingTab, showLanding, analysis]);
+  }, [activeLandingTab, showLanding, analysis, currentUser]);
+
+  // Close the profile menu on outside click / Escape so it doesn't stay open
+  // hovering over content the user meant to interact with.
+  useEffect(() => {
+    if (!userMenuOpen) return;
+    const onDoc = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target && target.closest('[data-user-menu]')) return;
+      setUserMenuOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setUserMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDoc);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [userMenuOpen]);
+
+  const handleLogout = () => {
+    logoutUser();
+    setCurrentUser(null);
+    setUserMenuOpen(false);
+    setShowAuth(false);
+    setAuthView('login');
+    // Reset landing state so signing out drops the user back on the marketing
+    // landing page — not on whichever workspace tab they last had open.
+    setShowLanding(true);
+    setActiveLandingTab('analyze');
+    // Clear in-flight deep dives so a new session doesn't inherit stale readers.
+    abortDeepAnalysis();
+    toast.success('Signed out');
+  };
   const dismissLanding = () => {
     setShowLanding(false);
   };
@@ -158,6 +355,29 @@ export default function App() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accounts, activeReportId, analysis]);
+
+  // Signal-change snapshot capture. Once the workspace has accounts and it's
+  // been >24h since the last snapshot, take one. This drives the header bell
+  // + Weekly Digest — the diff between snapshots is what surfaces changes.
+  useEffect(() => {
+    if (accounts.length === 0) return;
+    if (!shouldCaptureSnapshot()) return;
+    const t = setTimeout(() => {
+      const snap = captureSnapshot(accounts);
+      if (snap) {
+        // Fire a storage event so any SignalChangesBell mounted elsewhere
+        // recomputes without needing to remount.
+        window.dispatchEvent(new StorageEvent('storage', { key: 'gtm_account_snapshots' }));
+        // If Slack is connected, push high-impact changes now. Dedup + rate
+        // limiting live in slack.ts — safe to call unconditionally.
+        if (getWebhookUrl()) {
+          const changes = loadChangesWithinDigestWindow(accounts);
+          notifyNewChanges(changes).catch(() => { /* toast happens in the util */ });
+        }
+      }
+    }, 1500); // small delay so bursts of setAccounts settle before we snapshot
+    return () => clearTimeout(t);
+  }, [accounts]);
 
   const handleSaveReport = (name: string, customAnalysis?: BusinessAnalysis, customAccounts?: TargetAccount[]) => {
     const finalAnalysis = customAnalysis || analysis;
@@ -248,7 +468,7 @@ export default function App() {
     setAnalyzedUrl(url);
     setIsDiscovering(true);
     try {
-      const response = await fetch('/api/analyze-business', {
+      const response = await fetch(apiUrl('/api/analyze-business'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),
@@ -282,7 +502,7 @@ export default function App() {
   const discoverAccounts = async (businessData: BusinessAnalysis, accountCount: number = 10) => {
     setIsDiscovering(true);
     try {
-      const response = await fetch('/api/discover-accounts', {
+      const response = await fetch(apiUrl('/api/discover-accounts'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -321,7 +541,7 @@ export default function App() {
         .filter((a: any) => a?.domain && a?.name)
         .map((a: any) => ({ domain: a.domain, name: a.name }));
       if (enrolledAccounts.length > 0) {
-        void fetch('/api/enrichment/sweep', {
+        void fetch(apiUrl('/api/enrichment/sweep'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ accounts: enrolledAccounts.slice(0, 3), cap: 12 }),
@@ -333,7 +553,7 @@ export default function App() {
             }
           })
           .catch(() => {});
-        void fetch('/api/scheduler/enroll', {
+        void fetch(apiUrl('/api/scheduler/enroll'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ accounts: enrolledAccounts }),
@@ -388,7 +608,7 @@ export default function App() {
     try {
       startProgress();
 
-      const response = await fetch('/api/analyze-account?stream=1', {
+      const response = await fetch(apiUrl('/api/analyze-account?stream=1'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -471,6 +691,83 @@ export default function App() {
     }
   };
 
+  // Auth screens take over the whole app only when the user tries to enter
+  // the workspace without a session — or when they land on a deep-link auth
+  // route (e.g. a password reset URL). The default first screen is always
+  // the marketing landing page.
+  if (showAuth) {
+    // Bail-out from the auth flow — drops the user back on the landing page
+    // and cancels any pending action (e.g. auto-open-workspace after login).
+    const goHome = () => {
+      pendingActionRef.current = null;
+      setShowAuth(false);
+      setResetToken(null);
+      setAuthView('login');
+    };
+    return (
+      <div className="min-h-screen bg-[#0b0b0d] text-zinc-100 font-sans">
+        <Toaster position="top-right" expand={true} richColors />
+        {authView === 'login' && (
+          <LoginPage
+            onSuccess={handleAuthSuccess}
+            onSwitchToRegister={() => setAuthView('register')}
+            onSwitchToForgot={() => setAuthView('forgot')}
+            onGoHome={goHome}
+          />
+        )}
+        {authView === 'register' && (
+          <RegisterPage
+            onSuccess={handleAuthSuccess}
+            onSwitchToLogin={() => setAuthView('login')}
+            onGoHome={goHome}
+          />
+        )}
+        {authView === 'forgot' && (
+          <ForgotPasswordPage
+            onSwitchToLogin={() => setAuthView('login')}
+            onGotoReset={(token) => {
+              setResetToken(token);
+              setAuthView('reset');
+            }}
+            onGoHome={goHome}
+          />
+        )}
+        {authView === 'reset' && (
+          <ResetPasswordPage
+            token={resetToken ?? ''}
+            onSwitchToLogin={() => {
+              setResetToken(null);
+              setAuthView('login');
+            }}
+            onGoHome={goHome}
+          />
+        )}
+      </div>
+    );
+  }
+
+  // Logged-out users only ever see the landing page. Any workspace state
+  // rehydrated from a previous session's localStorage is intentionally
+  // ignored here so a signed-out visitor can't peek at prior analysis data
+  // just by opening a fresh tab.
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen text-zinc-100 bg-[#1F1F20] font-sans">
+        <Toaster position="top-right" expand={true} richColors />
+        <LandingPage
+          onEnter={() => requireAuth(dismissLanding)}
+          onOpenLibrary={() =>
+            requireAuth(() => {
+              dismissLanding();
+              setActiveLandingTab('saved-library');
+            })
+          }
+          hasSavedReports={savedReports.length > 0}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen text-zinc-900 dark:text-zinc-100 bg-stone-50 dark:bg-[#1F1F20] font-sans selection:bg-orange-100 selection:text-orange-900 dark:selection:bg-orange-900/30 dark:selection:text-orange-100 flex flex-col justify-start">
       <Toaster position="top-right" expand={true} richColors />
@@ -480,11 +777,13 @@ export default function App() {
           header below is intentionally suppressed while it's visible. */}
       {showLanding && !analysis && activeLandingTab !== 'saved-library' ? (
         <LandingPage
-          onEnter={dismissLanding}
-          onOpenLibrary={() => {
-            dismissLanding();
-            setActiveLandingTab('saved-library');
-          }}
+          onEnter={() => requireAuth(dismissLanding)}
+          onOpenLibrary={() =>
+            requireAuth(() => {
+              dismissLanding();
+              setActiveLandingTab('saved-library');
+            })
+          }
           hasSavedReports={savedReports.length > 0}
         />
       ) : (
@@ -559,7 +858,20 @@ export default function App() {
                   )}
                 </button>
               </div>
+              {accounts.length > 0 && (
+                <SignalChangesBell
+                  accounts={accounts}
+                  onOpenAccount={(id) => window.dispatchEvent(new CustomEvent('gtm:open-account', { detail: { id } }))}
+                />
+              )}
+              <SlackSettings />
               <ThemeToggle />
+              <UserMenu
+                user={currentUser}
+                open={userMenuOpen}
+                onToggle={() => setUserMenuOpen((v) => !v)}
+                onLogout={handleLogout}
+              />
             </div>
           </div>
         </header>
@@ -627,6 +939,23 @@ export default function App() {
         />
       )}
         </>
+      )}
+
+      {/* Floating user menu — only rendered when the shared header is not
+          visible (i.e. on the landing page or the dashboard, which both
+          host their own headers). Keeps sign-out one click away from every
+          screen. Positioned inside the JarvisOrb column so it never overlaps
+          the orb itself. */}
+      {(showLanding || analysis) && (
+        <div className="fixed top-4 right-4 z-[60]">
+          <UserMenu
+            user={currentUser}
+            open={userMenuOpen}
+            onToggle={() => setUserMenuOpen((v) => !v)}
+            onLogout={handleLogout}
+            floating
+          />
+        </div>
       )}
 
       <JarvisOrb

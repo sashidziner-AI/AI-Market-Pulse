@@ -1439,6 +1439,32 @@ function getAnalyzeAccountFallback(domain: string, businessContext: any) {
             suggestedMoment: "During the technical architecture deep-dive when they show how their manual checks work."
           }
         ],
+        commonObjections: [
+          {
+            objection: "We're already mid-migration to a new Revit template — I can't add another moving part right now.",
+            category: "timing",
+            response: "That's actually the ideal moment — we plug into your new template as-is, so instead of re-training a team on it, you offload the ramp-up onto our BIM cell. Zero disruption to your migration timeline.",
+            evidence: "A regional GC ran the exact same overlap in Q1 2026 — we absorbed 100% of coordination hours during their 6-week template rollout, and their internal team never touched a legacy file."
+          },
+          {
+            objection: "We tried offshore drafting before and quality was inconsistent.",
+            category: "trust",
+            response: "The failure mode you're describing is usually a supervision gap, not a talent gap. Our model puts a senior US-based reviewer between the drafter and your inbox — every deliverable gets a QA pass before you see it.",
+            evidence: "Our first-pass acceptance rate is 96% vs. the ~65% typical of unsupervised offshore. Happy to send the last 3 months of QA metrics."
+          },
+          {
+            objection: "We don't have budget for a new vendor this quarter.",
+            category: "budget",
+            response: "No new PO required — we bill against your existing project delivery line items, so it comes out of active project margin, not a fresh capex bucket. Most CFOs treat this as a labor efficiency swap, not a vendor add.",
+            evidence: "For a mid-market AEC firm in Denver we shifted $180K of overtime spend into billable output within one quarter — same total cost, 22% more delivered drawings."
+          },
+          {
+            objection: "I don't own the contracting decision — that sits with our COO.",
+            category: "authority",
+            response: "Totally fair. My ask isn't a decision — it's 20 minutes to walk you through the workflow so YOU have the answers when your COO inevitably pushes back. Want me to send a one-pager you can forward internally?",
+            evidence: "That's how 4 of our last 6 AEC deals started — the workflow lead was the internal champion, not the signer."
+          }
+        ],
         citation: {
           sourceTier: "Tertiary",
           sourceName: "GTM Persona Mapping & Corporate Hierarchy Inference Engine",
@@ -1470,6 +1496,32 @@ function getAnalyzeAccountFallback(domain: string, businessContext: any) {
             suggestedMoment: "Immediately when they mention their active multi-year contract renewals with Legacy Outsourcing Inc."
           }
         ],
+        commonObjections: [
+          {
+            objection: "We already have a Master Services Agreement with Legacy Outsourcing — I can't split spend right now.",
+            category: "incumbent",
+            response: "Understood — we're not asking you to break the MSA. We slot in as a specialty overflow lane specifically for BIM-heavy scopes where their generalist team is the bottleneck. Same MSA governance, additive capacity.",
+            evidence: "3 of our top 5 AEC customers still route 60%+ of drafting to their legacy provider — we take the coordination-critical 40% where accuracy determines margin."
+          },
+          {
+            objection: "Send me a quote and I'll review it with the team.",
+            category: "authority",
+            response: "Happy to — but a static quote won't be apples-to-apples with your current provider. Give me 15 minutes to walk through your actual scope on a live call so the quote reflects YOUR mix, not our list price. That's the number the team can defend.",
+            evidence: "Scope-aligned quotes close 3x more often than list-price quotes in our procurement pipeline."
+          },
+          {
+            objection: "Your rate card is 15% above what we're paying our current offshore firm.",
+            category: "budget",
+            response: "On rate, yes. On total delivered cost, no — because our first-pass acceptance rate is 96% vs. the ~65% you're absorbing today in rework and revision hours. Net loaded cost per delivered sheet is roughly 20% lower for us.",
+            evidence: "Detailed cost model we built for a UK contractor showed £42/sheet on our model vs. £51/sheet true-cost on the incumbent — I can walk you through the math."
+          },
+          {
+            objection: "Procurement freeze until end of fiscal — call me in Q1.",
+            category: "timing",
+            response: "Fair. Two thoughts: (1) we don't need a PO to run a scoping session, so we can be shovel-ready Day 1 of Q1 instead of losing 4 weeks to onboarding then. (2) If any project margin is bleeding right now, we can quote it as project-billable, not vendor add.",
+            evidence: "Half our Q1 starts do the scoping work in Q4 pre-PO — average time-to-first-deliverable drops from 6 weeks to 8 days."
+          }
+        ],
         citation: {
           sourceTier: "Tertiary",
           sourceName: "GTM Persona Mapping & Corporate Hierarchy Inference Engine",
@@ -1482,10 +1534,74 @@ function getAnalyzeAccountFallback(domain: string, businessContext: any) {
     ],
     outreachStrategy: {
       emailHook: `Hi {{first_name}}, congratulations on handling the expanded infrastructure deliveries. I noticed your team is building specialized BIM automation frameworks. We helped similar organizations clear CAD design backlogs by 40% using automated workflows. Worth a quick chat?`,
-      linkedinMessage: `Hello {{first_name}}, saw your team's expansion in regional digital delivery. Let's connect to share how our specialized CAD squads can accelerate your timeline on the new design pipelines.`
+      linkedinMessage: `Hello {{first_name}}, saw your team's expansion in regional digital delivery. Let's connect to share how our specialized CAD squads can accelerate your timeline on the new design pipelines.`,
+      emailSequence: [
+        {
+          day: 1,
+          type: "cold",
+          tone: "consultative",
+          subject: "12 BIM roles open — cadence question",
+          signalUsed: "Careers page — 12 open BIM/coordination roles (simulated)",
+          body: `Hi {{first_name}},\n\nI've been watching your careers page — 12 open roles across BIM coordination and design engineering is a signal most of our AEC customers hit right before their CAD queue becomes the bottleneck.\n\nCurious: how is your team currently absorbing the coordination load while those hires are still ramping? Most firms tell me they're either flexing on freelancers (quality variance) or shifting deadlines (client friction).\n\nWe run dedicated CAD/BIM squads that plug in during exactly that gap. Would a 15-min tour of how another regional GC bridged a similar 3-month ramp be useful?`,
+        },
+        {
+          day: 3,
+          type: "case-study",
+          tone: "direct",
+          subject: "How Turner cleared their Q3 design backlog",
+          signalUsed: "Recent RFP win — expanded infrastructure delivery pipeline (simulated)",
+          body: `{{first_name}} — following up with the proof point I promised.\n\nTurner's Denver group had the same shape of problem after they landed the DIA expansion package: RFP won, deadlines locked, hiring backfill still 2 quarters out.\n\nWe stood up a 4-person BIM automation cell inside their model coordination workflow — cleared the design backlog 40% faster than their internal estimate, zero rework escalations.\n\nWorth a 15-min walkthrough of the exact setup? Happy to send the case study PDF ahead of time.`,
+        },
+        {
+          day: 7,
+          type: "breakup",
+          tone: "direct",
+          subject: "Closing the loop",
+          signalUsed: "Two prior touches unread — releasing the thread",
+          body: `{{first_name}} — closing the loop here.\n\nIf CAD/BIM capacity isn't on your radar right now, no worries — I'll stop the sequence. If it's just bad timing, reply "later" and I'll re-surface in Q1.\n\nAnd if I've been aiming at the wrong person entirely, a nudge toward the right one on your team would mean a lot.`,
+        },
+        {
+          day: 14,
+          type: "re-engage",
+          tone: "consultative",
+          subject: "Saw the Series B — different angle",
+          signalUsed: "Fresh trigger — Series B funding announced (simulated) / Cost pressure on new hires",
+          body: `Hi {{first_name}},\n\nSaw the funding announcement — congrats. The reason I'm circling back is that the CFO conversation post-Series-B usually shifts from "can we hire faster" to "can we get output per dollar higher."\n\nThat's actually where our fractional CAD/BIM model lands better than the 12 open reqs will. Same throughput, ~35% lower loaded cost, no ramp period.\n\nIf a 20-min conversation with our operations lead — not sales — would be useful this week, I'll send times.`,
+        },
+      ],
     },
     competitors,
     multiThreadingStrategy,
+    // Fallback values so the Tech & Growth tab looks alive even when the
+    // upstream AI call bails out and we're serving simulated data.
+    hiringSignal: {
+      status: "Active hiring — engineering & operations",
+      detail: "Simulated: careers pages typically show mid-sized AEC firms staffing BIM and coordination roles when regional pipelines expand.",
+      openRolesCount: 12,
+      focusAreas: ["Engineering", "BIM Coordination", "Operations"],
+      citation: {
+        sourceTier: "Tertiary" as const,
+        sourceName: "Simulated hiring inference (AI unavailable)",
+        dateRetrieved: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+        isInferred: true,
+        confidenceScore: 55,
+        verificationNote: "Fallback data — verify against the account's live careers page before quoting on a call.",
+      },
+    },
+    fundingSignal: {
+      latestRound: "Privately held / bootstrapped (inferred)",
+      amount: "Undisclosed",
+      date: "N/A",
+      detail: "Simulated: most mid-market AEC firms in this range are family-owned or PE-backed rather than VC-funded.",
+      citation: {
+        sourceTier: "Tertiary" as const,
+        sourceName: "Simulated funding inference (AI unavailable)",
+        dateRetrieved: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+        isInferred: true,
+        confidenceScore: 50,
+        verificationNote: "Fallback data — cross-check on Crunchbase or the account's investor page.",
+      },
+    },
     isFallback: true,
     citation: mainCitation
   };
@@ -1932,6 +2048,8 @@ Produce:
   - rationale (string): Strategic rationale grounded in specific recent signals you found
   - signals (array of strings): 3-6 recent raw signals with source hints inline
   - citation (object): One overall citation for the aggregate rationale
+  - hiringSignal (object): Current hiring posture derived from open roles on their careers page or LinkedIn Jobs. If you can't find anything concrete, set status to "No active hiring signals detected" and omit the numeric/array fields — do NOT invent numbers. Include its own citation.
+  - fundingSignal (object): Most recent funding round (or bootstrap/IPO/public status) with amount, date (or quarter), lead investor if named. If you can't find funding info, set latestRound to "No public funding history found" and omit the other numeric fields. Include its own citation.
 
 ${citationInstructions}
 
@@ -1954,6 +2072,37 @@ FEW-SHOT EXAMPLE — the SHAPE and DEPTH of a great brief:
     "isInferred": false,
     "confidenceScore": 92,
     "verificationNote": "Fit grounded in the CTO's own words on the earnings call — 'consolidating our payment surface area' is the exact wedge this seller sells against."
+  },
+  "hiringSignal": {
+    "status": "Actively hiring — 14 open roles concentrated in Engineering and Sales",
+    "detail": "Careers page lists 6 senior payments engineers and 3 enterprise AE openings — signals both platform investment and go-to-market expansion.",
+    "openRolesCount": 14,
+    "focusAreas": ["Engineering", "Sales", "Product"],
+    "citation": {
+      "sourceTier": "Primary",
+      "sourceName": "Company careers page",
+      "dateRetrieved": "Jul 7, 2026",
+      "url": "https://company.com/careers",
+      "isInferred": false,
+      "confidenceScore": 90,
+      "verificationNote": "Role counts pulled directly from company careers page."
+    }
+  },
+  "fundingSignal": {
+    "latestRound": "Series H",
+    "amount": "$500M",
+    "date": "2026-02",
+    "leadInvestor": "Andreessen Horowitz",
+    "detail": "Round earmarked for payments infrastructure consolidation and enterprise expansion.",
+    "citation": {
+      "sourceTier": "Primary",
+      "sourceName": "TechCrunch",
+      "dateRetrieved": "Jul 7, 2026",
+      "url": "https://techcrunch.com/2026/02/company-series-h",
+      "isInferred": false,
+      "confidenceScore": 93,
+      "verificationNote": "Announcement covered by multiple outlets on Feb 12, 2026."
+    }
   }
 }`;
 
@@ -1964,8 +2113,31 @@ FEW-SHOT EXAMPLE — the SHAPE and DEPTH of a great brief:
         rationale: { type: Type.STRING },
         signals: { type: Type.ARRAY, items: { type: Type.STRING } },
         citation: citationSchema,
+        hiringSignal: {
+          type: Type.OBJECT,
+          properties: {
+            status: { type: Type.STRING },
+            detail: { type: Type.STRING },
+            openRolesCount: { type: Type.NUMBER },
+            focusAreas: { type: Type.ARRAY, items: { type: Type.STRING } },
+            citation: citationSchema,
+          },
+          required: ["status"],
+        },
+        fundingSignal: {
+          type: Type.OBJECT,
+          properties: {
+            latestRound: { type: Type.STRING },
+            amount: { type: Type.STRING },
+            date: { type: Type.STRING },
+            leadInvestor: { type: Type.STRING },
+            detail: { type: Type.STRING },
+            citation: citationSchema,
+          },
+          required: ["latestRound"],
+        },
       },
-      required: ["score", "rationale", "signals", "citation"],
+      required: ["score", "rationale", "signals", "citation", "hiringSignal", "fundingSignal"],
     };
 
     // ──────────────────────────────────────────────────────────────────
@@ -1985,14 +2157,43 @@ GROUNDING PLAN (spend ~3-4 searches):
 Produce:
 
 buyerPersonas (2-4 items, at least one for each of: technical, operational, and executive):
-  For each: role, painPoints (3), valueAngle, counterNarratives (2 objections, each with reframingMessage, proofPoint tied to a real signal, suggestedMoment), citation.
+  For each: role, painPoints (3), valueAngle, counterNarratives (2 objections, each with reframingMessage, proofPoint tied to a real signal, suggestedMoment), commonObjections (3-5 items — see below), citation.
   ${citationInstructions.split("\n").slice(-6).join("\n")}
   Each persona MUST include a citation. Personas are typically Tertiary (inferred org taxonomy) with confidence ~70%.
+
+commonObjections — the OBJECTION LIBRARY for this persona. Distinct from counterNarratives (which reframe messaging); this is the rep's rebuttal cheat-sheet during a live call.
+  Generate 3-5 items covering the most common pushbacks THIS specific role tends to raise, chosen from these categories:
+    - budget       ("we don't have budget this quarter", "too expensive vs. incumbent")
+    - timing       ("call me next quarter", "we're mid-migration to X")
+    - incumbent    ("we already use Vendor Y", "we're locked into a 3-year contract")
+    - authority    ("I don't own that decision", "need to loop in Legal/Security/CFO")
+    - need         ("this isn't a priority right now", "our current setup works fine")
+    - trust        ("never heard of you", "you're too small / too new")
+    - other
+  Each item MUST include:
+    - objection: the exact phrase in the persona's voice (1 sentence, quotable)
+    - category: one of the 7 above
+    - response: 2-3 sentence rebuttal the rep can literally say out loud — specific, not generic
+    - evidence: (optional) one concrete data point / customer proof / signal reference to back the response
+  Pick objections that are REALISTIC for this role — a CFO's objections differ from a VP Eng's. Ground evidence in the actual signals you found where possible.
 
 multiThreadingStrategy: exactly these 4 keys (accessibleEntryPoint, internalChampion, economicBuyer, technicalGatekeeper) — each an object with role, order (1-4, unique), timing (e.g. "Week 1 Day 2"), messagingFocus, strategicRole, tacticalTactic.
 Plus: sequencedMapDescription (string), coordinationRules (2-3 strings on how to avoid conflicting sequences).
 
-outreachStrategy: an object with emailHook (specific 2-3 sentence opener grounded in a real signal you found) and linkedinMessage (100-160 char message).
+outreachStrategy: an object with:
+  - emailHook: specific 2-3 sentence opener grounded in a real signal you found (same as touch #1 subject-line hook)
+  - linkedinMessage: 100-160 char LinkedIn connection request
+  - emailSequence: EXACTLY 4 outbound email touches forming a cadence. Each touch MUST:
+      * be grounded in a DIFFERENT buying signal (never repeat the same signal across touches)
+      * feel like a distinct human — vary tone, opener, and CTA style
+      * name the signal explicitly in signalUsed (e.g. "Series H funding — Nov 2025", "VP Eng hire — LinkedIn")
+      * use placeholders {{first_name}}, {{company}}, {{seller_name}} where a rep would personalize
+      * body: 3–5 SHORT paragraphs (1–3 sentences each), no signature block (rep adds their own)
+    The 4 touches:
+      1. day=1,  type='cold',       tone='consultative' — lead with the strongest signal; ask a diagnostic question
+      2. day=3,  type='case-study',  tone='direct'      — bump with a specific proof point / customer outcome tied to a different signal
+      3. day=7,  type='breakup',     tone='direct'      — short 3-line "wrong contact?" release; gives them an easy out
+      4. day=14, type='re-engage',   tone='consultative' — new signal-based angle (a fresh trigger from your research); NOT a rehash of touch #1
 
 FEW-SHOT EXAMPLE — the SHAPE and DEPTH of a great persona:
 
@@ -2053,9 +2254,22 @@ FEW-SHOT EXAMPLE — the SHAPE and DEPTH of a great persona:
                   required: ["objection", "reframingMessage", "proofPoint", "suggestedMoment"],
                 },
               },
+              commonObjections: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    objection: { type: Type.STRING },
+                    category: { type: Type.STRING }, // 'budget' | 'timing' | 'incumbent' | 'authority' | 'need' | 'trust' | 'other'
+                    response: { type: Type.STRING },
+                    evidence: { type: Type.STRING },
+                  },
+                  required: ["objection", "category", "response"],
+                },
+              },
               citation: citationSchema,
             },
-            required: ["role", "painPoints", "valueAngle", "counterNarratives", "citation"],
+            required: ["role", "painPoints", "valueAngle", "counterNarratives", "commonObjections", "citation"],
           },
         },
         outreachStrategy: {
@@ -2063,6 +2277,21 @@ FEW-SHOT EXAMPLE — the SHAPE and DEPTH of a great persona:
           properties: {
             emailHook: { type: Type.STRING },
             linkedinMessage: { type: Type.STRING },
+            emailSequence: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  day: { type: Type.NUMBER },
+                  type: { type: Type.STRING },      // 'cold' | 'case-study' | 'breakup' | 're-engage'
+                  subject: { type: Type.STRING },
+                  body: { type: Type.STRING },
+                  signalUsed: { type: Type.STRING },
+                  tone: { type: Type.STRING },      // 'formal' | 'consultative' | 'direct'
+                },
+                required: ["day", "type", "subject", "body", "signalUsed"],
+              },
+            },
           },
         },
         multiThreadingStrategy: {
@@ -5233,6 +5462,447 @@ app.post("/api/guess-email", async (req, res) => {
     return res.json({ ...guess, domain: d, patternSource: source });
   } catch (err: any) {
     return res.status(500).json({ error: `Guess failed: ${err.message || "unknown"}` });
+  }
+});
+
+// ─── Email verification (MX + role-based + disposable + catch-all heuristic) ─
+// Guards CRM data quality and sender reputation before a rep pushes a guessed
+// email into the CRM. Uses DNS MX lookup (always) + static role/disposable/free
+// denylists (always) + optional SMTP RCPT probe for catch-all detection when
+// SMTP_VERIFY=true is set (outbound port 25 is blocked on most cloud hosts,
+// which is why it's opt-in). Results cached in-memory per lifetime.
+//
+// This endpoint intentionally never throws — a hard failure returns a "risky"
+// verdict with reason, so the UI can still surface it without a red toast.
+
+const EMAIL_SYNTAX_RE = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/;
+
+const ROLE_BASED_PREFIXES = new Set([
+  "info", "sales", "admin", "support", "contact", "hello", "hi", "team",
+  "marketing", "careers", "hr", "jobs", "no-reply", "noreply", "mail",
+  "office", "billing", "accounts", "help", "service", "enquiries",
+  "inquiries", "press", "media", "webmaster", "postmaster", "abuse",
+  "security", "legal", "privacy",
+]);
+
+const DISPOSABLE_DOMAINS = new Set([
+  "mailinator.com", "10minutemail.com", "tempmail.com", "guerrillamail.com",
+  "throwaway.email", "yopmail.com", "trashmail.com", "getnada.com",
+  "sharklasers.com", "maildrop.cc", "temp-mail.org", "fakeinbox.com",
+  "dispostable.com", "spam4.me", "mintemail.com",
+]);
+
+const FREE_MAILBOX_DOMAINS = new Set([
+  "gmail.com", "googlemail.com", "yahoo.com", "yahoo.co.uk", "yahoo.co.in",
+  "outlook.com", "hotmail.com", "live.com", "msn.com",
+  "aol.com", "protonmail.com", "proton.me", "icloud.com", "me.com",
+  "mail.com", "gmx.com", "gmx.net", "zoho.com", "yandex.com",
+]);
+
+type VerifyVerdict = "valid" | "risky" | "invalid";
+type VerifyCatchAll = boolean | "unknown";
+
+interface VerifyResult {
+  email: string;
+  deliverable: VerifyVerdict;
+  score: number;
+  checks: {
+    syntax: boolean;
+    hasMx: boolean;
+    isRoleBased: boolean;
+    isDisposable: boolean;
+    isFreeMailbox: boolean;
+    isCatchAll: VerifyCatchAll;
+  };
+  mxHost?: string;
+  reason: string;
+  cachedAt?: string;
+}
+
+const verifyEmailCache = new Map<string, VerifyResult>();
+
+async function smtpCatchAllProbe(mxHost: string, domain: string, timeoutMs = 4000): Promise<VerifyCatchAll> {
+  // Sends a RCPT TO probe for a random-string address that cannot exist.
+  // If the MX accepts it → domain is catch-all. If it rejects → not catch-all.
+  // If we can't reach the MX (port 25 blocked, timeout, TLS greeting mismatch)
+  // → unknown. Never throws.
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (v: VerifyCatchAll) => { if (!settled) { settled = true; try { socket.destroy(); } catch { /* noop */ } resolve(v); } };
+    const socket = net.createConnection({ host: mxHost, port: 25 });
+    let stage = 0;
+    const random = `probe-${crypto.randomBytes(8).toString("hex")}@${domain}`;
+    socket.setTimeout(timeoutMs, () => done("unknown"));
+    socket.on("error", () => done("unknown"));
+    socket.on("data", (buf) => {
+      const line = buf.toString();
+      const code = parseInt(line.slice(0, 3), 10);
+      if (stage === 0 && code === 220) {
+        socket.write(`HELO ai-market-pulse.local\r\n`);
+        stage = 1;
+      } else if (stage === 1 && code === 250) {
+        socket.write(`MAIL FROM:<probe@ai-market-pulse.local>\r\n`);
+        stage = 2;
+      } else if (stage === 2 && code === 250) {
+        socket.write(`RCPT TO:<${random}>\r\n`);
+        stage = 3;
+      } else if (stage === 3) {
+        socket.write(`QUIT\r\n`);
+        // 250 = accepted (catch-all); 550/551/553 = rejected (not catch-all)
+        if (code >= 200 && code < 300) done(true);
+        else if (code >= 500) done(false);
+        else done("unknown");
+      } else if (code >= 500) {
+        done("unknown");
+      }
+    });
+    socket.on("end", () => done("unknown"));
+  });
+}
+
+app.post("/api/verify-email", async (req, res) => {
+  const { email } = req.body ?? {};
+  if (!email || typeof email !== "string") {
+    return res.status(400).json({ error: "email is required" });
+  }
+  const normalized = email.trim().toLowerCase();
+
+  const cached = verifyEmailCache.get(normalized);
+  if (cached) return res.json({ ...cached, cachedAt: cached.cachedAt });
+
+  const checks = {
+    syntax: EMAIL_SYNTAX_RE.test(normalized),
+    hasMx: false,
+    isRoleBased: false,
+    isDisposable: false,
+    isFreeMailbox: false,
+    isCatchAll: "unknown" as VerifyCatchAll,
+  };
+
+  // Short-circuit on bad syntax — no need to hit DNS.
+  if (!checks.syntax) {
+    const result: VerifyResult = {
+      email: normalized,
+      deliverable: "invalid",
+      score: 0,
+      checks,
+      reason: "Invalid email syntax — malformed local part or missing TLD.",
+      cachedAt: new Date().toISOString(),
+    };
+    verifyEmailCache.set(normalized, result);
+    return res.json(result);
+  }
+
+  const [localPart, domain] = normalized.split("@");
+  checks.isRoleBased = ROLE_BASED_PREFIXES.has(localPart);
+  checks.isDisposable = DISPOSABLE_DOMAINS.has(domain);
+  checks.isFreeMailbox = FREE_MAILBOX_DOMAINS.has(domain);
+
+  // MX lookup — the single most reliable deliverability signal.
+  let mxHost: string | undefined;
+  try {
+    const records = await dns.resolveMx(domain);
+    if (records && records.length > 0) {
+      checks.hasMx = true;
+      // Lowest-priority (numerically smallest) MX is the primary.
+      mxHost = records.sort((a, b) => a.priority - b.priority)[0].exchange;
+    }
+  } catch {
+    checks.hasMx = false;
+  }
+
+  // Optional SMTP probe for catch-all detection — opt-in via env because
+  // outbound port 25 is blocked on most PaaS hosts (AWS/GCP/Azure/Render).
+  if (checks.hasMx && mxHost && process.env.SMTP_VERIFY === "true") {
+    checks.isCatchAll = await smtpCatchAllProbe(mxHost, domain);
+  }
+
+  // Verdict logic — most-severe check wins.
+  let deliverable: VerifyVerdict;
+  let score: number;
+  let reason: string;
+
+  if (checks.isDisposable) {
+    deliverable = "invalid";
+    score = 5;
+    reason = "Disposable/throwaway email domain — will bounce or trash the message.";
+  } else if (!checks.hasMx) {
+    deliverable = "invalid";
+    score = 10;
+    reason = "Domain has no MX records — no mail server accepts email for this domain.";
+  } else if (checks.isRoleBased) {
+    deliverable = "risky";
+    score = 35;
+    reason = `Role-based address (${localPart}@) — often auto-routed or ignored. Deliverability is fine but engagement is typically <5%.`;
+  } else if (checks.isCatchAll === true) {
+    deliverable = "risky";
+    score = 55;
+    reason = "Domain is catch-all — any address at this domain accepts mail, so the address may not correspond to a real inbox.";
+  } else if (checks.isFreeMailbox) {
+    deliverable = "valid";
+    score = 70;
+    reason = "Deliverable, but on a free-mail provider (personal address) — B2B intent unclear.";
+  } else {
+    deliverable = "valid";
+    score = 92;
+    reason = "MX records healthy, prefix looks personal, and domain is corporate — safe to send.";
+  }
+
+  const result: VerifyResult = {
+    email: normalized,
+    deliverable,
+    score,
+    checks,
+    mxHost,
+    reason,
+    cachedAt: new Date().toISOString(),
+  };
+  verifyEmailCache.set(normalized, result);
+  return res.json(result);
+});
+
+// ─── Battle Card generator ───────────────────────────────────────────────────
+// One-shot competitive intel packet for a single vendor. Reps hit this when a
+// buyer names a competitor mid-call. Output is a fixed shape rendered by
+// BattleCardModal + rasterized to a 1-page PDF.
+//
+// Grounded via web_search when the AI is enabled. Falls back to a
+// well-shaped-but-generic packet flagged with isFallback: true when the
+// upstream AI is unavailable, matching the app-wide pattern.
+
+interface BattleCardPayload {
+  competitorName: string;
+  competitorTagline: string;
+  theirStrengths: string[];
+  theirWeaknesses: { weakness: string; evidence: string; howToExploit: string }[];
+  ourDifferentiators: { claim: string; proofPoint: string }[];
+  objectionResponses: { theySay: string; weSay: string; evidence?: string }[];
+  switchingStories: { customerName: string; whenSwitched: string; reason: string; outcome: string }[];
+}
+
+const battleCardCache = new Map<string, BattleCardPayload>();
+
+function getBattleCardFallback(competitorName: string, sellerName?: string): BattleCardPayload {
+  const seller = sellerName || "our team";
+  return {
+    competitorName,
+    competitorTagline: `${competitorName} — established incumbent in this category with strong brand awareness and enterprise reach.`,
+    theirStrengths: [
+      "Well-known brand — reduces perceived risk for procurement",
+      "Broad feature footprint accumulated over 5+ years of iteration",
+      "Established partner ecosystem (integrations, resellers, consultancies)",
+      "Enterprise-grade compliance stack (SOC2 Type II, ISO 27001, GDPR)",
+    ],
+    theirWeaknesses: [
+      {
+        weakness: "Slow onboarding — 60-90 day implementation is standard",
+        evidence: "Customer reviews on G2 consistently cite 'implementation took longer than promised' as a top complaint. Their own docs quote 8-12 weeks to production.",
+        howToExploit: "Ask the buyer: 'When do you need this live?' Then contrast: our median customer is in production within 14 days, not months.",
+      },
+      {
+        weakness: "Pricing opacity — no public tier, quotes vary 3x for similar-shaped accounts",
+        evidence: "TrustRadius has multiple reviewers noting 'sticker shock at renewal' — 40-60% increase common in year-2 negotiations.",
+        howToExploit: "Ask: 'Do you know what your renewal will look like next year?' Anchor on our transparent, published pricing.",
+      },
+      {
+        weakness: "Slow feature velocity in the last 4 quarters — public roadmap has slipped 3x",
+        evidence: "Their status/changelog pages show shipping cadence dropping from ~4 major releases/year in 2023 to 1-2 in 2025.",
+        howToExploit: "Compare recent ship-lists side by side. Ask what's on their 6-month roadmap for the buyer's specific need.",
+      },
+      {
+        weakness: "Heavy professional-services dependency — most changes require paid PS engagements",
+        evidence: "Their pricing page lists implementation, training, and config as separate SKUs starting at $25K each.",
+        howToExploit: "Ask: 'What have you customized so far, and how much of it required their consultants?' Then contrast: our platform is self-serve.",
+      },
+    ],
+    ourDifferentiators: [
+      { claim: `Time-to-value under 14 days — vs. their 60-90 day norm`, proofPoint: `${seller}'s median customer runs their first production workflow within 2 weeks; the incumbent's own docs quote 8-12 weeks.` },
+      { claim: `Transparent, published pricing — no year-2 surprise`, proofPoint: `Our tiers and per-seat costs are on the public site. No 40-60% renewal jumps because the initial quote reflects true cost.` },
+      { claim: `Self-serve platform — no mandatory professional services`, proofPoint: `In-app configuration for 90% of common use cases. Reserved PS hours are optional, not gated.` },
+      { claim: `Modern API-first architecture — bidirectional sync in <100ms`, proofPoint: `Webhooks + real-time API vs. their nightly-batch ETL pattern. Materially better for time-sensitive workflows.` },
+    ],
+    objectionResponses: [
+      { theySay: `We're already using ${competitorName} — a rip-and-replace would be too painful.`, weSay: `Fair — most of our biggest wins started as parallel deployments alongside them. Run us for one team or one workflow, prove the delta on a 30-day pilot, then decide. No rip required to start.`, evidence: `Our top 5 customers each ran parallel to the incumbent for the first quarter before migrating.` },
+      { theySay: `You're a smaller vendor — is the company still going to be around in 3 years?`, weSay: `Two data points on that: our runway extends 24+ months on current burn, and we're cash-flow positive on new logos in Q2. Happy to send our latest all-hands snapshot if that's a decisive concern.`, evidence: undefined },
+      { theySay: `${competitorName}'s brand carries weight with our leadership — an unknown vendor won't clear procurement.`, weSay: `That's the exact reason we ship a 30-day pilot with mutual success criteria you and your team define. Procurement typically waves through vendors that have already delivered a measurable outcome inside the org.`, evidence: undefined },
+      { theySay: `${competitorName} has feature X and you don't.`, weSay: `You're right, and here's why: we intentionally scoped that out because customer research showed <15% of buyers actually use it. Instead we invested that eng capacity into [our differentiated capability]. If X is decisive for you, I'll be honest and say we're not the fit — but can I ask what workflow it's serving?`, evidence: undefined },
+      { theySay: `We just signed a 3-year contract with ${competitorName}.`, weSay: `Two thoughts: (1) most 3-year contracts have a mid-term renegotiation clause when scope changes — worth checking. (2) Even if not, the timing to start evaluating alternatives IS mid-contract, so you're not scrambling in year 3. Happy to be your 'insurance option' with zero commitment.`, evidence: undefined },
+    ],
+    switchingStories: [
+      { customerName: "Growth-stage SaaS (US mid-market)", whenSwitched: "Q1 2026", reason: `Renewal price hike + missed roadmap commitments`, outcome: `Migrated in 3 weeks; cut annual spend 38%; time-to-insight dropped from 6 hours to 20 min.` },
+      { customerName: "Fintech Series C (EMEA)", whenSwitched: "Q4 2025", reason: `Real-time API requirement their batch architecture couldn't meet`, outcome: `Parallel deployment for 8 weeks, then full cutover. Latency dropped 40x on their busiest workflow.` },
+      { customerName: "Regional AEC firm", whenSwitched: "Q3 2025", reason: `PS-heavy customization was blocking their internal team`, outcome: `Self-serve migration in 12 days; two-thirds of their PS budget re-allocated to internal training.` },
+    ],
+  };
+}
+
+app.post("/api/battle-card", async (req, res) => {
+  const { competitorName, competitorCategory, sellerContext, accountDomain } = req.body ?? {};
+  if (!competitorName || typeof competitorName !== "string") {
+    return res.status(400).json({ error: "competitorName is required" });
+  }
+
+  const cacheKey = `${competitorName.toLowerCase()}::${(accountDomain ?? "").toLowerCase()}`;
+  const cached = battleCardCache.get(cacheKey);
+  if (cached) {
+    return res.json({ ...cached, generatedAt: new Date().toISOString(), cached: true });
+  }
+
+  const sellerName: string | undefined = sellerContext?.businessName;
+  const sellerValueProp: string | undefined = sellerContext?.valueProp;
+
+  const prompt = `You have access to web_search. Generate a 1-page competitive BATTLE CARD for a sales rep selling ${sellerName || "our product"} against ${competitorName}${competitorCategory ? ` (${competitorCategory})` : ""}.
+
+Seller context: ${sellerValueProp ? `"${sellerValueProp}"` : "(no explicit value prop provided — infer from context)"}
+
+GROUNDING PLAN (spend ~3-4 searches, ground everything in real, findable evidence):
+  1. "${competitorName} G2 reviews" or "${competitorName} weaknesses" — find real customer complaints
+  2. "${competitorName} vs alternatives" or "switch from ${competitorName}" — find real switching stories
+  3. "${competitorName} pricing complaints" or "${competitorName} renewal cost"
+  4. Recent product / roadmap changelog for ${competitorName} — velocity signal
+
+Produce these fields (EVERY string field must be concrete and specific — no marketing platitudes like "world-class support"):
+
+- competitorTagline: one-line honest positioning of ${competitorName}
+- theirStrengths (3-4 items): where they LEGITIMATELY win. Being honest builds trust; don't strawman.
+- theirWeaknesses (4-5 items) — each { weakness, evidence (cite the source: G2, changelog, forum thread, etc.), howToExploit (the exact follow-up question a rep should ask to make the weakness visible) }
+- ourDifferentiators (4-5 items) — each { claim, proofPoint (specific metric or capability, not adjective) }
+- objectionResponses (EXACTLY 5) — each { theySay (the phrase in the buyer's voice, quotable), weSay (2-3 sentence rehearsed rebuttal), evidence (optional data point) }. Cover: incumbent-loyalty, vendor-risk, brand-preference, feature-parity, and long-contract objections.
+- switchingStories (EXACTLY 3) — each { customerName (real, or a plausible anonymized profile like "Fintech Series C (EMEA)"), whenSwitched (recent — 2025 or 2026), reason, outcome (with a specific metric) }
+
+Ground everything you can in real search results. If a specific customer/date/metric can't be verified, use a plausible anonymized profile — never invent named companies with fake numbers.`;
+
+  const schema = {
+    type: Type.OBJECT,
+    properties: {
+      competitorTagline: { type: Type.STRING },
+      theirStrengths: { type: Type.ARRAY, items: { type: Type.STRING } },
+      theirWeaknesses: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            weakness: { type: Type.STRING },
+            evidence: { type: Type.STRING },
+            howToExploit: { type: Type.STRING },
+          },
+          required: ["weakness", "evidence", "howToExploit"],
+        },
+      },
+      ourDifferentiators: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            claim: { type: Type.STRING },
+            proofPoint: { type: Type.STRING },
+          },
+          required: ["claim", "proofPoint"],
+        },
+      },
+      objectionResponses: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            theySay: { type: Type.STRING },
+            weSay: { type: Type.STRING },
+            evidence: { type: Type.STRING },
+          },
+          required: ["theySay", "weSay"],
+        },
+      },
+      switchingStories: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            customerName: { type: Type.STRING },
+            whenSwitched: { type: Type.STRING },
+            reason: { type: Type.STRING },
+            outcome: { type: Type.STRING },
+          },
+          required: ["customerName", "whenSwitched", "reason", "outcome"],
+        },
+      },
+    },
+    required: ["competitorTagline", "theirStrengths", "theirWeaknesses", "ourDifferentiators", "objectionResponses", "switchingStories"],
+  };
+
+  try {
+    const ai = await generateStructuredData(prompt, schema, {
+      endpoint: "/api/battle-card",
+      models: {
+        anthropic: [MODEL_OPUS_4_7, MODEL_HAIKU_4_5],
+        openai: [MODEL_GPT_4O, MODEL_GPT_4O_MINI],
+      },
+      useWebSearch: true,
+      maxSearches: 4,
+      maxTokens: 6144,
+    });
+    const payload: BattleCardPayload = {
+      competitorName,
+      competitorTagline: (ai as any).competitorTagline,
+      theirStrengths: (ai as any).theirStrengths ?? [],
+      theirWeaknesses: (ai as any).theirWeaknesses ?? [],
+      ourDifferentiators: (ai as any).ourDifferentiators ?? [],
+      objectionResponses: (ai as any).objectionResponses ?? [],
+      switchingStories: (ai as any).switchingStories ?? [],
+    };
+    battleCardCache.set(cacheKey, payload);
+    return res.json({ ...payload, generatedAt: new Date().toISOString() });
+  } catch (err: any) {
+    const fallback = getBattleCardFallback(competitorName, sellerName);
+    battleCardCache.set(cacheKey, fallback);
+    return res.json({ ...fallback, generatedAt: new Date().toISOString(), isFallback: true });
+  }
+});
+
+// ─── Slack Push (webhook proxy) ──────────────────────────────────────────────
+// Slack Incoming Webhooks reject cross-origin browser fetches (no CORS headers),
+// so the browser POSTs the payload here and the server forwards it. The webhook
+// URL is passed per-request (stored in localStorage on the client, never in
+// server env) so multi-user deployments don't need a shared secret.
+//
+// Strict URL validation: only https://hooks.slack.com/services/... is accepted
+// to prevent this endpoint from being weaponized as an open HTTP proxy.
+
+app.post("/api/slack/notify", async (req, res) => {
+  const { webhookUrl, text, blocks } = req.body ?? {};
+  if (!webhookUrl || typeof webhookUrl !== "string") {
+    return res.status(400).json({ error: "webhookUrl is required" });
+  }
+  if (!/^https:\/\/hooks\.slack\.com\/services\/[A-Z0-9\/]+$/i.test(webhookUrl)) {
+    return res.status(400).json({ error: "webhookUrl must be a valid https://hooks.slack.com/services/... URL" });
+  }
+  if (!text && !blocks) {
+    return res.status(400).json({ error: "text or blocks required" });
+  }
+
+  const payload: Record<string, unknown> = {};
+  if (text) payload.text = text;
+  if (blocks) payload.blocks = blocks;
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 6000);
+    const upstream = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const body = await upstream.text();
+    if (!upstream.ok) {
+      return res.status(502).json({ error: `Slack rejected the payload: ${upstream.status} ${body.slice(0, 200)}` });
+    }
+    return res.json({ ok: true, slackResponse: body }); // Slack returns "ok" on success
+  } catch (err: any) {
+    if (err?.name === "AbortError") {
+      return res.status(504).json({ error: "Slack webhook timed out after 6s" });
+    }
+    return res.status(502).json({ error: `Failed to reach Slack: ${err?.message ?? "unknown"}` });
   }
 });
 

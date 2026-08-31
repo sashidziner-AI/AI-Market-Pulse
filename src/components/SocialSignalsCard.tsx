@@ -234,6 +234,23 @@ export function SocialSignalsCard({
 
       {/* Buying Intent Signals ------------------------------------------- */}
       <div className="border-t border-slate-100 dark:border-slate-800 bg-gradient-to-b from-orange-50/40 to-transparent dark:from-orange-950/20 px-4 pt-4 pb-3">
+        {/* Explicit simulated-data banner so users understand why the same
+            chips (Hiring, Product Launch, …) appear across accounts when the
+            /api/analyze-social call falls back to seed data. */}
+        {isSimulated && (
+          <div className="mb-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/50">
+            <Sparkles className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+            <div className="min-w-0 flex-1">
+              <div className="text-[11.5px] font-semibold text-amber-800 dark:text-amber-200 leading-tight">
+                Simulated demo signals
+              </div>
+              <p className="text-[11px] text-amber-700 dark:text-amber-300/90 leading-snug mt-0.5">
+                The AI social-signal fetch fell back to seed data — the same chips will appear across accounts.
+                Add a valid <code className="font-mono px-1 py-0 rounded bg-amber-100 dark:bg-amber-900/40">OPENAI_API_KEY</code> to <code className="font-mono px-1 py-0 rounded bg-amber-100 dark:bg-amber-900/40">.env</code> and click refresh for live per-account intent.
+              </p>
+            </div>
+          </div>
+        )}
         <div className="flex items-center gap-2 mb-2.5">
           <div className="w-6 h-6 rounded-lg bg-orange-500 flex items-center justify-center">
             <Zap className="w-3 h-3 text-white" />
@@ -266,8 +283,15 @@ export function SocialSignalsCard({
                     <IntentIcon className="w-3.5 h-3.5 text-orange-600 dark:text-orange-400" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <div className="text-[11.5px] font-semibold text-slate-900 dark:text-slate-100 leading-tight">
-                      {intent.label}
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[11.5px] font-semibold text-slate-900 dark:text-slate-100 leading-tight">
+                        {intent.label}
+                      </span>
+                      {isSimulated && (
+                        <span className="text-[9px] font-mono uppercase tracking-[0.13em] px-1 py-0 rounded bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300">
+                          demo
+                        </span>
+                      )}
                     </div>
                     <div className="text-[10.5px] text-slate-500 dark:text-slate-400 leading-snug line-clamp-2 mt-0.5">
                       {intent.value}
