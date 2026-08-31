@@ -1,10 +1,11 @@
 import React from 'react';
-import { DollarSign, Sliders, X, RotateCcw, Info } from 'lucide-react';
-import { TargetAccount } from '../types';
+import { DollarSign, Sliders, X, RotateCcw, Info, Sparkles, Loader2 } from 'lucide-react';
+import { TargetAccount, BusinessAnalysis } from '../types';
 import {
   computeRoi, formatCurrencyCompact, formatCurrencyFull,
   loadRoiOverrides, saveRoiOverrides,
   RoiOverrides, INDUSTRY_BENCHMARKS, IndustryKey,
+  fetchAiEstimate,
 } from '../utils/roi';
 import { Button } from '@/components/ui/button';
 
@@ -12,35 +13,91 @@ import { Button } from '@/components/ui/button';
 // with the low/high band + a formula summary. "Adjust" opens a modal that lets
 // the rep override per-employee ACV, adoption %, contract length, employee
 // count, and industry. Overrides persist in localStorage keyed by account id.
-export function RoiTile({ account }: { account: TargetAccount }) {
+export function RoiTile({ account, sellerContext }: {
+  account: TargetAccount;
+  // Passed through to /api/estimate-deal so the AI can tune the estimate to
+  // the specific seller (their value prop influences realistic ACV bands).
+  sellerContext?: Pick<BusinessAnalysis, 'businessName' | 'valueProp'>;
+}) {
   const [overrides, setOverrides] = React.useState<RoiOverrides | null>(() => loadRoiOverrides(account.id));
   const [adjustOpen, setAdjustOpen] = React.useState(false);
+  const [aiLoading, setAiLoading] = React.useState(false);
 
   // Reset the local state when switching between accounts.
   React.useEffect(() => {
     setOverrides(loadRoiOverrides(account.id));
   }, [account.id]);
 
+  // Fire /api/estimate-deal on first render for this account when we don't
+  // already have an AI estimate cached. Skips if the user has fully-manual
+  // overrides on both rate fields (they've explicitly told us what to use).
+  React.useEffect(() => {
+    const current = loadRoiOverrides(account.id);
+    if (current?.ai) return; // cached AI estimate — no refetch
+    const bothUserOverridden = current?.perEmployeeAcv != null && current?.adoptionPct != null;
+    if (bothUserOverridden) return; // nothing for AI to contribute
+    const ctrl = new AbortController();
+    setAiLoading(true);
+    fetchAiEstimate({ account, sellerContext, signal: ctrl.signal }).then((ai) => {
+      if (ctrl.signal.aborted) return;
+      if (ai) {
+        const next: RoiOverrides = { ...(current ?? {}), ai };
+        setOverrides(next);
+        saveRoiOverrides(account.id, next);
+      }
+      setAiLoading(false);
+    });
+    return () => { ctrl.abort(); setAiLoading(false); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account.id]);
+
   const roi = React.useMemo(() => computeRoi(account, overrides ?? undefined), [account, overrides]);
-  const hasOverrides = overrides != null && Object.keys(overrides).length > 0;
+  // "CUSTOM" chip only for user-side edits — not for AI-auto values.
+  const hasUserOverrides = overrides != null && Object.keys(overrides).some((k) => k !== 'ai');
 
   const applyOverrides = (next: RoiOverrides) => {
     setOverrides(next);
     saveRoiOverrides(account.id, next);
   };
   const clearOverrides = () => {
-    setOverrides(null);
-    saveRoiOverrides(account.id, null);
+    // Preserve the AI estimate on reset — we're clearing user edits, not
+    // the AI baseline. Prevents a costly re-fetch after every reset.
+    const preserved: RoiOverrides | null = overrides?.ai ? { ai: overrides.ai } : null;
+    setOverrides(preserved);
+    saveRoiOverrides(account.id, preserved);
+  };
+  const regenerateAi = async () => {
+    setAiLoading(true);
+    const ai = await fetchAiEstimate({ account, sellerContext });
+    if (ai) {
+      const next: RoiOverrides = { ...(overrides ?? {}), ai };
+      setOverrides(next);
+      saveRoiOverrides(account.id, next);
+    }
+    setAiLoading(false);
   };
 
   return (
     <>
       <section className="bg-emerald-50/60 dark:bg-emerald-950/25 p-4 rounded-xl border border-emerald-200 dark:border-emerald-800/60 shadow-sm">
         <div className="flex items-start justify-between gap-2 mb-2.5">
-          <h3 className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
+          <h3 className="text-[11px] font-bold text-emerald-800 dark:text-emerald-300 uppercase tracking-wider flex items-center gap-1.5 flex-wrap">
             <DollarSign className="w-3.5 h-3.5" />
             Estimated Deal Size
-            {hasOverrides && (
+            {aiLoading && (
+              <span className="inline-flex items-center gap-1 text-[9px] font-mono font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/60 px-1 py-[1px] rounded">
+                <Loader2 className="w-2.5 h-2.5 animate-spin" /> AI TUNING
+              </span>
+            )}
+            {!aiLoading && roi.source === 'ai' && (
+              <span
+                className="inline-flex items-center gap-1 text-[9px] font-mono font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-100 dark:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800/60 px-1 py-[1px] rounded cursor-help"
+                title={roi.aiReasoning || 'AI-tuned per-account estimate'}
+              >
+                <Sparkles className="w-2.5 h-2.5" /> AI-TUNED
+              </span>
+            )}
+            {hasUserOverrides && (
               <span className="text-[9px] font-mono font-bold text-emerald-700 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/60 border border-emerald-200 dark:border-emerald-800/60 px-1 py-[1px] rounded">
                 CUSTOM
               </span>
@@ -80,6 +137,12 @@ export function RoiTile({ account }: { account: TargetAccount }) {
         <div className="text-[10px] text-emerald-700/70 dark:text-emerald-400/60 mt-1">
           Industry: <b>{roi.matchedIndustry}</b>{roi.isInferredEmployeeCount && ' · * employee count inferred'}
         </div>
+        {roi.source === 'ai' && roi.aiReasoning && (
+          <div className="mt-2 pt-2 border-t border-emerald-200/70 dark:border-emerald-800/50 flex items-start gap-1.5 text-[10.5px] leading-snug text-indigo-800 dark:text-indigo-200">
+            <Sparkles className="w-3 h-3 mt-[1px] shrink-0 text-indigo-500 dark:text-indigo-300" />
+            <span><b className="font-semibold">AI reasoning:</b> {roi.aiReasoning}</span>
+          </div>
+        )}
       </section>
 
       {adjustOpen && (
@@ -87,8 +150,10 @@ export function RoiTile({ account }: { account: TargetAccount }) {
           account={account}
           overrides={overrides ?? {}}
           computed={roi}
+          aiLoading={aiLoading}
           onApply={(o) => { applyOverrides(o); setAdjustOpen(false); }}
           onReset={() => { clearOverrides(); setAdjustOpen(false); }}
+          onRegenerateAi={regenerateAi}
           onClose={() => setAdjustOpen(false)}
         />
       )}
@@ -97,13 +162,15 @@ export function RoiTile({ account }: { account: TargetAccount }) {
 }
 
 function AdjustModal({
-  account, overrides, computed, onApply, onReset, onClose,
+  account, overrides, computed, aiLoading, onApply, onReset, onRegenerateAi, onClose,
 }: {
   account: TargetAccount;
   overrides: RoiOverrides;
   computed: ReturnType<typeof computeRoi>;
+  aiLoading: boolean;
   onApply: (o: RoiOverrides) => void;
   onReset: () => void;
+  onRegenerateAi: () => void;
   onClose: () => void;
 }) {
   // Work off local state so slider drags don't spam localStorage.
@@ -221,7 +288,9 @@ function AdjustModal({
             step={50}
             min={0}
             prefix="$"
-            hint={`Industry default: $${(INDUSTRY_BENCHMARKS.find((b) => b.key === industry)?.perEmployeeAcv ?? 0).toLocaleString()}`}
+            hint={overrides.ai
+              ? `AI suggests: $${overrides.ai.perEmployeeAcv.toLocaleString()} · Industry default: $${(INDUSTRY_BENCHMARKS.find((b) => b.key === industry)?.perEmployeeAcv ?? 0).toLocaleString()}`
+              : `Industry default: $${(INDUSTRY_BENCHMARKS.find((b) => b.key === industry)?.perEmployeeAcv ?? 0).toLocaleString()}`}
           />
 
           {/* Adoption slider */}
@@ -239,8 +308,32 @@ function AdjustModal({
               onChange={(e) => setAdoptionPct(Number(e.target.value) / 100)}
               className="w-full accent-emerald-600"
             />
-            <div className="text-[10px] text-slate-400 mt-0.5">Fraction of employees who become seat-holders.</div>
+            <div className="text-[10px] text-slate-400 mt-0.5">
+              Fraction of employees who become seat-holders.
+              {overrides.ai && ` AI suggests ${Math.round(overrides.ai.adoptionPct * 100)}%.`}
+            </div>
           </div>
+
+          {/* AI reasoning readout — visible whenever we have an AI baseline. */}
+          {overrides.ai && (
+            <div className="flex items-start gap-1.5 text-[10.5px] leading-relaxed p-2 rounded-md border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50 dark:bg-indigo-950/30">
+              <Sparkles className="w-3 h-3 mt-[1px] shrink-0 text-indigo-500 dark:text-indigo-300" />
+              <div className="text-indigo-800 dark:text-indigo-100 min-w-0 flex-1">
+                <div className="font-semibold">AI reasoning</div>
+                <div className="mt-0.5">{overrides.ai.reasoning}</div>
+              </div>
+              <button
+                type="button"
+                onClick={onRegenerateAi}
+                disabled={aiLoading}
+                className="text-[10px] font-semibold uppercase tracking-wider text-indigo-600 dark:text-indigo-300 hover:text-indigo-800 dark:hover:text-indigo-100 px-1.5 py-0.5 rounded border border-indigo-300 dark:border-indigo-700/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/40 disabled:opacity-50 shrink-0 inline-flex items-center gap-1"
+                title="Regenerate the AI estimate for this account"
+              >
+                {aiLoading ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Sparkles className="w-2.5 h-2.5" />}
+                {aiLoading ? '...' : 'Refresh'}
+              </button>
+            </div>
+          )}
 
           {/* Contract years */}
           <div>

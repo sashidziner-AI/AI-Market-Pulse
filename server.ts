@@ -62,6 +62,7 @@ for (const route of [
   "/api/learn-email-pattern",
   "/api/guess-email",
   "/api/discover-partners",
+  "/api/estimate-deal",
 ]) {
   app.use(route, aiLimiter);
 }
@@ -5992,6 +5993,136 @@ Never invent a fake org name to fill a slot — if you can't find enough real on
     const fallback = getPartnersFallback(industry);
     partnersCache.set(cacheKey, fallback);
     return res.json({ partners: fallback, generatedAt: new Date().toISOString(), isFallback: true });
+  }
+});
+
+// ─── Deal-Size AI estimate (per-account benchmark picker) ───────────────────
+// Replaces the industry-lookup step in RoiTile with a per-account AI call.
+// The formula (employees × acv × adoption × years) stays the same — this
+// endpoint only picks the two most-uncertain inputs (per-employee ACV and
+// adoption %) using the account's specific signals: stack, growth, headcount,
+// competitor, priority band. Web_search grounds the ACV against real
+// comparables when Anthropic is available.
+type IndustryKey = "SaaS" | "Fintech" | "Manufacturing" | "AEC" | "Biotech" | "Healthcare" | "General";
+
+interface DealEstimatePayload {
+  perEmployeeAcv: number;
+  adoptionPct: number;         // 0.0-1.0
+  matchedIndustry: IndustryKey;
+  reasoning: string;           // 1-2 sentences — shown as a tooltip in the UI
+}
+
+const dealEstimateCache = new Map<string, DealEstimatePayload>();
+
+// Same benchmark table as src/utils/roi.ts. Duplicated intentionally so the
+// server has a fallback without importing client code.
+const SERVER_INDUSTRY_DEFAULTS: Record<IndustryKey, { acv: number; adoption: number; match: RegExp }> = {
+  Fintech:       { acv: 2000, adoption: 0.30, match: /\b(fintech|financial|banking|payments|insur)\b/i },
+  Biotech:       { acv: 1600, adoption: 0.25, match: /\b(biotech|pharma|clinical|life\s*sciences|drug|genomics)\b/i },
+  SaaS:          { acv: 1000, adoption: 0.40, match: /\b(saas|software|tech|ai|ml|data|platform|api|devtools)\b/i },
+  Healthcare:    { acv: 900,  adoption: 0.30, match: /\b(health|medical|hospital|provider|payer)\b/i },
+  AEC:           { acv: 600,  adoption: 0.35, match: /\b(aec|construct|architect|engineer|building|bim)\b/i },
+  Manufacturing: { acv: 500,  adoption: 0.50, match: /\b(manufactur|industrial|factory|supply\s*chain|logistics)\b/i },
+  General:       { acv: 800,  adoption: 0.35, match: /.*/ },
+};
+
+function getDealEstimateFallback(industry?: string): DealEstimatePayload {
+  const raw = (industry ?? "").trim();
+  const order: IndustryKey[] = ["Fintech", "Biotech", "SaaS", "Healthcare", "AEC", "Manufacturing", "General"];
+  for (const k of order) {
+    if (SERVER_INDUSTRY_DEFAULTS[k].match.test(raw)) {
+      const d = SERVER_INDUSTRY_DEFAULTS[k];
+      return {
+        perEmployeeAcv: d.acv,
+        adoptionPct: d.adoption,
+        matchedIndustry: k,
+        reasoning: `Falling back to industry benchmark for ${k}: $${d.acv}/employee/year at ${Math.round(d.adoption * 100)}% adoption.`,
+      };
+    }
+  }
+  const g = SERVER_INDUSTRY_DEFAULTS.General;
+  return { perEmployeeAcv: g.acv, adoptionPct: g.adoption, matchedIndustry: "General", reasoning: "Falling back to general benchmark." };
+}
+
+app.post("/api/estimate-deal", async (req, res) => {
+  const { accountName, accountDomain, industry, employeeCount, priorityIndex, techStack, growthSignals, sellerContext } = req.body ?? {};
+  if (!accountName || typeof accountName !== "string") {
+    return res.status(400).json({ error: "accountName is required" });
+  }
+
+  const sellerName: string | undefined = sellerContext?.businessName;
+  const cacheKey = `${(sellerName ?? "").toLowerCase()}::${(accountDomain ?? accountName).toLowerCase()}`;
+  const cached = dealEstimateCache.get(cacheKey);
+  if (cached) {
+    return res.json({ ...cached, generatedAt: new Date().toISOString(), cached: true });
+  }
+
+  const signalStr = Array.isArray(growthSignals) && growthSignals.length > 0
+    ? growthSignals.slice(0, 5).map((s: any) => (typeof s === "string" ? s : s?.summary || s?.title)).filter(Boolean).join("; ")
+    : "";
+  const stackStr = Array.isArray(techStack) && techStack.length > 0
+    ? techStack.slice(0, 10).join(", ")
+    : "";
+
+  const prompt = `You have access to web_search. Pick a realistic per-employee ACV ($/year/employee) and adoption % for a B2B deal where ${sellerName || "the seller"} sells to ${accountName}${accountDomain ? ` (${accountDomain})` : ""}.
+
+Account context:
+- Industry: ${industry || "(unknown — infer from name/domain)"}
+- Employees: ${employeeCount ?? "(unknown)"}${priorityIndex != null ? ` · Priority index: ${priorityIndex}` : ""}
+${stackStr ? `- Tech stack signals: ${stackStr}` : ""}
+${signalStr ? `- Recent growth signals: ${signalStr}` : ""}
+
+GROUNDING PLAN (2 searches max — cheap, targeted):
+  1. Look up public pricing for a comparable B2B product in this industry — "{industry} SaaS pricing per user", G2 pricing pages, published enterprise ARR-per-employee comparables.
+  2. If the account is in a well-documented segment (e.g. Series-B fintech, Fortune 500 healthcare), search for a realistic deal-size range at that stage.
+
+Return a JSON object with:
+- perEmployeeAcv: annual $ per employee (e.g. 1200) — anchor to comparables, don't pick round marketing numbers
+- adoptionPct: 0.0-1.0 — realistic seat penetration for THIS specific buyer (a 50k-employee bank likely deploys narrowly at first: 0.05-0.15; a 200-employee SaaS startup might deploy broadly: 0.6-0.9)
+- matchedIndustry: one of SaaS | Fintech | Manufacturing | AEC | Biotech | Healthcare | General
+- reasoning: 1-2 concise sentences citing WHAT you anchored on (comparable product, funding stage, headcount tier). This shows in a tooltip so the rep can defend the number.
+
+Be honest about uncertainty. If you couldn't find a specific comparable, say so in reasoning ("Anchored on general SaaS benchmark; no comparable public pricing found for ${accountName}"). Never invent a specific competitor's pricing.`;
+
+  const schema = {
+    type: Type.OBJECT,
+    properties: {
+      perEmployeeAcv: { type: Type.NUMBER },
+      adoptionPct: { type: Type.NUMBER },
+      matchedIndustry: { type: Type.STRING, enum: ["SaaS", "Fintech", "Manufacturing", "AEC", "Biotech", "Healthcare", "General"] },
+      reasoning: { type: Type.STRING },
+    },
+    required: ["perEmployeeAcv", "adoptionPct", "matchedIndustry", "reasoning"],
+  };
+
+  try {
+    const ai = await generateStructuredData(prompt, schema, {
+      endpoint: "/api/estimate-deal",
+      models: {
+        anthropic: [MODEL_HAIKU_4_5, MODEL_OPUS_4_7],
+        openai: [MODEL_GPT_4O_MINI, MODEL_GPT_4O],
+      },
+      useWebSearch: true,
+      maxSearches: 2,
+      maxTokens: 1024,
+    });
+    // Clamp to sane bands so a bad AI response can't produce absurd sidebar
+    // values. Real B2B ACV per employee falls between ~$50 and ~$8000/yr.
+    const acvRaw = Number((ai as any).perEmployeeAcv);
+    const adoptRaw = Number((ai as any).adoptionPct);
+    const perEmployeeAcv = Math.max(50, Math.min(8000, Math.round(Number.isFinite(acvRaw) ? acvRaw : 800)));
+    const adoptionPct = Math.max(0.02, Math.min(1, Number.isFinite(adoptRaw) ? adoptRaw : 0.35));
+    const matchedIndustry = (["SaaS", "Fintech", "Manufacturing", "AEC", "Biotech", "Healthcare", "General"] as IndustryKey[])
+      .includes((ai as any).matchedIndustry) ? (ai as any).matchedIndustry as IndustryKey : "General";
+    const reasoning = String((ai as any).reasoning || "").slice(0, 400) || "AI estimate — no reasoning returned.";
+
+    const payload: DealEstimatePayload = { perEmployeeAcv, adoptionPct, matchedIndustry, reasoning };
+    dealEstimateCache.set(cacheKey, payload);
+    return res.json({ ...payload, generatedAt: new Date().toISOString() });
+  } catch (err: any) {
+    const fallback = getDealEstimateFallback(industry);
+    dealEstimateCache.set(cacheKey, fallback);
+    return res.json({ ...fallback, generatedAt: new Date().toISOString(), isFallback: true });
   }
 });
 

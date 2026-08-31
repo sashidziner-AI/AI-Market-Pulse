@@ -1,10 +1,14 @@
 import React from 'react';
-import { Slack, Check, X, Loader2, ExternalLink, Trash2, Send } from 'lucide-react';
+import { Check, X, Loader2, ExternalLink, Trash2, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { getWebhookUrl, setWebhookUrl, clearWebhookUrl, sendTestMessage, isValidSlackUrl } from '../utils/slack';
 
-export function SlackSettings() {
+export function SlackSettings({ variant = 'default' }: {
+  // 'onDark' forces visible-on-black-bar colors for the always-dark Dashboard
+  // header. 'default' keeps the theme-aware landing-header styling.
+  variant?: 'default' | 'onDark';
+} = {}) {
   const [open, setOpen] = React.useState(false);
   const [connected, setConnected] = React.useState(!!getWebhookUrl());
   const rootRef = React.useRef<HTMLDivElement | null>(null);
@@ -24,13 +28,24 @@ export function SlackSettings() {
     <div className="relative" ref={rootRef}>
       <button
         onClick={() => setOpen((v) => !v)}
-        className="relative w-9 h-9 rounded-full flex items-center justify-center hover:bg-stone-200/70 dark:hover:bg-white/[0.06] transition-colors"
+        className={`relative w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
+          variant === 'onDark'
+            ? 'hover:bg-white/[0.08]'
+            : 'hover:bg-stone-200/70 dark:hover:bg-white/[0.06]'
+        }`}
         aria-label={`Slack notifications ${connected ? '(connected)' : '(not connected)'}`}
         title={connected ? 'Slack notifications: connected' : 'Connect Slack notifications'}
       >
-        <Slack className={`w-[18px] h-[18px] ${connected ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-700 dark:text-zinc-300'}`} />
+        <img
+          src={`${import.meta.env.BASE_URL}slack-icon.png`}
+          alt=""
+          aria-hidden="true"
+          className={`w-[22px] h-[22px] object-contain ${connected ? '' : 'opacity-70 grayscale hover:opacity-100 hover:grayscale-0 transition-all'}`}
+        />
         {connected && (
-          <span className="absolute bottom-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-stone-50 dark:ring-[#1F1F20]" />
+          <span className={`absolute bottom-1.5 right-1.5 w-2 h-2 rounded-full bg-emerald-500 ring-2 ${
+            variant === 'onDark' ? 'ring-[#2A2A2B]' : 'ring-stone-50 dark:ring-[#1F1F20]'
+          }`} />
         )}
       </button>
 
@@ -93,7 +108,12 @@ function SlackPanel({ connected, onChange, onClose }: { connected: boolean; onCh
     <div className="absolute right-0 mt-2 w-[400px] rounded-2xl bg-white dark:bg-[#161618] border border-stone-200/70 dark:border-white/[0.08] shadow-2xl overflow-hidden z-50">
       <div className="px-4 py-3 border-b border-stone-200/70 dark:border-white/[0.06] flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Slack className="w-4 h-4 text-zinc-700 dark:text-zinc-300" />
+          <img
+            src={`${import.meta.env.BASE_URL}slack-icon.png`}
+            alt=""
+            aria-hidden="true"
+            className="w-5 h-5 object-contain"
+          />
           <span className="text-[13.5px] font-semibold text-zinc-900 dark:text-zinc-100">Slack Notifications</span>
         </div>
         <button

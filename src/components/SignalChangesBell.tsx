@@ -28,9 +28,13 @@ const IMPACT_DOT: Record<SignalChange['impact'], string> = {
 export function SignalChangesBell({
   accounts,
   onOpenAccount,
+  variant = 'default',
 }: {
   accounts: TargetAccount[];
   onOpenAccount?: (accountId: string) => void;
+  // 'onDark' forces visible-on-black-bar colors regardless of theme, for the
+  // Dashboard header which stays dark in both light and dark app themes.
+  variant?: 'default' | 'onDark';
 }) {
   const [open, setOpen] = React.useState(false);
   const [changes, setChanges] = React.useState<SignalChange[]>([]);
@@ -85,13 +89,19 @@ export function SignalChangesBell({
     <div className="relative" ref={rootRef}>
       <button
         onClick={handleToggle}
-        className="relative w-9 h-9 rounded-full flex items-center justify-center hover:bg-stone-200/70 dark:hover:bg-white/[0.06] transition-colors"
+        className={`relative w-9 h-9 rounded-full flex items-center justify-center transition-colors ${
+          variant === 'onDark'
+            ? 'hover:bg-white/[0.08]'
+            : 'hover:bg-stone-200/70 dark:hover:bg-white/[0.06]'
+        }`}
         aria-label={`Signal changes${unreadCount > 0 ? ` — ${unreadCount} new` : ''}`}
         title={unreadCount > 0 ? `${unreadCount} new signal change${unreadCount === 1 ? '' : 's'}` : 'Signal changes'}
       >
-        <Bell className="w-[18px] h-[18px] text-zinc-700 dark:text-zinc-300" />
+        <Bell className={`w-[18px] h-[18px] ${variant === 'onDark' ? 'text-zinc-200' : 'text-zinc-700 dark:text-zinc-300'}`} />
         {unreadCount > 0 && (
-          <span className="absolute top-1.5 right-1.5 min-w-[16px] h-[16px] rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center px-1 leading-none ring-2 ring-stone-50 dark:ring-[#1F1F20]">
+          <span className={`absolute top-1.5 right-1.5 min-w-[16px] h-[16px] rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center px-1 leading-none ring-2 ${
+            variant === 'onDark' ? 'ring-[#2A2A2B]' : 'ring-stone-50 dark:ring-[#1F1F20]'
+          }`}>
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
