@@ -1,6 +1,7 @@
 import React, { ReactNode, useEffect, useRef, useId, useState } from 'react';
 import type { ComponentType, ChangeEvent, MouseEvent } from 'react';
 import { Sparkles, ShieldCheck, Zap, LineChart, ArrowLeft } from 'lucide-react';
+import { assetUrl } from '../../utils/apiBase';
 
 interface AuthLayoutProps {
   eyebrow: string;
@@ -61,7 +62,7 @@ export function AuthLayout({ eyebrow, title, subtitle, children, footer, onGoHom
         {/* Brand mark */}
         <div className="relative z-10 flex items-center gap-3">
           <img
-            src="/vee-technologies-logo.png"
+            src={assetUrl('/vee-technologies-logo.png')}
             alt="Vee Technologies"
             className="w-11 h-11 object-contain select-none"
           />
@@ -122,7 +123,7 @@ export function AuthLayout({ eyebrow, title, subtitle, children, footer, onGoHom
       <main className="relative flex flex-col items-center justify-center p-6 sm:p-10 bg-[#0f0f11]">
         {/* Compact mobile brand mark */}
         <div className="lg:hidden absolute top-6 left-6 flex items-center gap-2.5">
-          <img src="/vee-technologies-logo.png" alt="" className="w-9 h-9 object-contain" />
+          <img src={assetUrl('/vee-technologies-logo.png')} alt="" className="w-9 h-9 object-contain" />
           <span className="font-normal text-[15px] tracking-tight text-white" style={{ letterSpacing: '-0.02em' }}>
             <span className="text-orange-400">AI</span> Market Pulse
           </span>

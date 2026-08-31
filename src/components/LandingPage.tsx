@@ -10,6 +10,7 @@ import {
   Film, Volume2, VolumeX, Maximize2,
 } from 'lucide-react';
 import { ThemeToggle } from './ThemeToggle';
+import { assetUrl } from '../utils/apiBase';
 
 gsap.registerPlugin(ScrollTrigger, ScrollToPlugin);
 
@@ -374,7 +375,7 @@ export function LandingPage({ onEnter, onOpenLibrary, hasSavedReports }: Landing
         <div className="max-w-6xl mx-auto px-6 h-24 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <img
-              src="/vee-technologies-logo.png"
+              src={assetUrl('/vee-technologies-logo.png')}
               alt="Vee Technologies"
               className="w-12 h-12 object-contain select-none"
             />
@@ -833,7 +834,7 @@ export function LandingPage({ onEnter, onOpenLibrary, hasSavedReports }: Landing
         <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-3 text-[11.5px] text-zinc-500 dark:text-zinc-400">
           <div className="flex items-center gap-2">
             <img
-              src="/vee-technologies-logo.png"
+              src={assetUrl('/vee-technologies-logo.png')}
               alt="Vee Technologies"
               className="w-12 h-12 object-contain"
             />
@@ -1042,7 +1043,7 @@ function WatchSection() {
             <div className="relative bg-black">
               <video
                 ref={videoRef}
-                src="/intro-video.mp4"
+                src={assetUrl('/intro-video.mp4')}
                 preload="metadata"
                 playsInline
                 muted={muted}

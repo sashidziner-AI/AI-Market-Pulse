@@ -22,7 +22,7 @@ import { RegisterPage } from './components/auth/RegisterPage';
 import { ForgotPasswordPage } from './components/auth/ForgotPasswordPage';
 import { ResetPasswordPage } from './components/auth/ResetPasswordPage';
 import { AuthUser, ensureDemoUser, getCurrentUser, logoutUser } from './utils/auth';
-import { apiUrl } from './utils/apiBase';
+import { apiUrl, assetUrl } from './utils/apiBase';
 
 // Seed the demo account before React renders so the login screen's autofill
 // chip works on a first-visit browser profile.
@@ -799,7 +799,7 @@ export default function App() {
           <div className="max-w-6xl mx-auto px-6 h-24 flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <img
-                src="/vee-technologies-logo.png"
+                src={assetUrl('/vee-technologies-logo.png')}
                 alt="Vee Technologies"
                 className="w-12 h-12 object-contain select-none"
               />

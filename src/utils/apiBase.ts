@@ -18,3 +18,13 @@ export function apiUrl(pathOrQuery: string): string {
   const p = pathOrQuery.startsWith('/') ? pathOrQuery : `/${pathOrQuery}`;
   return `${BASE}${p}`;
 }
+
+// Prefix for static files served from public/. Vite's static asset resolution
+// only rewrites imported modules — raw <img src="/foo.png"> strings hit the
+// domain root, which breaks on subpath deploys. Use this helper for any
+// hardcoded reference to a file in public/.
+export function assetUrl(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  const p = path.startsWith('/') ? path : `/${path}`;
+  return `${BASE}${p}`;
+}

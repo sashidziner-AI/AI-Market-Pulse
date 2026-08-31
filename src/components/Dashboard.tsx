@@ -22,7 +22,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import { computeWeightsRecalibration, SellerChannelPartner, DEFAULT_CHANNEL_PARTNERS, computePathwayAssessment } from '../utils/calibration';
-import { apiUrl } from '../utils/apiBase';
+import { apiUrl, assetUrl } from '../utils/apiBase';
 import * as crmMirror from '../utils/crmMirror';
 import { LeadsTab } from './LeadsTab';
 import { WeeklyDigest } from './WeeklyDigest';
@@ -1687,7 +1687,7 @@ export function Dashboard({
         <div className="p-5">
           <div className="flex items-center gap-2 mb-8">
             <img
-              src="/vee-technologies-logo.png"
+              src={assetUrl('/vee-technologies-logo.png')}
               alt="Vee Technologies"
               className="w-12 h-12 object-contain"
             />
