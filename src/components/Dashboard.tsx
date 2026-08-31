@@ -474,6 +474,27 @@ export function Dashboard({
     }
   });
 
+  // Provenance for the Active Partners Grid so we can badge the source and
+  // decide whether an incoming business analysis should auto-regenerate.
+  //   'default' — hardcoded AEC-flavored seed data (never persisted)
+  //   'ai'      — AI-generated tailored to a specific business; safe to
+  //               refresh on a new analysis without losing manual work
+  //   'user'    — user added/edited/deleted at least once; auto-regen is
+  //               disabled so we don't blow away their curation. Regenerate
+  //               button asks for confirmation.
+  const [partnersSource, setPartnersSource] = useState<'default' | 'ai' | 'user'>(() => {
+    try {
+      const s = localStorage.getItem('gtm_channel_partners_source');
+      if (s === 'ai' || s === 'user') return s;
+      return localStorage.getItem('gtm_channel_partners') ? 'user' : 'default';
+    } catch { return 'default'; }
+  });
+  const [partnersGeneratedFor, setPartnersGeneratedFor] = useState<string | null>(() => {
+    try { return localStorage.getItem('gtm_channel_partners_generated_for'); } catch { return null; }
+  });
+  const [partnersGenerating, setPartnersGenerating] = useState(false);
+  const [confirmRegenerateOpen, setConfirmRegenerateOpen] = useState(false);
+
   const [partnerEdits, setPartnerEdits] = useState<SellerChannelPartner | null>(null);
   const [isPartnerFormOpen, setIsPartnerFormOpen] = useState(false);
   const [partnerFormType, setPartnerFormType] = useState<'add' | 'edit'>('add');
@@ -491,11 +512,65 @@ export function Dashboard({
     setChannelPartners(updated);
     try {
       localStorage.setItem('gtm_channel_partners', JSON.stringify(updated));
+      localStorage.setItem('gtm_channel_partners_source', 'user');
     } catch (e) {
       console.log(e);
     }
+    setPartnersSource('user');
     toast.success("Saved. Pathway assessments calibrated dynamically against the updated partner grid.");
   };
+
+  // Generate a tailored partner grid for the current business analysis.
+  // Called automatically when the grid is still on defaults or was AI-generated
+  // for a different business; can also be triggered manually via the Regenerate
+  // button (which routes through a confirm modal when source is 'user').
+  const generatePartnersFromAi = React.useCallback(async (opts?: { manual?: boolean }) => {
+    if (!analysis) return;
+    if (partnersGenerating) return;
+    setPartnersGenerating(true);
+    try {
+      const res = await fetch(apiUrl('/api/discover-partners'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ businessContext: analysis }),
+      });
+      const data = await res.json();
+      const partners: SellerChannelPartner[] = Array.isArray(data.partners) ? data.partners : [];
+      if (partners.length === 0) throw new Error('empty partners');
+      setChannelPartners(partners);
+      setPartnersSource('ai');
+      setPartnersGeneratedFor(analysis.businessName ?? null);
+      try {
+        localStorage.setItem('gtm_channel_partners', JSON.stringify(partners));
+        localStorage.setItem('gtm_channel_partners_source', 'ai');
+        if (analysis.businessName) localStorage.setItem('gtm_channel_partners_generated_for', analysis.businessName);
+      } catch { /* quota */ }
+      if (data.isFallback) {
+        toast.warning('Partners loaded from simulated set (AI unavailable). You can still edit or regenerate.');
+      } else if (opts?.manual) {
+        toast.success(`Regenerated ${partners.length} partners tailored to ${analysis.businessName ?? 'your business'}.`);
+      }
+    } catch (e: any) {
+      toast.error('Partner generation failed: ' + (e?.message ?? 'unknown'));
+    } finally {
+      setPartnersGenerating(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysis, partnersGenerating]);
+
+  // Auto-fire once per analysis. Guard: only when the grid is on default seed
+  // data, or was AI-tailored for a DIFFERENT business (fresh analysis chained
+  // in). User-curated lists ('user' source) are never overwritten without an
+  // explicit Regenerate click + confirmation.
+  React.useEffect(() => {
+    if (!analysis) return;
+    if (partnersGenerating) return;
+    const shouldFire =
+      partnersSource === 'default' ||
+      (partnersSource === 'ai' && partnersGeneratedFor && partnersGeneratedFor !== analysis.businessName);
+    if (shouldFire) void generatePartnersFromAi();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysis?.businessName]);
 
   const handleAddOrEditPartnerSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -3795,21 +3870,55 @@ export function Dashboard({
                   {/* Right list: Partner configurations */}
                   <div className="space-y-6">
                     <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-700/80 p-5 shadow-xs space-y-4">
-                      <div className="flex items-center justify-between">
-                        <div className="text-left space-y-0.5">
-                          <h4 className="font-semibold text-sm text-slate-900 dark:text-slate-100 font-sans">Active Partners Grid</h4>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="text-left space-y-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-semibold text-sm text-slate-900 dark:text-slate-100 font-sans">Active Partners Grid</h4>
+                            {partnersSource === 'ai' && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-indigo-50 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-200 border border-indigo-200 dark:border-indigo-700/50" title={partnersGeneratedFor ? `AI-tailored to ${partnersGeneratedFor}` : 'AI-tailored to your business'}>
+                                <Sparkles className="w-2.5 h-2.5" /> AI-tailored
+                              </span>
+                            )}
+                            {partnersSource === 'user' && (
+                              <span className="inline-flex items-center text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-50 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-200 border border-emerald-200 dark:border-emerald-700/50" title="Curated by you">
+                                Custom
+                              </span>
+                            )}
+                          </div>
                           <p className="text-[12px] text-slate-400 leading-normal">
-                            Configure networks scanned by the matching engine.
+                            {partnersGenerating
+                              ? 'Generating partners tailored to your business…'
+                              : partnersSource === 'ai' && partnersGeneratedFor
+                                ? `Tailored to ${partnersGeneratedFor}. Edit, add, or regenerate.`
+                                : 'Configure networks scanned by the matching engine.'}
                           </p>
                         </div>
-                        <Button 
-                          variant="ghost" 
-                          size="icon" 
-                          onClick={handleStartAddPartner}
-                          className="h-8 w-8 text-indigo-600 dark:text-indigo-300 hover:text-indigo-800 hover:bg-slate-50 border border-slate-100 dark:border-slate-800 rounded-lg cursor-pointer"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </Button>
+                        <div className="flex items-center gap-1 shrink-0">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            disabled={!analysis || partnersGenerating}
+                            onClick={() => {
+                              if (partnersSource === 'user') setConfirmRegenerateOpen(true);
+                              else void generatePartnersFromAi({ manual: true });
+                            }}
+                            className="h-8 w-8 text-indigo-600 dark:text-indigo-300 hover:text-indigo-800 hover:bg-slate-50 border border-slate-100 dark:border-slate-800 rounded-lg cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                            title={partnersSource === 'user' ? 'Regenerate with AI (will replace your edits)' : 'Regenerate with AI'}
+                          >
+                            {partnersGenerating
+                              ? <RefreshCw className="w-4 h-4 animate-spin" />
+                              : <Sparkles className="w-4 h-4" />}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={handleStartAddPartner}
+                            className="h-8 w-8 text-indigo-600 dark:text-indigo-300 hover:text-indigo-800 hover:bg-slate-50 border border-slate-100 dark:border-slate-800 rounded-lg cursor-pointer"
+                            title="Add partner"
+                          >
+                            <Plus className="w-4 h-4" />
+                          </Button>
+                        </div>
                       </div>
 
                       <div className="space-y-3 max-h-[850px] overflow-y-auto pr-1">
@@ -3868,6 +3977,27 @@ export function Dashboard({
                     </div>
                   </div>
                 </div>
+
+                {/* Confirm dialog before overwriting a user-curated partner list. */}
+                <Dialog open={confirmRegenerateOpen} onOpenChange={setConfirmRegenerateOpen}>
+                  <DialogContent className="sm:max-w-md bg-white dark:bg-slate-900 border border-slate-150 dark:border-slate-700 rounded-2xl font-sans shadow-sm">
+                    <DialogHeader className="space-y-1.5 text-left">
+                      <DialogTitle className="font-medium text-sm text-slate-900 dark:text-slate-100">Replace your curated partners?</DialogTitle>
+                      <DialogDescription className="text-[13px] text-slate-500 dark:text-slate-400">
+                        You&apos;ve added or edited partners in this grid. Regenerating with AI will overwrite them with a fresh, business-tailored set. This can&apos;t be undone (but you can re-add anything you want to keep).
+                      </DialogDescription>
+                    </DialogHeader>
+                    <DialogFooter className="gap-2 pt-2">
+                      <Button variant="outline" onClick={() => setConfirmRegenerateOpen(false)}>Cancel</Button>
+                      <Button
+                        onClick={() => { setConfirmRegenerateOpen(false); void generatePartnersFromAi({ manual: true }); }}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                      >
+                        <Sparkles className="w-4 h-4 mr-1.5" /> Regenerate
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
 
                 {/* Modal to add/edit channel partner dynamically */}
                 <Dialog open={isPartnerFormOpen} onOpenChange={setIsPartnerFormOpen}>
