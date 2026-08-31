@@ -115,6 +115,10 @@ export default function App() {
   const [authView, setAuthView] = useState<AuthView>(initialHash?.view ?? 'login');
   const [resetToken, setResetToken] = useState<string | null>(initialHash?.token ?? null);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  // Tracks which account (if any) the user has opened in AccountDetail.
+  // Dashboard reports changes via onCurrentAccountChanged so Jarvis's
+  // getContext() can inject the currently-open account's details.
+  const [currentAccountId, setCurrentAccountId] = useState<string | null>(null);
 
   // Keep the URL hash in sync with the auth view when the auth screens are
   // visible, and clear it once the user leaves auth so the app URL looks clean.
@@ -944,6 +948,7 @@ export default function App() {
               onLogout={handleLogout}
             />
           )}
+          onCurrentAccountChanged={setCurrentAccountId}
         />
       )}
         </>
@@ -978,7 +983,9 @@ export default function App() {
             const a: any = analysis;
             const industry = a?.icp?.industry || a?.industry;
             const overview = a?.overview || a?.summary;
+            if (a?.businessName) parts.push(`Seller: ${a.businessName}`);
             if (industry) parts.push(`Business industry / ICP: ${industry}`);
+            if (a?.valueProp) parts.push(`Value prop: ${String(a.valueProp).slice(0, 240)}`);
             if (overview) parts.push(`Business overview: ${String(overview).slice(0, 400)}`);
             if (a?.icp) {
               const icpBits: string[] = [];
@@ -990,15 +997,51 @@ export default function App() {
               if (icpBits.length) parts.push(`ICP details: ${icpBits.join('; ')}`);
             }
           }
+
+          // Currently-opened account: inject rich detail so Jarvis can answer
+          // "summarize this account", "who should I contact", "why is this a
+          // good fit" without hallucination.
+          const openAccount: any = currentAccountId ? accounts.find((x: any) => x.id === currentAccountId) : null;
+          if (openAccount) {
+            const oa = openAccount;
+            const bits: string[] = [`OPEN ACCOUNT (user is viewing this now): ${oa.name}${oa.domain ? ` — ${oa.domain}` : ''}`];
+            if (oa.industry) bits.push(`industry ${oa.industry}`);
+            if (typeof oa.fitScore === 'number') bits.push(`fit ${oa.fitScore}`);
+            if (typeof oa.timingScore === 'number') bits.push(`timing ${oa.timingScore}`);
+            if (typeof oa.priorityIndex === 'number') bits.push(`priority ${oa.priorityIndex}`);
+            if (oa.priorityFlag) bits.push(`flag ${oa.priorityFlag}`);
+            if (oa.fitReason) bits.push(`why fit: ${String(oa.fitReason).slice(0, 240)}`);
+            if (oa.timingReason) bits.push(`why timing: ${String(oa.timingReason).slice(0, 240)}`);
+            if (Array.isArray(oa.signals) && oa.signals.length) {
+              const sigLine = oa.signals.slice(0, 5).map((s: any) => s?.summary || s?.title || s).filter(Boolean).join('; ');
+              if (sigLine) bits.push(`top signals: ${sigLine}`);
+            }
+            const detail = oa.analysis;
+            if (detail) {
+              if (Array.isArray(detail.buyerPersonas) && detail.buyerPersonas.length) {
+                bits.push(`personas: ${detail.buyerPersonas.slice(0, 3).map((p: any) => p.role).filter(Boolean).join(' · ')}`);
+              }
+              if (Array.isArray(detail.competitors) && detail.competitors.length) {
+                bits.push(`competitors: ${detail.competitors.slice(0, 3).map((c: any) => c.name).filter(Boolean).join(', ')}`);
+              }
+              if (detail.multiThreadingStrategy?.internalChampion?.role) {
+                bits.push(`likely champion: ${detail.multiThreadingStrategy.internalChampion.role}`);
+              }
+            }
+            parts.push(bits.join(' · '));
+          }
+
           if (accounts.length > 0) {
-            parts.push(`Discovered accounts (${accounts.length}): ` +
-              accounts.slice(0, 8).map((a: any) => `${a.name || a.domain}${typeof a.fitScore === 'number' ? ` (fit ${a.fitScore})` : ''}`).join(', '));
+            // Top 5 by priority so "what's my hottest lead" works.
+            const ranked = [...accounts].sort((a: any, b: any) => (b.priorityIndex ?? 0) - (a.priorityIndex ?? 0));
+            parts.push(`Top accounts by priority (${accounts.length} total): ` +
+              ranked.slice(0, 5).map((a: any) => `${a.name || a.domain}${typeof a.priorityIndex === 'number' ? ` P${a.priorityIndex}` : ''}${typeof a.fitScore === 'number' ? `/F${a.fitScore}` : ''}${a.priorityFlag ? ` [${a.priorityFlag}]` : ''}`).join(' · '));
           }
           if (savedReports.length > 0) {
             parts.push(`Saved reports (${savedReports.length}): ` +
               savedReports.slice(0, 6).map((r: any) => `"${r.name}"`).join(', '));
           }
-          parts.push(`Current screen: ${activeLandingTab === 'saved-library' ? 'Saved Reports' : analysis ? 'Dashboard' : showLanding ? 'Landing page' : 'Analyze Website'}`);
+          parts.push(`Current screen: ${activeLandingTab === 'saved-library' ? 'Saved Reports' : openAccount ? `Account Detail (${openAccount.name})` : analysis ? 'Dashboard' : showLanding ? 'Landing page' : 'Analyze Website'}`);
           return parts.join('\n');
         }}
         onAction={(a: JarvisAction) => {

@@ -4,13 +4,81 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { Mic, MicOff, X, Volume2, Loader2, Ear, EarOff } from 'lucide-react';
+import { Mic, MicOff, X, Volume2, Loader2, Ear, EarOff, Copy, Check, Trash2, Zap } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiUrl } from '../utils/apiBase';
 
 type JarvisState = 'idle' | 'wake-listening' | 'listening' | 'thinking' | 'speaking' | 'error';
 
-type Turn = { role: 'user' | 'jarvis'; text: string };
+// Persistence lets a user close/reopen the panel (or refresh) without losing
+// the conversation. Kept short (last N turns) so localStorage stays cheap.
+const TURNS_STORAGE_KEY = 'gtm_jarvis_turns';
+const MAX_PERSISTED_TURNS = 40;
+
+type Turn = {
+  role: 'user' | 'jarvis';
+  text: string;
+  ts: number;                              // epoch ms — enables "3m ago" labels
+  action?: { action: string; args?: Record<string, unknown>; label?: string };
+};
+
+// Human-readable label for an executed action — used for both the inline
+// badge in the transcript and the confirmation toast. Falls back to the raw
+// action name when we don't have a handcrafted phrase yet (adding a case is a
+// one-liner as the action registry grows).
+function describeAction(action: string, args?: Record<string, unknown>): string {
+  const a = (args ?? {}) as Record<string, any>;
+  switch (action) {
+    case 'navigate.home':          return 'Went home';
+    case 'navigate.analyze':       return 'Opened Analyze Website';
+    case 'navigate.dashboard':     return 'Opened Dashboard';
+    case 'navigate.savedReports':  return 'Opened Saved Reports';
+    case 'navigate.back':          return 'Went back';
+    case 'theme.toggle':           return 'Toggled theme';
+    case 'theme.set':              return `Theme → ${String(a.mode ?? 'default')}`;
+    case 'analyzeUrl':             return `Analyzing ${String(a.url ?? 'the URL')}`;
+    case 'loadReport':             return `Loaded report matching "${String(a.query ?? '')}"`;
+    case 'landing.playIntroVideo': return 'Playing intro video';
+    case 'landing.pauseIntroVideo':return 'Paused intro video';
+    case 'landing.fullscreenIntroVideo': return 'Fullscreen video';
+    case 'landing.scrollToWatch':  return 'Scrolled to Watch section';
+    case 'landing.scrollToFeatures': return 'Scrolled to Features';
+    case 'landing.scrollToCta':    return 'Scrolled to CTA';
+    case 'dashboard.tab':          return `Switched to ${String(a.tab ?? 'tab')} tab`;
+    case 'dashboard.refresh':      return 'Refreshed discovery';
+    case 'dashboard.saveReport':   return 'Saved report';
+    case 'dashboard.openAccount':  return `Opened account${a.name ? ` — ${String(a.name)}` : a.index != null ? ` #${a.index}` : ''}`;
+    case 'dashboard.closeDetail':  return 'Closed account detail';
+    case 'input.setUrl':           return `Set URL: ${String(a.url ?? '')}`;
+    case 'input.setCount':         return `Set count: ${String(a.count ?? '')}`;
+    case 'input.submit':           return 'Submitted analysis';
+    case 'savedReports.load':      return `Loaded report matching "${String(a.query ?? '')}"`;
+    case 'savedReports.delete':    return `Deleted report matching "${String(a.query ?? '')}"`;
+    case 'scroll.up':              return 'Scrolled up';
+    case 'scroll.down':            return 'Scrolled down';
+    case 'scroll.top':             return 'Jumped to top';
+    case 'scroll.bottom':          return 'Jumped to bottom';
+    case 'readCurrentScreen':      return 'Read screen';
+    default:                       return action;
+  }
+}
+
+// Compact relative-time formatter for turn timestamps. Falls back to a
+// clock-time string once the message is older than a day so old conversation
+// history stays legible.
+function formatTs(ts: number): string {
+  const now = Date.now();
+  const diff = now - ts;
+  if (diff < 30_000) return 'just now';
+  if (diff < 60_000) return `${Math.floor(diff / 1000)}s ago`;
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  try {
+    return new Date(ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  } catch {
+    return new Date(ts).toISOString().slice(0, 16);
+  }
+}
 
 export type JarvisAction = {
   action: string;
@@ -60,9 +128,65 @@ export function JarvisOrb({ getContext, onAction }: Props) {
   const [state, setState] = useState<JarvisState>('idle');
   const [transcript, setTranscript] = useState('');
   const [lastHeard, setLastHeard] = useState('');
-  const [turns, setTurns] = useState<Turn[]>([]);
+  const [turns, setTurns] = useState<Turn[]>(() => {
+    try {
+      const raw = localStorage.getItem(TURNS_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.slice(-MAX_PERSISTED_TURNS).filter((t: any) =>
+        t && (t.role === 'user' || t.role === 'jarvis') && typeof t.text === 'string'
+      ).map((t: any) => ({ role: t.role, text: t.text, ts: t.ts ?? Date.now(), action: t.action }));
+    } catch { return []; }
+  });
+  // Which turn's copy button just fired (indexes into turns[]). Reset after
+  // a beat so the check icon flips back to the copy icon.
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+  const turnsScrollRef = useRef<HTMLDivElement | null>(null);
+
+  // Persist turns whenever they change. Debounce isn't necessary — new turns
+  // land ~once per few seconds at most.
+  useEffect(() => {
+    try {
+      const slim = turns.slice(-MAX_PERSISTED_TURNS);
+      localStorage.setItem(TURNS_STORAGE_KEY, JSON.stringify(slim));
+    } catch { /* quota — non-critical */ }
+  }, [turns]);
+
+  // Auto-scroll to the newest turn whenever the transcript grows or the panel
+  // opens. Uses scrollTo so it works even with dynamic content sizes.
+  useEffect(() => {
+    if (!open) return;
+    const el = turnsScrollRef.current;
+    if (!el) return;
+    // Next tick so the new turn's DOM node is mounted before we scroll.
+    requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
+  }, [turns, open, state]);
+
+  const copyTurn = useCallback((idx: number, text: string) => {
+    try {
+      void navigator.clipboard.writeText(text);
+      setCopiedIndex(idx);
+      setTimeout(() => { setCopiedIndex(null); }, 1400);
+    } catch {
+      toast.error('Copy failed');
+    }
+  }, []);
+
+  const clearTurns = useCallback(() => {
+    setTurns([]);
+    try { localStorage.removeItem(TURNS_STORAGE_KEY); } catch {}
+    toast.success('Conversation cleared');
+  }, []);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [supported] = useState<boolean>(!!getSpeechRecognitionCtor());
+  // Firefox and Safari lack webkitSpeechRecognition, so those users get a
+  // MediaRecorder → /api/jarvis/stt (Whisper) tap-to-record flow instead.
+  const [supportsMediaRecorder] = useState<boolean>(
+    typeof window !== 'undefined' && typeof (window as any).MediaRecorder !== 'undefined'
+  );
+  const useWhisperFallback = !supported && supportsMediaRecorder;
+  const [whisperRecording, setWhisperRecording] = useState(false);
   // Click-to-talk by default — user must tap the orb to speak. The ear icon
   // is an opt-in toggle for hands-free "Hey Jarvis" wake detection (kept for
   // users who want it, but off on load so the mic isn't hot without consent).
@@ -70,6 +194,21 @@ export function JarvisOrb({ getContext, onAction }: Props) {
 
   const commandRecRef = useRef<any>(null);
   const wakeRecRef = useRef<any>(null);
+  // Barge-in listener runs concurrently with Jarvis's audio output. When it
+  // hears speech, it aborts the current playback and hands the microphone off
+  // to a full command capture so the user can interrupt naturally.
+  const bargeInRecRef = useRef<any>(null);
+  // MediaRecorder plumbing for Whisper fallback (Firefox / Safari).
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const mediaChunksRef = useRef<Blob[]>([]);
+  // Voice-activity detector for the Whisper path — polls the input volume
+  // and calls stopWhisperCapture() automatically after ~1s of quiet
+  // following at least some speech. Removes the "tap again to send" chore.
+  const vadCtxRef = useRef<AudioContext | null>(null);
+  const vadTimerRef = useRef<number | null>(null);
+  // 0-1 live volume level, used to pulse the mic indicator.
+  const [vadLevel, setVadLevel] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const stateRef = useRef<JarvisState>('idle');
@@ -77,6 +216,11 @@ export function JarvisOrb({ getContext, onAction }: Props) {
   // Cached wake-greeting audio — pre-generated at page load so wake -> greeting
   // is instant (no TTS network round-trip when the user says "Hey Jarvis").
   const greetingUrlRef = useRef<string | null>(null);
+  // Pre-cached acknowledgement phrases ("On it", "Sure", ...). One is played
+  // the moment the user sends a message so first-audio latency drops from ~2s
+  // (LLM + TTS round-trip) to ~50ms (local blob play). The real reply
+  // sentences queue behind whichever ack fires.
+  const ackAudioUrlsRef = useRef<string[]>([]);
   // Latest turns mirror, read at send-time so history reflects the newest state
   // even when sendToJarvis is invoked from an older closure.
   const turnsRef = useRef<Turn[]>([]);
@@ -84,6 +228,17 @@ export function JarvisOrb({ getContext, onAction }: Props) {
   useEffect(() => { stateRef.current = state; }, [state]);
   useEffect(() => { handsFreeRef.current = handsFree; }, [handsFree]);
   useEffect(() => { turnsRef.current = turns; }, [turns]);
+
+  // Toggle the barge-in listener alongside speaking state so the user can
+  // interrupt Jarvis mid-answer just by talking (hands-free mode only).
+  useEffect(() => {
+    if (state === 'speaking') {
+      startBargeInListener();
+    } else {
+      stopBargeInRec();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state]);
 
   // How many prior turns (user + jarvis pairs) to send back as context on
   // each request. 5 pairs = ~10 messages, usually <1500 tokens.
@@ -112,16 +267,25 @@ export function JarvisOrb({ getContext, onAction }: Props) {
     commandRecRef.current = null;
   }, []);
 
+  const stopBargeInRec = useCallback(() => {
+    const r = bargeInRecRef.current;
+    if (!r) return;
+    r._stopIntentional = true;
+    try { r.stop(); } catch {}
+    bargeInRecRef.current = null;
+  }, []);
+
   const stopEverything = useCallback(() => {
     stopCommandRec();
     stopWakeRec();
+    stopBargeInRec();
     try { audioRef.current?.pause(); } catch {}
     if (audioRef.current) audioRef.current.currentTime = 0;
     abortRef.current?.abort();
     abortRef.current = null;
     setState('idle');
     setTranscript('');
-  }, [stopCommandRec, stopWakeRec]);
+  }, [stopCommandRec, stopWakeRec, stopBargeInRec]);
 
   // ---------------------------------------------------------------------------
   // Command listening — captures the actual question after wake, or after click.
@@ -198,9 +362,43 @@ export function JarvisOrb({ getContext, onAction }: Props) {
 
     // Sequential audio playback chain. Each sentence's TTS fetch starts
     // immediately (parallel), but playback is serialized via .then chaining.
-    let playChain: Promise<void> = Promise.resolve();
+    // Smart ack: instead of always playing an ack, we schedule it 250ms out
+    // and cancel if a real sentence arrives first. That way short replies
+    // ("Yes.") don't get a redundant "Sure." tacked on the front, while
+    // longer replies still get instant first-audio.
     let firstAudioStarted = false;
     const activeUrls: string[] = [];
+    let playChain: Promise<void> = Promise.resolve();
+    let ackStarted = false;
+    let ackTimer: number | null = null;
+    const ackUrls = ackAudioUrlsRef.current;
+    const scheduleAck = () => {
+      if (ackUrls.length === 0 || ackStarted || ackTimer != null) return;
+      ackTimer = window.setTimeout(() => {
+        ackTimer = null;
+        if (controller.signal.aborted) return;
+        if (firstAudioStarted) return; // a real sentence already started
+        ackStarted = true;
+        const ackUrl = ackUrls[Math.floor(Math.random() * ackUrls.length)];
+        playChain = playChain.then(async () => {
+          if (controller.signal.aborted) return;
+          const audio = new Audio(ackUrl);
+          audioRef.current = audio;
+          firstAudioStarted = true;
+          stateRef.current = 'speaking';
+          setState('speaking');
+          await new Promise<void>((resolve) => {
+            audio.onended = () => resolve();
+            audio.onerror = () => resolve();
+            void audio.play().catch(() => resolve());
+          });
+        }).catch(() => {});
+      }, 250);
+    };
+    const cancelAck = () => {
+      if (ackTimer != null) { clearTimeout(ackTimer); ackTimer = null; }
+    };
+    scheduleAck();
 
     const enqueueSentence = (text: string) => {
       const ttsPromise = fetch(apiUrl('/api/jarvis/tts'), {
@@ -260,6 +458,7 @@ export function JarvisOrb({ getContext, onAction }: Props) {
           let payload: any;
           try { payload = JSON.parse(dataStr); } catch { continue; }
           if (event === 'sentence' && typeof payload.text === 'string' && payload.text.trim()) {
+            cancelAck(); // real audio arrived — skip the "On it." ack
             enqueueSentence(payload.text.trim());
           } else if (event === 'final') {
             fullReply = payload.reply || '';
@@ -272,13 +471,23 @@ export function JarvisOrb({ getContext, onAction }: Props) {
       }
     } finally {
       try { reader.releaseLock(); } catch {}
+      cancelAck();
     }
 
+    const label = finalAction && finalAction !== 'none' ? describeAction(finalAction, finalArgs) : undefined;
     if (fullReply) {
-      setTurns((prev) => [...prev, { role: 'jarvis', text: fullReply }]);
+      setTurns((prev) => [...prev, {
+        role: 'jarvis',
+        text: fullReply,
+        ts: Date.now(),
+        action: finalAction && finalAction !== 'none' ? { action: finalAction, args: finalArgs, label } : undefined,
+      }]);
     }
     if (finalAction && finalAction !== 'none') {
-      try { onAction?.({ action: finalAction, args: finalArgs }); } catch (e) { console.warn('Jarvis action failed:', e); }
+      try {
+        onAction?.({ action: finalAction, args: finalArgs });
+        if (label) toast.success(label, { duration: 2600 });
+      } catch (e) { console.warn('Jarvis action failed:', e); }
     }
 
     // Wait for all queued audio to finish playing.
@@ -291,7 +500,7 @@ export function JarvisOrb({ getContext, onAction }: Props) {
     const clean = userText.trim();
     if (!clean) { setState('idle'); return; }
     setOpen(true);
-    setTurns((prev) => [...prev, { role: 'user', text: clean }]);
+    setTurns((prev) => [...prev, { role: 'user', text: clean, ts: Date.now() }]);
     setState('thinking');
     setTranscript('');
     const controller = new AbortController();
@@ -321,9 +530,13 @@ export function JarvisOrb({ getContext, onAction }: Props) {
         const reply: string = data?.reply || 'I did not get a response.';
         const action: string | undefined = data?.action;
         const args: Record<string, unknown> | undefined = data?.args;
-        setTurns((prev) => [...prev, { role: 'jarvis', text: reply }]);
+        const nsLabel = action && action !== 'none' ? describeAction(action, args) : undefined;
+        setTurns((prev) => [...prev, { role: 'jarvis', text: reply, ts: Date.now(), action: action && action !== 'none' ? { action, args, label: nsLabel } : undefined }]);
         if (action && action !== 'none') {
-          try { onAction?.({ action, args }); } catch (e) { console.warn('Jarvis action failed:', e); }
+          try {
+            onAction?.({ action, args });
+            if (nsLabel) toast.success(nsLabel, { duration: 2600 });
+          } catch (e) { console.warn('Jarvis action failed:', e); }
         }
         await speakText(reply);
       } catch (e: any) {
@@ -350,6 +563,46 @@ export function JarvisOrb({ getContext, onAction }: Props) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getContext, onAction, speakText, runStreamingReply, buildHistory]);
+
+  // Barge-in listener — runs while Jarvis is speaking. Any detected speech
+  // aborts the current audio+stream and hands off to a full command capture
+  // so the user can interrupt naturally, no click required.
+  const startBargeInListener = useCallback(() => {
+    if (!handsFreeRef.current) return; // opt-in — same gate as the wake listener
+    const Ctor = getSpeechRecognitionCtor();
+    if (!Ctor) return;
+    stopBargeInRec();
+    const rec = new Ctor();
+    rec.lang = 'en-US';
+    rec.interimResults = false;
+    rec.continuous = false;
+    rec.maxAlternatives = 1;
+    let handoff = false;
+    rec.onspeechstart = () => {
+      // User started talking — kill Jarvis's audio + in-flight fetches and
+      // switch to full command capture. The `handoff` guard prevents onend
+      // from double-firing while we're setting up the next listener.
+      handoff = true;
+      try { audioRef.current?.pause(); } catch {}
+      if (audioRef.current) audioRef.current.currentTime = 0;
+      abortRef.current?.abort();
+      abortRef.current = null;
+      try { rec._stopIntentional = true; rec.stop(); } catch {}
+      bargeInRecRef.current = null;
+      // Small delay so the current SR fully releases before startCommandListening
+      // instantiates a fresh one.
+      setTimeout(() => startCommandListening(true), 50);
+    };
+    rec.onerror = () => { /* silent — barge-in is best-effort */ };
+    rec.onend = () => {
+      if (bargeInRecRef.current === rec) bargeInRecRef.current = null;
+      if (handoff) return;
+      // Ended before user spoke (Jarvis finished naturally). No-op.
+    };
+    bargeInRecRef.current = rec;
+    try { rec.start(); } catch { bargeInRecRef.current = null; }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stopBargeInRec]);
 
   const startCommandListening = useCallback((softFollowup = false) => {
     setErrorMsg(null);
@@ -474,7 +727,7 @@ export function JarvisOrb({ getContext, onAction }: Props) {
                 if (prev.length > 0 && prev[prev.length - 1].role === 'jarvis' && prev[prev.length - 1].text === WAKE_GREETING) {
                   return prev;
                 }
-                return [...prev, { role: 'jarvis', text: WAKE_GREETING }];
+                return [...prev, { role: 'jarvis', text: WAKE_GREETING, ts: Date.now() }];
               });
               void playGreetingFast().then(() => {
                 if (stateRef.current === 'idle') startCommandListening();
@@ -642,34 +895,52 @@ export function JarvisOrb({ getContext, onAction }: Props) {
   // at wake time — makes the "Hey Jarvis" -> greeting flow instant.
   useEffect(() => {
     let cancelled = false;
-    (async () => {
+    const fetchAndCache = async (text: string): Promise<string | null> => {
       try {
         const res = await fetch(apiUrl('/api/jarvis/tts'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: WAKE_GREETING, voice: 'onyx' }),
+          body: JSON.stringify({ text, voice: 'onyx' }),
         });
-        if (!res.ok || cancelled) return;
+        if (!res.ok || cancelled) return null;
         const blob = await res.blob();
-        if (cancelled) return;
-        greetingUrlRef.current = URL.createObjectURL(blob);
-        console.log('[jarvis] greeting TTS pre-cached');
-      } catch (e) {
-        console.warn('[jarvis] greeting pre-cache failed:', e);
+        if (cancelled) return null;
+        return URL.createObjectURL(blob);
+      } catch { return null; }
+    };
+
+    (async () => {
+      const url = await fetchAndCache(WAKE_GREETING);
+      if (url) greetingUrlRef.current = url;
+      if (url) console.log('[jarvis] greeting TTS pre-cached');
+    })();
+
+    // Short ack phrases fetched in parallel — one plays immediately on every
+    // user-turn so first-audio is ~50ms instead of waiting for the LLM stream.
+    const ACK_PHRASES = ['On it.', 'Sure.', 'One moment.', 'Let me check.', 'Working on it.'];
+    (async () => {
+      const results = await Promise.all(ACK_PHRASES.map(fetchAndCache));
+      if (cancelled) return;
+      ackAudioUrlsRef.current = results.filter((u): u is string => !!u);
+      if (ackAudioUrlsRef.current.length > 0) {
+        console.log(`[jarvis] ${ackAudioUrlsRef.current.length}/${ACK_PHRASES.length} ack phrases pre-cached`);
       }
     })();
+
     return () => {
       cancelled = true;
       if (greetingUrlRef.current) {
         URL.revokeObjectURL(greetingUrlRef.current);
         greetingUrlRef.current = null;
       }
+      for (const u of ackAudioUrlsRef.current) { try { URL.revokeObjectURL(u); } catch {} }
+      ackAudioUrlsRef.current = [];
     };
   }, []);
 
   // First-visit hint — one-time toast telling the user how to talk to Jarvis.
   useEffect(() => {
-    if (!supported) return;
+    if (!supported && !supportsMediaRecorder) return;
     try {
       if (localStorage.getItem('jarvis_intro_shown') === 'true') return;
       localStorage.setItem('jarvis_intro_shown', 'true');
@@ -682,8 +953,153 @@ export function JarvisOrb({ getContext, onAction }: Props) {
     }, 800);
   }, [supported]);
 
+  // Whisper capture — Firefox/Safari path. Tap once to record, tap again to
+  // stop. On stop, the accumulated blob POSTs to /api/jarvis/stt (Whisper),
+  // and the returned transcript feeds into sendToJarvis just like the Chrome
+  // webkitSpeechRecognition flow.
+  const stopWhisperCapture = useCallback(async () => {
+    const rec = mediaRecorderRef.current;
+    if (!rec) return;
+    // Tear down VAD first so its tick loop stops immediately (before the
+    // onstop fires and mediaStreamRef is nulled).
+    if (vadTimerRef.current != null) { clearTimeout(vadTimerRef.current); vadTimerRef.current = null; }
+    if (vadCtxRef.current) { try { void vadCtxRef.current.close(); } catch {} vadCtxRef.current = null; }
+    setVadLevel(0);
+    return new Promise<void>((resolve) => {
+      rec.onstop = async () => {
+        // Release mic tracks so the browser stops showing the "recording" tab
+        // indicator immediately.
+        for (const t of mediaStreamRef.current?.getTracks() ?? []) { try { t.stop(); } catch {} }
+        mediaStreamRef.current = null;
+        mediaRecorderRef.current = null;
+        setWhisperRecording(false);
+
+        const chunks = mediaChunksRef.current.slice();
+        mediaChunksRef.current = [];
+        if (chunks.length === 0) { setState('idle'); resolve(); return; }
+        const mime = rec.mimeType || chunks[0]?.type || 'audio/webm';
+        const blob = new Blob(chunks, { type: mime });
+        if (blob.size < 800) { // near-empty capture — treat as no speech
+          setState('idle');
+          setErrorMsg('I did not hear anything.');
+          resolve();
+          return;
+        }
+        setState('thinking');
+        try {
+          const res = await fetch(apiUrl('/api/jarvis/stt'), {
+            method: 'POST',
+            headers: { 'Content-Type': mime },
+            body: blob,
+          });
+          const data = await res.json().catch(() => ({}));
+          const text = String(data?.text || '').trim();
+          if (text) {
+            sendToJarvis(text);
+          } else {
+            setState('idle');
+            setErrorMsg('I did not catch that. Try again?');
+          }
+        } catch (e: any) {
+          setState('idle');
+          setErrorMsg(`Voice input problem: ${e?.message ?? 'network error'}`);
+        }
+        resolve();
+      };
+      try { rec.stop(); } catch { resolve(); }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sendToJarvis]);
+
+  const startWhisperCapture = useCallback(async () => {
+    if (whisperRecording) return;
+    setErrorMsg(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+      // MediaRecorder picks the best-supported mime per browser: WebM/Opus on
+      // Chrome+Firefox, MP4/AAC on Safari. Whisper handles both via ffmpeg.
+      const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', ''];
+      let rec: MediaRecorder | null = null;
+      for (const mime of candidates) {
+        try {
+          rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+          break;
+        } catch { /* try next */ }
+      }
+      if (!rec) throw new Error('MediaRecorder unavailable');
+      mediaChunksRef.current = [];
+      rec.ondataavailable = (e) => { if (e.data && e.data.size > 0) mediaChunksRef.current.push(e.data); };
+      rec.onstart = () => {
+        setState('listening');
+        setWhisperRecording(true);
+        // Attach a voice-activity detector so the user doesn't have to tap
+        // "stop" — captures the natural end of the utterance. Falls back
+        // silently to manual stop if AudioContext isn't available.
+        try {
+          const AudioCtx = (window as any).AudioContext || (window as any).webkitAudioContext;
+          if (!AudioCtx) return;
+          const ctx: AudioContext = new AudioCtx();
+          vadCtxRef.current = ctx;
+          const src = ctx.createMediaStreamSource(stream);
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 512;
+          analyser.smoothingTimeConstant = 0.6;
+          src.connect(analyser);
+          const buf = new Uint8Array(analyser.frequencyBinCount);
+          const SPEECH_RMS = 0.05;       // above this = speech
+          const SILENCE_RMS = 0.025;     // below this = quiet
+          const SILENCE_HANGOVER_MS = 1100;
+          const HARD_CAP_MS = 15_000;
+          const startedAt = Date.now();
+          let speechDetected = false;
+          let quietSince: number | null = null;
+          const tick = () => {
+            if (!mediaRecorderRef.current || vadCtxRef.current !== ctx) return;
+            analyser.getByteFrequencyData(buf);
+            // Simple RMS across freq bins, normalised to 0-1.
+            let sum = 0;
+            for (let i = 0; i < buf.length; i++) { const v = buf[i] / 255; sum += v * v; }
+            const rms = Math.sqrt(sum / buf.length);
+            setVadLevel(Math.min(1, rms * 3));
+            const now = Date.now();
+            if (rms > SPEECH_RMS) { speechDetected = true; quietSince = null; }
+            else if (rms < SILENCE_RMS) { if (quietSince == null) quietSince = now; }
+            else { quietSince = null; }
+            const quietFor = quietSince != null ? now - quietSince : 0;
+            const runFor = now - startedAt;
+            if ((speechDetected && quietFor > SILENCE_HANGOVER_MS) || runFor > HARD_CAP_MS) {
+              // Natural end of utterance or hard cap — auto-submit.
+              vadTimerRef.current = null;
+              void stopWhisperCapture();
+              return;
+            }
+            vadTimerRef.current = window.setTimeout(tick, 90);
+          };
+          vadTimerRef.current = window.setTimeout(tick, 200);
+        } catch { /* VAD is best-effort — user can still tap to stop */ }
+      };
+      rec.onerror = (e: any) => {
+        setErrorMsg(`Microphone error: ${e?.error?.name ?? 'unknown'}`);
+        for (const t of stream.getTracks()) { try { t.stop(); } catch {} }
+        setWhisperRecording(false);
+        setState('idle');
+      };
+      mediaRecorderRef.current = rec;
+      rec.start(500); // deliver a chunk every 500ms so we can size-check early
+    } catch (e: any) {
+      if (e?.name === 'NotAllowedError') {
+        setErrorMsg('Microphone access denied. Enable it in your browser.');
+      } else {
+        setErrorMsg(`Voice input problem: ${e?.message ?? 'unknown'}`);
+      }
+      setState('idle');
+    }
+  }, [whisperRecording]);
+
   const handleOrbClick = () => {
     if (!open) setOpen(true);
+    if (whisperRecording) { void stopWhisperCapture(); return; }
     if (state === 'listening') {
       try { commandRecRef.current?.stop(); } catch {}
       return;
@@ -692,15 +1108,16 @@ export function JarvisOrb({ getContext, onAction }: Props) {
       stopEverything();
       return;
     }
+    if (useWhisperFallback) { void startWhisperCapture(); return; }
     startCommandListening();
   };
 
   const statusLabel: Record<JarvisState, string> = {
-    idle: handsFree ? 'Say "Hey Jarvis"' : 'Tap the mic to talk',
+    idle: handsFree ? 'Say "Hey Jarvis"' : useWhisperFallback ? 'Tap the mic to talk' : 'Tap the mic to talk',
     'wake-listening': 'Waiting for "Hey Jarvis"',
-    listening: 'Listening...',
+    listening: whisperRecording ? 'Recording · auto-stops when you pause' : 'Listening...',
     thinking: 'Thinking...',
-    speaking: 'Speaking',
+    speaking: handsFree ? 'Speaking · say anything to interrupt' : 'Speaking',
     error: 'Something went wrong',
   };
 
@@ -724,19 +1141,34 @@ export function JarvisOrb({ getContext, onAction }: Props) {
               </span>
             </div>
             <div className="flex items-center gap-1">
-              <button
-                onClick={() => setHandsFree((v) => !v)}
-                className={
-                  'p-1.5 rounded-md transition ' +
-                  (handsFree
-                    ? 'text-orange-600 dark:text-orange-400 bg-orange-500/10 hover:bg-orange-500/20'
-                    : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200')
-                }
-                title={handsFree ? 'Hands-free ON — listening for "Hey Jarvis"' : 'Enable hands-free wake word'}
-                aria-label="Toggle hands-free"
-              >
-                {handsFree ? <Ear className="w-4 h-4" /> : <EarOff className="w-4 h-4" />}
-              </button>
+              {turns.length > 0 && (
+                <button
+                  onClick={clearTurns}
+                  className="text-zinc-400 hover:text-red-500 dark:hover:text-red-400 transition p-1.5"
+                  title="Clear conversation"
+                  aria-label="Clear conversation"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+              {/* Hands-free wake requires webkitSpeechRecognition — hide the
+                  toggle on Firefox/Safari where the Whisper fallback path
+                  can't support continuous listening. */}
+              {supported && (
+                <button
+                  onClick={() => setHandsFree((v) => !v)}
+                  className={
+                    'p-1.5 rounded-md transition ' +
+                    (handsFree
+                      ? 'text-orange-600 dark:text-orange-400 bg-orange-500/10 hover:bg-orange-500/20'
+                      : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200')
+                  }
+                  title={handsFree ? 'Hands-free ON — listening for "Hey Jarvis"' : 'Enable hands-free wake word'}
+                  aria-label="Toggle hands-free"
+                >
+                  {handsFree ? <Ear className="w-4 h-4" /> : <EarOff className="w-4 h-4" />}
+                </button>
+              )}
               <button
                 onClick={() => { stopEverything(); setOpen(false); }}
                 className="text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 transition p-1.5"
@@ -747,7 +1179,7 @@ export function JarvisOrb({ getContext, onAction }: Props) {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2 text-sm">
+          <div ref={turnsScrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-2 text-sm">
             {turns.length === 0 && !transcript && (
               <div className="text-zinc-500 dark:text-zinc-400 text-xs leading-relaxed space-y-2">
                 <p>
@@ -773,20 +1205,45 @@ export function JarvisOrb({ getContext, onAction }: Props) {
                 </div>
               </div>
             )}
-            {turns.map((t, i) => (
-              <div key={i} className={t.role === 'user' ? 'text-right' : 'text-left'}>
-                <div
-                  className={
-                    'inline-block max-w-[85%] px-3 py-2 rounded-2xl text-[13px] leading-snug ' +
-                    (t.role === 'user'
-                      ? 'bg-orange-500 text-white rounded-br-sm'
-                      : 'bg-stone-100 dark:bg-white/10 text-zinc-800 dark:text-zinc-100 rounded-bl-sm')
-                  }
-                >
-                  {t.text}
+            {turns.map((t, i) => {
+              const isUser = t.role === 'user';
+              const showCopy = !isUser && t.text.length > 0;
+              return (
+                <div key={i} className={`group ${isUser ? 'text-right' : 'text-left'}`}>
+                  <div
+                    className={
+                      'inline-block max-w-[85%] px-3 py-2 rounded-2xl text-[13px] leading-snug break-words whitespace-pre-wrap ' +
+                      (isUser
+                        ? 'bg-orange-500 text-white rounded-br-sm'
+                        : 'bg-stone-100 dark:bg-white/10 text-zinc-800 dark:text-zinc-100 rounded-bl-sm')
+                    }
+                  >
+                    {t.text}
+                  </div>
+                  {t.action && !isUser && (
+                    <div className="mt-1 flex justify-start">
+                      <span className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200/70 dark:border-indigo-800/60">
+                        <Zap className="w-2.5 h-2.5" />
+                        {t.action.label || t.action.action}
+                      </span>
+                    </div>
+                  )}
+                  <div className={`mt-0.5 flex items-center gap-1.5 text-[9px] text-zinc-400 dark:text-zinc-500 font-mono uppercase tracking-wider ${isUser ? 'justify-end' : 'justify-start'} opacity-0 group-hover:opacity-100 transition-opacity`}>
+                    {showCopy && (
+                      <button
+                        onClick={() => copyTurn(i, t.text)}
+                        className="inline-flex items-center gap-1 hover:text-orange-600 dark:hover:text-orange-400"
+                        title="Copy reply"
+                      >
+                        {copiedIndex === i ? <Check className="w-2.5 h-2.5" /> : <Copy className="w-2.5 h-2.5" />}
+                        {copiedIndex === i ? 'Copied' : 'Copy'}
+                      </button>
+                    )}
+                    <span>{formatTs(t.ts)}</span>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
             {state === 'listening' && transcript && (
               <div className="text-right">
                 <div className="inline-block max-w-[85%] px-3 py-2 rounded-2xl text-[13px] leading-snug bg-orange-500/50 text-white rounded-br-sm italic">
@@ -794,11 +1251,44 @@ export function JarvisOrb({ getContext, onAction }: Props) {
                 </div>
               </div>
             )}
+            {whisperRecording && (
+              <div className="text-right">
+                <div className="inline-flex items-center gap-2 max-w-[85%] px-3 py-2 rounded-2xl bg-orange-500/20 border border-orange-500/40 text-orange-800 dark:text-orange-200 text-[12px]">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-60" />
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+                  </span>
+                  {/* Live volume-level bar — 10 pips fill in proportion to input RMS.
+                      Gives users tactile feedback that the mic is picking them up. */}
+                  <span className="inline-flex items-end gap-[2px] h-3">
+                    {Array.from({ length: 10 }).map((_, i) => {
+                      const active = vadLevel * 10 > i;
+                      const h = 3 + i * 1;
+                      return (
+                        <span
+                          key={i}
+                          style={{ height: `${h}px` }}
+                          className={active ? 'w-[3px] rounded-sm bg-orange-500' : 'w-[3px] rounded-sm bg-orange-500/30'}
+                        />
+                      );
+                    })}
+                  </span>
+                  <span className="font-mono text-[10px] uppercase tracking-wider">Recording</span>
+                </div>
+              </div>
+            )}
             {state === 'thinking' && (
-              <div className="text-left">
+              <div className="text-left flex items-center gap-2 flex-wrap">
                 <div className="inline-flex items-center gap-2 px-3 py-2 rounded-2xl bg-stone-100 dark:bg-white/10 text-zinc-500 dark:text-zinc-400 text-[13px]">
                   <Loader2 className="w-3.5 h-3.5 animate-spin" /> Thinking...
                 </div>
+                <button
+                  onClick={stopEverything}
+                  className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-600 dark:text-red-400 px-2 py-1 rounded-md border border-red-500/30 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
+                  title="Cancel this request"
+                >
+                  <X className="w-3 h-3" /> Cancel
+                </button>
               </div>
             )}
           </div>
@@ -808,9 +1298,14 @@ export function JarvisOrb({ getContext, onAction }: Props) {
               {errorMsg}
             </div>
           )}
-          {!supported && (
+          {!supported && !supportsMediaRecorder && (
             <div className="px-4 py-2 text-[11px] text-amber-700 dark:text-amber-400 border-t border-amber-500/20 bg-amber-50/50 dark:bg-amber-950/20">
-              Voice input needs Chrome or Edge. TTS still works.
+              Voice input isn&apos;t available in this browser. TTS still works.
+            </div>
+          )}
+          {useWhisperFallback && (
+            <div className="px-4 py-2 text-[11px] text-zinc-500 dark:text-zinc-400 border-t border-stone-200 dark:border-white/[0.06]">
+              Using Whisper voice input — tap to talk, it auto-sends when you stop speaking.
             </div>
           )}
         </div>
