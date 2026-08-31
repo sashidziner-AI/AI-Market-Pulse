@@ -152,6 +152,10 @@ interface DashboardProps {
   // Dashboard header alongside the theme toggle, so it doesn't float over the
   // Signal Changes bell + Slack Settings icons.
   headerRightSlot?: React.ReactNode;
+  // Called whenever the user opens or closes an account detail — App uses it
+  // to inject the currently-open account into Jarvis's getContext() so voice
+  // queries like "summarize this account" can answer with real data.
+  onCurrentAccountChanged?: (id: string | null) => void;
 }
 
 // Default name for a new saved report. Uses the EXACT primary target industry
@@ -183,6 +187,7 @@ export function Dashboard({
   onShowSavedReports,
   onBack,
   headerRightSlot,
+  onCurrentAccountChanged,
 }: DashboardProps) {
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
@@ -194,6 +199,12 @@ export function Dashboard({
   }, []);
 
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+
+  // Bubble selection changes up to App so Jarvis's context knows which
+  // account the user is currently focused on.
+  React.useEffect(() => {
+    onCurrentAccountChanged?.(selectedAccountId);
+  }, [selectedAccountId, onCurrentAccountChanged]);
   // Side-by-side compare: Set of accountIds the user has ticked. Capped at 3.
   // Compare mode is opt-in — cards only show the checkbox when compareModeEnabled
   // is true, so the default (uncluttered) card layout is preserved for the

@@ -59,6 +59,7 @@ for (const route of [
   "/api/jarvis/chat",
   "/api/jarvis/stream",
   "/api/jarvis/tts",
+  "/api/jarvis/stt",
   "/api/learn-email-pattern",
   "/api/guess-email",
   "/api/discover-partners",
@@ -7093,6 +7094,52 @@ app.post("/api/jarvis/stream", async (req, res) => {
     if (!res.writableEnded) res.end();
   }
 });
+
+// Cross-browser speech-to-text via OpenAI Whisper. Chrome ships the free
+// webkitSpeechRecognition API, but Firefox and Safari don't — for those
+// browsers the client records with MediaRecorder and POSTs the audio blob
+// here. Route-specific express.raw() handles the binary body so we don't need
+// multer as a dep. Whisper transcription costs ~$0.006/min so this stays
+// cheap even at demo volume.
+app.post(
+  "/api/jarvis/stt",
+  express.raw({ type: () => true, limit: "25mb" }),
+  async (req, res) => {
+    if (!process.env.OPENAI_API_KEY) {
+      return res.status(503).json({ error: "OPENAI_API_KEY is required for STT" });
+    }
+    const buf: Buffer = req.body;
+    if (!buf || !Buffer.isBuffer(buf) || buf.length === 0) {
+      return res.status(400).json({ error: "audio body is required" });
+    }
+    // Client-declared codec (webm/opus is what MediaRecorder emits by default
+    // in Firefox/Chrome; Safari 14.1+ emits mp4/aac). We honour it so
+    // whichever Whisper's ffmpeg lane picks matches the actual bytes.
+    const rawCT = String(req.get("content-type") || "audio/webm").split(";")[0].trim().toLowerCase();
+    const extMap: Record<string, string> = {
+      "audio/webm": "webm", "audio/ogg": "ogg", "audio/mp4": "mp4",
+      "audio/mpeg": "mp3", "audio/wav": "wav", "audio/x-wav": "wav",
+      "audio/mp3": "mp3", "audio/m4a": "m4a", "audio/x-m4a": "m4a",
+    };
+    const ext = extMap[rawCT] ?? "webm";
+    try {
+      const { toFile } = await import("openai/uploads");
+      const file = await toFile(buf, `speech.${ext}`, { type: rawCT });
+      const ai = getOpenAI();
+      const tr = await ai.audio.transcriptions.create({
+        file: file as any,
+        model: "whisper-1",
+        language: "en",
+        response_format: "json",
+      });
+      const text = ((tr as any)?.text ?? "").trim();
+      return res.json({ text });
+    } catch (e: any) {
+      console.log(`[jarvis/stt] ${sanitizeString(e?.message ?? "unknown")}`);
+      return res.status(500).json({ error: "Transcription unavailable" });
+    }
+  }
+);
 
 app.post("/api/jarvis/tts", async (req, res) => {
   const text = typeof req.body?.text === "string" ? req.body.text.slice(0, 4000).trim() : "";
